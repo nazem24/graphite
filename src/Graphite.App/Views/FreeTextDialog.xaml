@@ -1,0 +1,74 @@
+<Window x:Class="Graphite.App.Views.FreeTextDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStartupLocation="CenterOwner" SizeToContent="Height" Width="460"
+        WindowStyle="ToolWindow" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource App.BackgroundBrush}"
+        TextElement.Foreground="{DynamicResource App.TextBrush}"
+        FontFamily="Segoe UI Variable, Segoe UI" FontSize="12.5">
+    <StackPanel Margin="20">
+        <TextBlock x:Name="PromptText" Style="{StaticResource Body}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+        <TextBox x:Name="ValueBox" FontSize="14" AcceptsReturn="True" TextWrapping="Wrap"
+                 MinHeight="64" VerticalScrollBarVisibility="Auto"/>
+
+        <DockPanel Margin="0,14,0,0">
+            <TextBlock Text="Style" Style="{StaticResource Caption}" VerticalAlignment="Center" Width="68"/>
+            <StackPanel Orientation="Horizontal">
+                <ToggleButton x:Name="BoldToggle" Style="{StaticResource IconButton}"
+                              Width="30" Height="28" ToolTip="Bold">
+                    <TextBlock Text="B" FontWeight="Bold"/>
+                </ToggleButton>
+                <ToggleButton x:Name="ItalicToggle" Style="{StaticResource IconButton}"
+                              Width="30" Height="28" Margin="4,0,0,0" ToolTip="Italic">
+                    <TextBlock Text="I" FontStyle="Italic"/>
+                </ToggleButton>
+                <ToggleButton x:Name="UnderlineToggle" Style="{StaticResource IconButton}"
+                              Width="30" Height="28" Margin="4,0,0,0" ToolTip="Underline">
+                    <TextBlock Text="U" TextDecorations="Underline"/>
+                </ToggleButton>
+            </StackPanel>
+        </DockPanel>
+
+        <DockPanel Margin="0,10,0,0">
+            <TextBlock Text="Font" Style="{StaticResource Caption}" VerticalAlignment="Center" Width="68"/>
+            <ComboBox x:Name="FontBox" Width="190" HorizontalAlignment="Left"/>
+        </DockPanel>
+
+        <DockPanel Margin="0,10,0,0">
+            <TextBlock Text="Text size" Style="{StaticResource Caption}" VerticalAlignment="Center" Width="68"/>
+            <ComboBox x:Name="SizeBox" Width="110" HorizontalAlignment="Left"/>
+        </DockPanel>
+
+        <DockPanel Margin="0,10,0,0">
+            <TextBlock Text="Text color" Style="{StaticResource Caption}" VerticalAlignment="Center" Width="68"/>
+            <Button x:Name="TextColorButton" Style="{StaticResource IconButton}"
+                    Click="TextColor_Click" HorizontalAlignment="Left" ToolTip="Text color">
+                <Border x:Name="TextColorSwatch" Width="18" Height="18" CornerRadius="9"
+                        BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"/>
+            </Button>
+        </DockPanel>
+
+        <DockPanel Margin="0,10,0,0">
+            <TextBlock Text="Fill" Style="{StaticResource Caption}" VerticalAlignment="Center" Width="68"/>
+            <Button x:Name="FillColorButton" Style="{StaticResource IconButton}"
+                    Click="FillColor_Click" HorizontalAlignment="Left" ToolTip="Background fill — None or a color">
+                <Border x:Name="FillColorSwatch" Width="18" Height="18" CornerRadius="9"
+                        BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"/>
+            </Button>
+        </DockPanel>
+
+        <DockPanel Margin="0,10,0,0">
+            <TextBlock Text="Border" Style="{StaticResource Caption}" VerticalAlignment="Center" Width="68"/>
+            <Button x:Name="BorderColorButton" Style="{StaticResource IconButton}"
+                    Click="BorderColor_Click" HorizontalAlignment="Left" ToolTip="Box border — None or a color">
+                <Border x:Name="BorderColorSwatch" Width="18" Height="18" CornerRadius="9"
+                        BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"/>
+            </Button>
+        </DockPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Content="Cancel" Style="{StaticResource GhostButton}" Margin="0,0,8,0" IsCancel="True"/>
+            <Button Content="OK" Style="{StaticResource AccentButton}" IsDefault="True" Click="Ok_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

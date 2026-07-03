@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Graphite.App</RootNamespace>
+    <AssemblyName>Graphite</AssemblyName>
+    <ApplicationIcon>Assets\Graphite.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Graphite.Core\Graphite.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\Graphite.ico" />
+    <!-- OCR language data (populate via tools\get-tessdata.ps1) -->
+    <Content Include="tessdata\**" CopyToOutputDirectory="PreserveNewest" Condition="Exists('tessdata')" />
+  </ItemGroup>
+
+</Project>

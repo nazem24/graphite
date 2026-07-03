@@ -1,0 +1,46 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Graphite dark theme: smoky glass floating over Mica. -->
+
+    <SolidColorBrush x:Key="App.BackgroundBrush" Color="#1F1F21"/>
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#8C1B1B1D"/>
+    <SolidColorBrush x:Key="App.CardBrush" Color="#29292B"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#4D0E0E10"/>
+
+    <!-- glass surfaces -->
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#C22E2E33" Offset="0"/>
+        <GradientStop Color="#A6232327" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#4DFFFFFF" Offset="0"/>
+        <GradientStop Color="#14FFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#F02A2A2E"/>
+    <Color x:Key="App.ShadowColor">#000000</Color>
+
+    <SolidColorBrush x:Key="App.StrokeBrush" Color="#3B3B3E"/>
+    <SolidColorBrush x:Key="App.StrokeSoftBrush" Color="#303033"/>
+
+    <SolidColorBrush x:Key="App.TextBrush" Color="#ECECE8"/>
+    <SolidColorBrush x:Key="App.TextSecondaryBrush" Color="#9C9C97"/>
+    <SolidColorBrush x:Key="App.IconBrush" Color="#CFCFCA"/>
+
+    <SolidColorBrush x:Key="App.AccentBrush" Color="#E4E4E0"/>
+    <SolidColorBrush x:Key="App.AccentContrastBrush" Color="#1B1B1A"/>
+
+    <!-- system accent fallbacks; ThemeService overrides these at runtime -->
+    <Color x:Key="App.AccentSystemColor">#6CA0FF</Color>
+    <SolidColorBrush x:Key="App.AccentSystemBrush" Color="#6CA0FF"/>
+    <SolidColorBrush x:Key="App.AccentSoftBrush" Color="#3A6CA0FF"/>
+
+    <SolidColorBrush x:Key="App.HoverBrush" Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="App.PressedBrush" Color="#24FFFFFF"/>
+    <SolidColorBrush x:Key="App.SelectionBrush" Color="#1FFFFFFF"/>
+    <SolidColorBrush x:Key="App.ToolCheckedBrush" Color="#2EFFFFFF"/>
+
+    <Color x:Key="App.SearchHighlightColor">#6E8FB0</Color>
+    <Color x:Key="App.SelectionColor">#7FA0C0</Color>
+
+</ResourceDictionary>

@@ -1,0 +1,31 @@
+<Window x:Class="Graphite.App.Views.MessageDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStartupLocation="CenterOwner" SizeToContent="Height" Width="400"
+        WindowStyle="ToolWindow" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource App.BackgroundBrush}"
+        TextElement.Foreground="{DynamicResource App.TextBrush}"
+        FontFamily="Segoe UI Variable, Segoe UI" FontSize="12.5">
+    <StackPanel Margin="20">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border x:Name="IconBadge" Grid.Column="0" Width="34" Height="34" CornerRadius="17"
+                    VerticalAlignment="Top" Margin="0,0,14,0">
+                <Path x:Name="IconGlyph" Width="17" Height="17" Stretch="Uniform"
+                      StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      Fill="{x:Null}"/>
+            </Border>
+            <TextBlock x:Name="MessageText" Grid.Column="1" Style="{StaticResource Body}" TextWrapping="Wrap"
+                       VerticalAlignment="Center"/>
+        </Grid>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button x:Name="CancelBtn" Content="Cancel" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Click="Cancel_Click"/>
+            <Button x:Name="NoBtn" Content="No" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Click="No_Click"/>
+            <Button x:Name="YesBtn" Content="Yes" Style="{StaticResource AccentButton}" Margin="0,0,0,0" Click="Yes_Click"/>
+            <Button x:Name="OkBtn" Content="OK" Style="{StaticResource AccentButton}" Click="Ok_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

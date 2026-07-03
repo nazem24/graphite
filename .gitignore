@@ -1,0 +1,38 @@
+## .NET / Visual Studio
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.userosscache
+*.sln.docstates
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+build/
+bld/
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+*.nuget.props
+*.nuget.targets
+
+## Rider / JetBrains
+.idea/
+
+## OCR data downloaded by tools/get-tessdata.ps1
+src/Graphite.App/tessdata/
+
+## OS files
+Thumbs.db
+.DS_Store
+
+## Logs
+*.log

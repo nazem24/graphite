@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Graphite.Core</RootNamespace>
+    <AssemblyName>Graphite.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PDFium-based rasterizer (rendering) -->
+    <PackageReference Include="PDFtoImage" Version="4.1.1" />
+    <!-- Page-level document surgery: merge, split, rotate, annotations, content append -->
+    <PackageReference Include="PdfSharp" Version="6.1.1" />
+    <!-- Text extraction with glyph coordinates, bookmarks/outline -->
+    <PackageReference Include="PdfPig" Version="0.1.9" />
+    <!-- Office export -->
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.0" />
+    <PackageReference Include="ClosedXML" Version="0.104.1" />
+    <!-- OCR -->
+    <PackageReference Include="Tesseract" Version="5.2.0" />
+  </ItemGroup>
+
+</Project>
