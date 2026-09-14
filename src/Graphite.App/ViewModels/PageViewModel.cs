@@ -69,7 +69,7 @@ public partial class PageViewModel : ObservableObject
                 _renderedScale = t;
             } while (_renderQueued);
         }
-        catch { /* page may have been removed mid-render */ }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Page {Index} render failed: {ex.Message}"); }
         finally { Interlocked.Exchange(ref _rendering, 0); }
     }
 
@@ -89,7 +89,7 @@ public partial class PageViewModel : ObservableObject
             });
             Thumbnail = bmp;
         }
-        catch { /* ignore */ }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Page {Index} thumbnail failed: {ex.Message}"); }
         finally { Interlocked.Exchange(ref _thumbRendering, 0); }
     }
 

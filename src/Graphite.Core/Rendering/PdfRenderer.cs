@@ -109,6 +109,24 @@ public sealed class PdfRenderer
     private static void InvertBgra(byte[] buf)
     {
         var lut = InvertLut;
+        // A full-page buffer at high zoom is tens of MB — partition the LUT pass across
+        // cores once it's big enough to matter (boundaries stay 4-byte aligned for BGRA).
+        if (buf.Length >= 4 * 1024 * 1024)
+        {
+            int chunk = ((buf.Length / Environment.ProcessorCount) + 3) & ~3;
+            Parallel.For(0, (buf.Length + chunk - 1) / chunk, c =>
+            {
+                int start = c * chunk;
+                int end = Math.Min(buf.Length, start + chunk);
+                for (int i = start; i + 3 < end; i += 4)
+                {
+                    buf[i] = lut[buf[i]];
+                    buf[i + 1] = lut[buf[i + 1]];
+                    buf[i + 2] = lut[buf[i + 2]];
+                }
+            });
+            return;
+        }
         for (int i = 0; i + 3 < buf.Length; i += 4)
         {
             // BGRA, premultiplied; pages are rendered opaque so A == 255.

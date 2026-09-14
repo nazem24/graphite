@@ -57,7 +57,9 @@ public partial class AnnotationViewModel : ObservableObject
         set
         {
             if (Model.Contents == value) return;
-            Doc.PushUndo();
+            // Typing fires this per keystroke — coalesce so one editing burst is one
+            // undo step instead of flooding the undo history with per-character states.
+            Doc.PushUndoCoalesced($"contents:{Model.Id}");
             Model.Contents = value;
             Model.Modified = DateTime.Now;
             OnPropertyChanged();

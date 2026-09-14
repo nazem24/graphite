@@ -124,7 +124,8 @@ public static class PowerPointExporter
         {
             ct.ThrowIfCancellationRequested();
             byte[] png = renderer.RenderEncoded(i, dpi / 72.0);
-            var imgEntry = zip.CreateEntry($"ppt/media/image{i + 1}.png", CompressionLevel.Fastest);
+            // PNG data is already compressed — zip recompression just burns CPU.
+            var imgEntry = zip.CreateEntry($"ppt/media/image{i + 1}.png", CompressionLevel.NoCompression);
             using (var s = imgEntry.Open()) s.Write(png);
 
             var (w, h) = renderer.PageSizes[i];

@@ -231,6 +231,12 @@ public static class AnnotationCodec
             }
         }
 
+        // FreeText /DA strings reference font resource names (/Helv etc.) — those names
+        // must resolve to real font dictionaries or strict viewers can't build an
+        // appearance for the text boxes.
+        if (annotations.Any(a => a.Kind == AnnotationKind.FreeText))
+            EnsureDefaultFontResources(doc);
+
         using var ms = new MemoryStream();
         doc.Save(ms, closeStream: false);
         return ms.ToArray();
@@ -378,6 +384,57 @@ public static class AnnotationCodec
 
     // ---------------------------------------------------------------- helpers
 
+    /// <summary>Register the base-14 Helvetica faces under the resource names our
+    /// FreeText /DA strings use (/Helv, /HeBo, /HeOb, /HeBO) in the document's
+    /// AcroForm default resources, so every viewer can resolve them.</summary>
+    private static void EnsureDefaultFontResources(PdfDocument doc)
+    {
+        var catalog = doc.Internals.Catalog;
+
+        var acroForm = catalog.Elements.GetDictionary("/AcroForm");
+        if (acroForm == null)
+        {
+            acroForm = new PdfDictionary(doc);
+            acroForm.Elements["/Fields"] = new PdfArray(doc);
+            doc.Internals.AddObject(acroForm);
+            catalog.Elements["/AcroForm"] = acroForm.Reference;
+        }
+
+        var dr = acroForm.Elements.GetDictionary("/DR");
+        if (dr == null)
+        {
+            dr = new PdfDictionary(doc);
+            doc.Internals.AddObject(dr);
+            acroForm.Elements["/DR"] = dr.Reference;
+        }
+
+        var fonts = dr.Elements.GetDictionary("/Font");
+        if (fonts == null)
+        {
+            fonts = new PdfDictionary(doc);
+            doc.Internals.AddObject(fonts);
+            dr.Elements["/Font"] = fonts.Reference;
+        }
+
+        foreach (var (name, baseFont) in new[]
+        {
+            ("/Helv", "/Helvetica"),
+            ("/HeBo", "/Helvetica-Bold"),
+            ("/HeOb", "/Helvetica-Oblique"),
+            ("/HeBO", "/Helvetica-BoldOblique"),
+        })
+        {
+            if (fonts.Elements.ContainsKey(name)) continue;
+            var font = new PdfDictionary(doc);
+            font.Elements.SetName("/Type", "/Font");
+            font.Elements.SetName("/Subtype", "/Type1");
+            font.Elements.SetName("/BaseFont", baseFont);
+            font.Elements.SetName("/Encoding", "/WinAnsiEncoding");
+            doc.Internals.AddObject(font);
+            fonts.Elements[name] = font.Reference;
+        }
+    }
+
     private static PdfArray GetOrCreateAnnots(PdfDocument doc, PdfPage page)
     {
         if (page.Elements.GetArray("/Annots") is { } existing) return existing;
@@ -409,7 +466,15 @@ public static class AnnotationCodec
         _ => 0,
     };
 
-    private static string FormatDate(DateTime dt) => $"D:{dt:yyyyMMddHHmmss}";
+    /// <summary>PDF date with local UTC offset (D:yyyyMMddHHmmss+02'00'), so the
+    /// timestamp is unambiguous to other viewers.</summary>
+    private static string FormatDate(DateTime dt)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(dt);
+        char sign = offset < TimeSpan.Zero ? '-' : '+';
+        var abs = offset.Duration();
+        return $"D:{dt:yyyyMMddHHmmss}{sign}{abs.Hours:00}'{abs.Minutes:00}'";
+    }
 
     private static DateTime ParseDate(string? s)
     {

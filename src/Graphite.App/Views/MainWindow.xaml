@@ -7,7 +7,9 @@
         xmlns:core="clr-namespace:Graphite.Core;assembly=Graphite.Core"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Graphite" Width="1440" Height="900" MinWidth="960" MinHeight="560"
+        WindowStyle="None"
         AllowDrop="True" Drop="Window_Drop" PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown"
         Background="{DynamicResource App.BackgroundBrush}"
         TextElement.Foreground="{DynamicResource App.TextBrush}"
         FontFamily="Segoe UI Variable, Segoe UI" FontSize="12.5">
@@ -233,6 +235,15 @@
                                             <Grid>
                                                 <Image Source="{Binding Image}" Stretch="Fill"/>
                                                 <ctrl:AnnotationLayer/>
+                                                <!-- Inline text editing host: the Text tool drops an empty
+                                                     text box and typing happens right here on the page. -->
+                                                <Canvas ClipToBounds="True">
+                                                    <TextBox x:Name="InlineEditor" Visibility="Collapsed"
+                                                             Loaded="InlineEditor_Loaded" DataContextChanged="InlineEditor_DataContextChanged"
+                                                             LostFocus="InlineEditor_LostFocus" PreviewKeyDown="InlineEditor_KeyDown"
+                                                             Background="Transparent" BorderThickness="0" Padding="0"
+                                                             AcceptsReturn="False" VerticalContentAlignment="Top"/>
+                                                </Canvas>
                                             </Grid>
                                         </Border>
                                     </Grid>

@@ -35,17 +35,22 @@ public static class OfficeToPdf
         return Activator.CreateInstance(type)!;
     }
 
+    /// <summary>msoAutomationSecurityForceDisable — never run macros from a document
+    /// the user merely wants to view as PDF.</summary>
+    private const int AutomationSecurityForceDisable = 3;
+
     private static void ConvertWord(string input, string output)
     {
         dynamic app = CreateApp("Word.Application");
         try
         {
             app.Visible = false;
+            try { app.AutomationSecurity = AutomationSecurityForceDisable; } catch { /* older Word */ }
             dynamic doc = app.Documents.Open(input, ReadOnly: true);
             try { doc.ExportAsFixedFormat(output, 17 /* wdExportFormatPDF */); }
             finally { doc.Close(false); }
         }
-        finally { app.Quit(); Release(app); }
+        finally { Quit(app); Release(app); }
     }
 
     private static void ConvertExcel(string input, string output)
@@ -55,11 +60,12 @@ public static class OfficeToPdf
         {
             app.Visible = false;
             app.DisplayAlerts = false;
+            try { app.AutomationSecurity = AutomationSecurityForceDisable; } catch { /* older Excel */ }
             dynamic wb = app.Workbooks.Open(input, ReadOnly: true);
             try { wb.ExportAsFixedFormat(0 /* xlTypePDF */, output); }
             finally { wb.Close(false); }
         }
-        finally { app.Quit(); Release(app); }
+        finally { Quit(app); Release(app); }
     }
 
     private static void ConvertPowerPoint(string input, string output)
@@ -71,11 +77,17 @@ public static class OfficeToPdf
             try { pres.ExportAsFixedFormat(output, 2 /* ppFixedFormatTypePDF */); }
             finally { pres.Close(); }
         }
-        finally { app.Quit(); Release(app); }
+        finally { Quit(app); Release(app); }
+    }
+
+    private static void Quit(dynamic app)
+    {
+        try { app.Quit(); } catch { /* already gone — Release below still runs */ }
     }
 
     private static void Release(object com)
     {
-        try { Marshal.FinalReleaseComObject(com); } catch { /* best effort */ }
+        try { Marshal.FinalReleaseComObject(com); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"COM release failed: {ex.Message}"); }
     }
 }

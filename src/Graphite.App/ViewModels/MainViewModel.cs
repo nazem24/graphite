@@ -96,9 +96,15 @@ public partial class MainViewModel : ObservableObject
                 if (OfficeToPdf.CanConvert(path))
                 {
                     string temp = Path.Combine(Path.GetTempPath(), $"graphite-{Guid.NewGuid():N}.pdf");
-                    await Task.Run(() => OfficeToPdf.Convert(path, temp));
-                    doc = await DocumentViewModel.FromBytesAsync(await File.ReadAllBytesAsync(temp), null);
-                    try { File.Delete(temp); } catch { }
+                    try
+                    {
+                        await Task.Run(() => OfficeToPdf.Convert(path, temp));
+                        doc = await DocumentViewModel.FromBytesAsync(await File.ReadAllBytesAsync(temp), null);
+                    }
+                    finally
+                    {
+                        try { File.Delete(temp); } catch { /* best effort */ }
+                    }
                 }
                 else
                 {
@@ -107,12 +113,18 @@ public partial class MainViewModel : ObservableObject
                     // Password-protected? Ask, decrypt in memory, and continue normally.
                     if (Graphite.Core.Pdf.PdfSecurity.IsPasswordProtected(bytes))
                     {
-                        byte[]? decrypted = PromptAndDecrypt(bytes, Path.GetFileName(path));
+                        var decrypted = PromptAndDecrypt(bytes, Path.GetFileName(path));
                         if (decrypted == null) continue; // user cancelled
-                        bytes = decrypted;
+                        bytes = decrypted.Value.Bytes;
+                        doc = await DocumentViewModel.FromBytesAsync(bytes, path);
+                        // Remember the password so saving re-encrypts instead of
+                        // silently stripping the file's protection.
+                        doc.SourcePassword = decrypted.Value.Password;
                     }
-
-                    doc = await DocumentViewModel.FromBytesAsync(bytes, path);
+                    else
+                    {
+                        doc = await DocumentViewModel.FromBytesAsync(bytes, path);
+                    }
                     ThemeService.AddRecentFile(path);
                     RecentFiles.Remove(path);
                     RecentFiles.Insert(0, path);
@@ -125,7 +137,7 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private static byte[]? PromptAndDecrypt(byte[] bytes, string fileName)
+    private static (byte[] Bytes, string Password)? PromptAndDecrypt(byte[] bytes, string fileName)
     {
         string? error = null;
         while (true)
@@ -133,13 +145,13 @@ public partial class MainViewModel : ObservableObject
             string? password = PasswordDialog.Show(Owner!, "Password required",
                 $"“{fileName}” is password-protected. Enter the password to open it:", error);
             if (password == null) return null;
-            try { return Graphite.Core.Pdf.PdfSecurity.Decrypt(bytes, password); }
+            try { return (Graphite.Core.Pdf.PdfSecurity.Decrypt(bytes, password), password); }
             catch { error = "That password didn't work — try again."; }
         }
     }
 
     [RelayCommand]
-    private void CloseDocument(DocumentViewModel? doc)
+    private async Task CloseDocument(DocumentViewModel? doc)
     {
         if (doc == null) return;
         if (doc.IsDirty)
@@ -148,7 +160,14 @@ public partial class MainViewModel : ObservableObject
                 $"Save changes to \"{doc.Title}\" before closing?",
                 "Graphite", DialogButtons.YesNoCancel, DialogIcon.Warning);
             if (answer == MessageBoxResult.Cancel) return;
-            if (answer == MessageBoxResult.Yes) { _ = SaveDocAsync(doc); }
+            if (answer == MessageBoxResult.Yes)
+            {
+                // Await the save BEFORE dropping the document — the old fire-and-forget
+                // call disposed the index out from under a still-running save, and a
+                // failed save must abort the close.
+                await SaveDocAsync(doc);
+                if (doc.IsDirty) return;
+            }
         }
         Documents.Remove(doc);
         doc.Index.Dispose();
@@ -523,6 +542,10 @@ public partial class MainViewModel : ObservableObject
 
     // ------------------------------------------------------------- command palette
 
+    /// <summary>Raised by the command palette; the window performs the actual paste
+    /// (clipboard access and PendingImage creation live in the view layer).</summary>
+    public event Action? PasteImageRequested;
+
     [RelayCommand]
     public void OpenPalette()
     {
@@ -601,7 +624,8 @@ public partial class MainViewModel : ObservableObject
                 new("Export to Excel (.xlsx)…", null, () => _ = ExportExcel()),
                 new("Export to PowerPoint (.pptx)…", null, () => _ = ExportPowerPoint()),
                 new("Export pages as images…", null, () => _ = ExportImages()),
-                new("Close document", "Ctrl+W", () => CloseDocument(doc)),
+                new("Paste image from clipboard", "Ctrl+V", () => PasteImageRequested?.Invoke()),
+                new("Close document", "Ctrl+W", () => _ = CloseDocument(doc)),
             });
         }
 

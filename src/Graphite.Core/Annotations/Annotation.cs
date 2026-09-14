@@ -102,14 +102,19 @@ public sealed class Annotation
         return c;
     }
 
+    /// <summary>Parse "#RRGGBB" (or "#AARRGGBB") into 0..1 components. Malformed input
+    /// falls back to black rather than throwing — this runs on the save path, where one
+    /// bad color string must not abort writing the whole document.</summary>
     public static (double R, double G, double B) ParseColor(string hex)
     {
-        hex = hex.TrimStart('#');
+        hex = (hex ?? "").TrimStart('#');
         if (hex.Length == 8) hex = hex[2..]; // strip alpha
-        return (
-            Convert.ToInt32(hex[0..2], 16) / 255.0,
-            Convert.ToInt32(hex[2..4], 16) / 255.0,
-            Convert.ToInt32(hex[4..6], 16) / 255.0);
+        if (hex.Length == 6 &&
+            int.TryParse(hex[0..2], System.Globalization.NumberStyles.HexNumber, null, out int r) &&
+            int.TryParse(hex[2..4], System.Globalization.NumberStyles.HexNumber, null, out int g) &&
+            int.TryParse(hex[4..6], System.Globalization.NumberStyles.HexNumber, null, out int b))
+            return (r / 255.0, g / 255.0, b / 255.0);
+        return (0, 0, 0);
     }
 
     public static string ToHex(double r, double g, double b) =>

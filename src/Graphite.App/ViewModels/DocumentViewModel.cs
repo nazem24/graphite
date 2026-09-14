@@ -150,6 +150,25 @@ public partial class DocumentViewModel : ObservableObject
         _redo.Clear();
     }
 
+    // Coalescing: continuous edits (typing in a comment box) should produce ONE undo
+    // step per burst, not one per keystroke.
+    private (string Key, DateTime When)? _lastCoalescedPush;
+
+    /// <summary>Push an undo snapshot, but skip if the same <paramref name="key"/> was
+    /// pushed within <paramref name="windowSeconds"/>. The first edit of a burst always
+    /// captures the pre-edit state; later edits in the burst ride on that snapshot.</summary>
+    public void PushUndoCoalesced(string key, double windowSeconds = 1.5)
+    {
+        if (_lastCoalescedPush is { } last && last.Key == key &&
+            (DateTime.Now - last.When).TotalSeconds < windowSeconds)
+        {
+            _lastCoalescedPush = (key, DateTime.Now);
+            return;
+        }
+        PushUndo();
+        _lastCoalescedPush = (key, DateTime.Now);
+    }
+
     public async Task UndoAsync()
     {
         if (_undo.Count == 0) return;
@@ -214,13 +233,16 @@ public partial class DocumentViewModel : ObservableObject
     public string MatchStatus => SearchResults.Count == 0 ? "No results"
         : $"{CurrentMatchIndex + 1} of {SearchResults.Count}";
 
+    /// <summary>Font size for quick inline text (Text tool click → type immediately).</summary>
+    public const double QuickTextSize = 8;
+
     public event Action<int>? ScrollToPageRequested;
     public event Action? PagesReset;
     public event Action? AnnotationsVisualChanged;
     public event Action? ZoomChangedEvent;
     public event Action<int, RectD>? EditTextRequested;
     public event Action<int, RectD>? PlaceImageRequested;
-    public event Action<int, RectD>? FreeTextRequested;
+    public event Action<AnnotationViewModel>? InlineEditRequested;
     public event Action<AnnotationViewModel>? EditFreeTextRequested;
 
     public bool IsContinuous => Layout == PageLayout.Continuous;
@@ -425,7 +447,6 @@ public partial class DocumentViewModel : ObservableObject
     {
         IsBusy = true;
         BusyText = busyMessage;
-        PushUndo();
         try
         {
             var models = Annotations.Select(a => a.Model.Clone()).ToList();
@@ -440,6 +461,10 @@ public partial class DocumentViewModel : ObservableObject
                 Index.Reload(result);
                 return (result, AnnotationCodec.Read(result), Index.GetOutline());
             });
+
+            // Push the undo snapshot only AFTER the operation succeeded — pushing before
+            // left a no-op entry on the stack whenever the operation threw.
+            PushUndo();
 
             _bytes = newBytes;
 
@@ -478,6 +503,10 @@ public partial class DocumentViewModel : ObservableObject
         return result;
     }
 
+    /// <summary>Password of the encrypted file this document was opened from, if any.
+    /// Saving re-encrypts with the same password so protection is never silently dropped.</summary>
+    public string? SourcePassword { get; set; }
+
     public async Task SaveAsync(string? path = null)
     {
         path ??= FilePath ?? throw new InvalidOperationException("No file path — use Save As.");
@@ -486,7 +515,22 @@ public partial class DocumentViewModel : ObservableObject
         try
         {
             byte[] output = await Task.Run(GetBytesWithAnnotations);
-            await File.WriteAllBytesAsync(path, output);
+            // The file on disk keeps its password protection; the in-memory working
+            // copy stays decrypted so the renderer/index/operations keep working.
+            byte[] fileBytes = SourcePassword is { } pw
+                ? await Task.Run(() => Graphite.Core.Pdf.PdfSecurity.Encrypt(output, pw))
+                : output;
+
+            // Atomic write: replace the original only once the new file is fully on disk,
+            // so a crash mid-save can't leave a truncated PDF behind.
+            string tmp = path + ".graphite-tmp";
+            await File.WriteAllBytesAsync(tmp, fileBytes);
+            try { File.Move(tmp, path, overwrite: true); }
+            catch
+            {
+                try { File.Delete(tmp); } catch { /* best effort */ }
+                throw;
+            }
             _bytes = output;
 
             // Placed images are now permanent page content — re-render so they stay
@@ -538,13 +582,47 @@ public partial class DocumentViewModel : ObservableObject
 
     internal void RequestEditText(int pageIndex, RectD area) => EditTextRequested?.Invoke(pageIndex, area);
     internal void RequestPlaceImage(int pageIndex, RectD area) => PlaceImageRequested?.Invoke(pageIndex, area);
-    internal void RequestFreeText(int pageIndex, RectD area) => FreeTextRequested?.Invoke(pageIndex, area);
     internal void RequestEditFreeText(AnnotationViewModel vm) => EditFreeTextRequested?.Invoke(vm);
+
+    /// <summary>Text tool: create an empty text box and immediately edit it inline on
+    /// the page (no dialog). Double-clicking the text later opens the full dialog.</summary>
+    public void StartInlineFreeText(int pageIndex, RectD area)
+    {
+        var model = new Annotation
+        {
+            Kind = AnnotationKind.FreeText,
+            PageIndex = pageIndex,
+            Bounds = area,
+            Contents = "",
+            ColorHex = ActiveColorHex,
+            FontSize = QuickTextSize,
+        };
+        AddAnnotation(model);
+        var vm = Annotations.First(a => ReferenceEquals(a.Model, model));
+        InlineEditRequested?.Invoke(vm);
+    }
+
+    /// <summary>Remove an annotation without an undo snapshot or dirty flag — used to
+    /// back out of an inline text edit that was cancelled or left empty.</summary>
+    public void DiscardAnnotation(AnnotationViewModel vm)
+    {
+        Annotations.Remove(vm);
+        if (SelectedAnnotation == vm) SelectedAnnotation = null;
+        AnnotationsVisualChanged?.Invoke();
+    }
 
     // ------------------------------------------------------------- search
 
+    private CancellationTokenSource? _searchCts;
+
     public async Task RunSearchAsync()
     {
+        // Cancel any search still running — overlapping searches race their results
+        // into SearchResults otherwise.
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        var cts = _searchCts = new CancellationTokenSource();
+
         string query = SearchQuery;
         SearchResults.Clear();
         CurrentMatchIndex = -1;
@@ -556,7 +634,7 @@ public partial class DocumentViewModel : ObservableObject
         BusyText = "Searching…";
         try
         {
-            var results = await Task.Run(() => Index.Search(query));
+            var results = await Task.Run(() => Index.Search(query, cts.Token), cts.Token);
             foreach (var r in results) SearchResults.Add(r);
             foreach (var g in results.GroupBy(r => r.PageIndex))
                 if (g.Key < Pages.Count)
@@ -564,6 +642,7 @@ public partial class DocumentViewModel : ObservableObject
             if (SearchResults.Count > 0) GoToMatch(0);
             OnPropertyChanged(nameof(MatchStatus));
         }
+        catch (OperationCanceledException) { /* superseded by a newer search */ }
         finally { IsBusy = false; }
     }
 
@@ -611,14 +690,17 @@ public partial class DocumentViewModel : ObservableObject
         int recognized = 0;
         try
         {
-            byte[] working = _bytes;
+            // Progress<T> marshals to the UI thread (captured SynchronizationContext),
+            // so BusyText is never set from a background thread.
+            var busy = new Progress<string>(t => BusyText = t);
+            var textLayers = new Dictionary<int, IReadOnlyList<WordBox>>();
             await Task.Run(() =>
             {
                 using var ocr = new OcrEngine();
                 for (int p = 0; p < Pages.Count; p++)
                 {
                     if (Index.HasText(p)) continue;
-                    BusyText = $"OCR — page {p + 1} of {Pages.Count}…";
+                    ((IProgress<string>)busy).Report($"OCR — page {p + 1} of {Pages.Count}…");
 
                     byte[] png = Renderer.RenderEncoded(p, 300.0 / 72.0);
                     var result = ocr.RecognizeImage(png);
@@ -627,14 +709,17 @@ public partial class DocumentViewModel : ObservableObject
                     if (words.Count == 0) continue;
 
                     Index.SetOcrWords(p, words, w, h);
-                    working = SearchablePdfWriter.AddTextLayer(working, p, words);
+                    textLayers[p] = words;
                     recognized++;
                 }
             });
 
             if (recognized > 0)
             {
-                _bytes = working;
+                // Bake all recognized pages' text layers in a single open/save pass —
+                // per-page baking re-serialized the whole document once per page (O(n²)).
+                BusyText = "Writing text layer…";
+                _bytes = await Task.Run(() => SearchablePdfWriter.AddTextLayers(_bytes, textLayers));
                 IsDirty = true;
             }
             return recognized;

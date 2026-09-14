@@ -36,6 +36,18 @@ public sealed class AnnotationLayer : FrameworkElement
     private AnnotationViewModel? _movingAnnotation;
     private AnnotationViewModel? _resizingAnnotation;
 
+    // The undo snapshot for a drag gesture (erase / move / resize) is pushed lazily on
+    // the first actual change — a click that starts a gesture but never modifies
+    // anything must not leave a no-op entry on the undo stack.
+    private bool _gestureUndoPushed;
+
+    private void EnsureGestureUndo()
+    {
+        if (_gestureUndoPushed) return;
+        _gestureUndoPushed = true;
+        _doc?.PushUndo();
+    }
+
     public AnnotationLayer()
     {
         DataContextChanged += OnDataContextChanged;
@@ -131,7 +143,7 @@ public sealed class AnnotationLayer : FrameworkElement
 
         if (tool == ToolKind.Eraser)
         {
-            _doc.PushUndo();
+            _gestureUndoPushed = false;
             _erasing = true;
             CaptureMouse();
             EraseAt(_start);
@@ -150,7 +162,7 @@ public sealed class AnnotationLayer : FrameworkElement
                 int corner = HitCorner(selImg.Rect, posPx, s);
                 if (corner >= 0)
                 {
-                    _doc.PushUndo();
+                    _gestureUndoPushed = false;
                     _resizingImage = selImg;
                     _pendingCorner = corner;
                     CaptureMouse();
@@ -166,7 +178,7 @@ public sealed class AnnotationLayer : FrameworkElement
                 int corner = HitCorner(selAnn.Model.Bounds.Inflate(3), posPx, s);
                 if (corner >= 0)
                 {
-                    _doc.PushUndo();
+                    _gestureUndoPushed = false;
                     _resizingAnnotation = selAnn;
                     _pendingCorner = corner;
                     CaptureMouse();
@@ -182,7 +194,7 @@ public sealed class AnnotationLayer : FrameworkElement
             {
                 _doc.SelectedImage = hitImg;
                 _doc.SelectedAnnotation = null;
-                _doc.PushUndo();
+                _gestureUndoPushed = false;
                 _movingImage = hitImg;
                 _moveGrab = new Point(_start.X - hitImg.Rect.X, _start.Y - hitImg.Rect.Y);
                 CaptureMouse();
@@ -208,7 +220,7 @@ public sealed class AnnotationLayer : FrameworkElement
 
                 if (IsBoundsMovable(hit.Model.Kind))
                 {
-                    _doc.PushUndo();
+                    _gestureUndoPushed = false;
                     _movingAnnotation = hit;
                     _moveGrab = new Point(_start.X - hit.Model.Bounds.X, _start.Y - hit.Model.Bounds.Y);
                     CaptureMouse();
@@ -279,14 +291,19 @@ public sealed class AnnotationLayer : FrameworkElement
                 _ => (r.Right, r.Top),
             };
             var nr = RectD.FromCorners(ax, ay, p.X, p.Y);
-            if (nr.Width > 8 && nr.Height > 8) ri.Rect = nr;
-            _doc.NotifyAnnotationChanged();
+            if (nr.Width > 8 && nr.Height > 8)
+            {
+                EnsureGestureUndo();
+                ri.Rect = nr;
+                _doc.NotifyAnnotationChanged();
+            }
             return;
         }
 
         if (_movingImage is { } mi)
         {
             var p = ToPage(e.GetPosition(this));
+            EnsureGestureUndo();
             mi.Rect = new RectD(p.X - _moveGrab.X, p.Y - _moveGrab.Y, mi.Rect.Width, mi.Rect.Height);
             _doc.NotifyAnnotationChanged();
             return;
@@ -305,8 +322,12 @@ public sealed class AnnotationLayer : FrameworkElement
                 _ => (r.Right, r.Top),
             };
             var nr = RectD.FromCorners(ax, ay, p.X, p.Y);
-            if (nr.Width > 12 && nr.Height > 12) ra.Model.Bounds = nr;
-            _doc.NotifyAnnotationChanged();
+            if (nr.Width > 12 && nr.Height > 12)
+            {
+                EnsureGestureUndo();
+                ra.Model.Bounds = nr;
+                _doc.NotifyAnnotationChanged();
+            }
             return;
         }
 
@@ -314,6 +335,7 @@ public sealed class AnnotationLayer : FrameworkElement
         {
             var p = ToPage(e.GetPosition(this));
             var b = ma.Model.Bounds;
+            EnsureGestureUndo();
             ma.Model.Bounds = new RectD(p.X - _moveGrab.X, p.Y - _moveGrab.Y, b.Width, b.Height);
             _doc.NotifyAnnotationChanged();
             return;
@@ -402,9 +424,11 @@ public sealed class AnnotationLayer : FrameworkElement
                 break;
 
             case ToolKind.Text:
-                // Click gives a sensible default box; a drag defines it exactly.
-                _doc.RequestFreeText(_page.Index,
-                    moved ? rect : new RectD(_start.X, _start.Y, 180, 44));
+                // Click gives a sensible default box; a drag defines it exactly. Typing
+                // starts immediately, inline on the page — no dialog. Double-click the
+                // text (with the Select tool) to open the full formatting popup.
+                _doc.StartInlineFreeText(_page.Index,
+                    moved ? rect : new RectD(_start.X, _start.Y, 180, 14));
                 break;
 
             case ToolKind.Arrow when moved:
@@ -518,6 +542,7 @@ public sealed class AnnotationLayer : FrameworkElement
         if (_doc == null || _page == null) return;
         double r2 = EraserRadius * EraserRadius;
         var toRemove = new List<AnnotationViewModel>();
+        var toUpdate = new List<(Annotation Model, List<List<PointD>> Strokes, RectD Bounds)>();
 
         foreach (var vm in _doc.Annotations.Where(a =>
                      a.PageIndex == _page.Index &&
@@ -557,20 +582,25 @@ public sealed class AnnotationLayer : FrameworkElement
                 continue;
             }
 
-            model.Strokes = newStrokes;
             var allPts = newStrokes.SelectMany(s => s).ToList();
             double minX = allPts.Min(p => p.X), minY = allPts.Min(p => p.Y);
             double maxX = allPts.Max(p => p.X), maxY = allPts.Max(p => p.Y);
-            model.Bounds = new RectD(minX, minY, maxX - minX, maxY - minY).Inflate(2);
+            toUpdate.Add((model, newStrokes, new RectD(minX, minY, maxX - minX, maxY - minY).Inflate(2)));
+        }
+
+        // Dragging the eraser over empty space must NOT mark the document dirty.
+        if (toRemove.Count == 0 && toUpdate.Count == 0) return;
+
+        // Snapshot BEFORE the first mutation of this drag (undo pushes are idempotent
+        // for the rest of the gesture).
+        EnsureGestureUndo();
+
+        foreach (var (model, strokes, bounds) in toUpdate)
+        {
+            model.Strokes = strokes;
+            model.Bounds = bounds;
             model.Modified = DateTime.Now;
         }
-
-        if (toRemove.Count == 0)
-        {
-            _doc.NotifyAnnotationChanged();
-            return;
-        }
-
         foreach (var vm in toRemove)
         {
             if (_doc.SelectedAnnotation == vm) _doc.SelectedAnnotation = null;

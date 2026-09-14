@@ -2,16 +2,21 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Shell;
 
 namespace Graphite.App.Interop;
 
 /// <summary>
-/// Applies dark/light title bars and a flat, theme-matched window background.
-/// (Previously used the Windows 11 Mica system backdrop for a "smoky glass" look, but
-/// Mica tints itself from the desktop wallpaper via the system theme — independent of
-/// this app's own light/dark toggle — which made the glass panels randomly low-contrast
-/// and hard to read. A flat background keeps colors fully controlled by our own theme
-/// resources, which are already tuned for contrast in both themes.)
+/// Applies dark/light title bars and the Windows 11 Mica backdrop. Mica is enabled
+/// for the main window (the one with custom WindowChrome); dialogs keep a flat,
+/// theme-matched background. On Windows 10 (no Mica) everything falls back to the
+/// flat theme background.
+///
+/// Contrast note: Mica tints itself from the desktop wallpaper via the SYSTEM theme,
+/// which can diverge from the app's own light/dark toggle. To keep text readable
+/// regardless, the app's surfaces (viewer card, glass panels, cards) keep their own
+/// translucent theme brushes on top of Mica — Mica only shows through the margins
+/// and between panels, where no text sits directly on it.
 /// </summary>
 public static class Backdrop
 {
@@ -21,6 +26,7 @@ public static class Backdrop
     private const int DWMWA_TEXT_COLOR = 36;
     private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
     private const int BACKDROP_NONE = 1;
+    private const int BACKDROP_MICA = 2; // DWMSBT_MAINWINDOW
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
@@ -38,8 +44,29 @@ public static class Backdrop
         int dark = darkMode ? 1 : 0;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
 
-        // Paint the native title bar the exact same solid color as the app background,
-        // instead of letting the Mica tint show through as a lighter band up top.
+        // Mica only for the main window (custom WindowChrome, glass frame extended
+        // into the client area). Dialogs don't have the chrome recipe Mica needs and
+        // keep the flat theme background.
+        bool useMica = IsMicaSupported && WindowChrome.GetWindowChrome(window) != null;
+
+        if (useMica)
+        {
+            int backdrop = BACKDROP_MICA;
+            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
+
+            // Mica is painted by DWM behind the window — WPF must not cover it with an
+            // opaque background, or the effect is invisible.
+            if (PresentationSource.FromVisual(window) is HwndSource source)
+                source.CompositionTarget.BackgroundColor = Colors.Transparent;
+            window.Background = Brushes.Transparent;
+            return;
+        }
+
+        // Flat fallback (Windows 10, or dialogs): solid theme-matched background.
+        int none = BACKDROP_NONE;
+        if (IsMicaSupported)
+            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref none, sizeof(int));
+
         var bg = darkMode ? Color.FromRgb(0x1F, 0x1F, 0x21) : Color.FromRgb(0xFF, 0xFF, 0xFF);
         var text = darkMode ? Color.FromRgb(0xEC, 0xEC, 0xE8) : Color.FromRgb(0x1B, 0x1B, 0x1A);
         uint captionColor = ToColorRef(bg);
@@ -47,16 +74,6 @@ public static class Backdrop
         DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref captionColor, sizeof(uint));
         DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, ref textColor, sizeof(uint));
         DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref captionColor, sizeof(uint));
-
-        // Always use a flat, opaque background painted from our own theme resources.
-        // Mica is intentionally not used: it derives its color from the desktop wallpaper
-        // and system theme rather than from this app's light/dark setting, which was
-        // making the glass panels' text unpredictably low-contrast in both themes.
-        if (IsMicaSupported)
-        {
-            int none = BACKDROP_NONE;
-            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref none, sizeof(int));
-        }
 
         if (PresentationSource.FromVisual(window) is HwndSource opaqueSource)
             opaqueSource.CompositionTarget.BackgroundColor = bg;

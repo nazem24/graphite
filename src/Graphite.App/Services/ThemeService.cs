@@ -32,7 +32,11 @@ public static class ThemeService
             if (File.Exists(SettingsPath))
                 _settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(SettingsPath)) ?? new Settings();
         }
-        catch { _settings = new Settings(); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Settings load failed, using defaults: {ex.Message}");
+            _settings = new Settings();
+        }
         ApplyTheme(_settings.DarkTheme);
     }
 
@@ -40,7 +44,14 @@ public static class ThemeService
     {
         _settings.DarkTheme = dark;
         var uri = new Uri($"Themes/Colors.{(dark ? "Dark" : "Light")}.xaml", UriKind.Relative);
-        Application.Current.Resources.MergedDictionaries[0] = new ResourceDictionary { Source = uri };
+        // Find the colors dictionary by its Source instead of assuming index 0 —
+        // the merged-dictionary order is an implementation detail of App.xaml.
+        var merged = Application.Current.Resources.MergedDictionaries;
+        int at = -1;
+        for (int i = 0; i < merged.Count; i++)
+            if (merged[i].Source?.OriginalString.Contains("Colors.") == true) { at = i; break; }
+        if (at >= 0) merged[at] = new ResourceDictionary { Source = uri };
+        else merged.Insert(0, new ResourceDictionary { Source = uri });
 
         ApplySystemAccent(dark);
 
@@ -143,6 +154,6 @@ public static class ThemeService
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
             File.WriteAllText(SettingsPath, JsonSerializer.Serialize(_settings));
         }
-        catch { /* settings are best-effort */ }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Settings save failed: {ex.Message}"); }
     }
 }

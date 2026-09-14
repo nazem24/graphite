@@ -8,9 +8,11 @@ translucent toolbars and pill controls over the Windows 11 Mica backdrop.
 
 ## Features
 
-**Viewing** — PDFium-based rendering (fast and high-fidelity), smooth zoom (buttons, Ctrl+wheel,
-fit-width), continuous, single-page and two-page spread modes, page thumbnails, bookmarks/outline
-navigation, full-text search with per-page highlights, and multi-tab support for several open files.
+**Viewing** — PDFium-based rendering (fast and high-fidelity), smooth eased scrolling,
+smooth zoom (buttons, Ctrl+wheel, fit-width), continuous, single-page and two-page spread
+modes, page thumbnails, bookmarks/outline navigation, full-text search with per-page
+highlights, and multi-tab support for several open files (each tab remembers its scroll
+position).
 
 **Reading** — fullscreen reading mode (F11, Esc to leave), inverted page colors for comfortable
 dark reading (toggle in the floating page bar), and reading history: jump around via bookmarks,
@@ -32,16 +34,19 @@ how most PDF editors work under the hood since PDF has no reflowable text model)
 Place Image tool for inserting images onto a page.
 
 **Annotation & markup** — highlight, underline and strikethrough that snap to words, freehand ink,
-rectangles, ellipses, arrows, free text (with size control), sticky notes, and a signature tool:
-draw your signature once and stamp it onto any page (it's saved between sessions). Every
+rectangles, ellipses, arrows, free text (click and start typing right on the page; double-click
+the text later for font, size and color), sticky notes, and a signature tool:
+draw your signature once and stamp it onto any page (it's saved between sessions). Images can be
+placed from a file or pasted straight from the clipboard (Ctrl+V). Every
 annotation supports a comment and threaded replies. The Markup panel lists everything in the
 document for review; click a card to jump to it. Annotations are written as standard PDF
 annotations, so they open in any other viewer. Undo/redo (Ctrl+Z / Ctrl+Y) covers annotations
 and page operations alike.
 
-**Security & info** — password-protected PDFs open with a password prompt, and any document can
-be saved as an encrypted copy (128-bit, from the ⋯ menu). A properties dialog shows title,
-author, dates, producer, PDF version, page size and file size.
+**Security & info** — password-protected PDFs open with a password prompt (and stay
+protected when you save), and any document can be saved as an encrypted copy (AES-256,
+from the ⋯ menu). A properties dialog shows title, author, dates, producer, PDF version,
+page size and file size.
 
 **Conversion** — export to Word (.docx, reconstructed paragraphs), Excel (.xlsx, one sheet per page
 with inferred columns), PowerPoint (.pptx, one slide per page) and PNG/JPEG/WebP images.
@@ -70,6 +75,16 @@ dotnet run --project src/Graphite.App
 Or open `Graphite.sln` in Visual Studio and press F5. NuGet restores everything
 (PDFtoImage/PDFium, PdfSharp, PdfPig, DocumentFormat.OpenXml, ClosedXML, Tesseract,
 CommunityToolkit.Mvvm).
+
+### Tests
+
+```
+dotnet test src/Graphite.Tests
+```
+
+Unit tests cover the Core engine: page-range parsing, text layout reconstruction,
+annotation codec round-trips (through real PDFs), color/geometry helpers, search word
+mapping, and encryption round-trips. CI runs build + tests on every push and PR.
 
 ### Optional setup
 
@@ -100,6 +115,8 @@ Graphite.sln
     ├─ Services/         theme/settings, signature store, printing
     ├─ Views/            MainWindow + dialogs (input, edit-text, password, signature, properties)
     └─ Interop/          Mica backdrop + dark title bar (DWM)
+
+src/Graphite.Tests       ── xUnit tests for the Core engine
 ```
 
 Design decisions worth knowing:

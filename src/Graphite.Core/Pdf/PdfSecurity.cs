@@ -13,11 +13,31 @@ public static class PdfSecurity
         try
         {
             using var doc = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Import);
-            return false;
+            return false; // opens fine (including files with an empty user password)
         }
-        catch (PdfReaderException) { return true; }
+        catch (PdfReaderException)
+        {
+            // Could be encryption OR plain corruption — both fail to open. Only an
+            // encrypted file has an /Encrypt entry in its trailer, so check for that
+            // instead of prompting for a password that can never work.
+            return HasEncryptEntry(pdf);
+        }
         catch (NotSupportedException) { return true; }
         catch { return false; } // some other problem — let the normal open surface it
+    }
+
+    /// <summary>Scan for an "/Encrypt" trailer key ("/EncryptMetadata" doesn't count).</summary>
+    private static bool HasEncryptEntry(byte[] pdf)
+    {
+        ReadOnlySpan<byte> needle = "/Encrypt"u8;
+        for (int i = 0; i + needle.Length < pdf.Length; i++)
+        {
+            if (pdf[i] != (byte)'/') continue;
+            if (!pdf.AsSpan(i, needle.Length).SequenceEqual(needle)) continue;
+            byte next = pdf[i + needle.Length];
+            if (next != (byte)'M') return true; // not "/EncryptMetadata"
+        }
+        return false;
     }
 
     /// <summary>Open with a password and return the decrypted bytes.
@@ -31,13 +51,16 @@ public static class PdfSecurity
         return ms.ToArray();
     }
 
-    /// <summary>Return a copy encrypted with the given user password (128-bit).</summary>
+    /// <summary>Return a copy encrypted with the given user password (AES-256).
+    /// The owner password is set to the same value so the single password the user
+    /// knows keeps full control of the file in any tool (including Graphite itself,
+    /// which needs Modify access to decrypt again later).</summary>
     public static byte[] Encrypt(byte[] pdf, string password)
     {
         using var doc = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Modify);
         doc.SecuritySettings.UserPassword = password;
         doc.SecuritySettings.OwnerPassword = password;
-        doc.SecurityHandler.SetEncryptionToV2With128Bits();
+        doc.SecurityHandler.SetEncryptionToV5();
         using var ms = new MemoryStream();
         doc.Save(ms, closeStream: false);
         return ms.ToArray();

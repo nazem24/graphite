@@ -20,6 +20,8 @@ public partial class MainWindow : Window
     public MainViewModel ViewModel { get; } = new();
 
     private readonly Dictionary<DocumentViewModel, ListBox> _viewers = new();
+    private readonly Dictionary<DocumentViewModel, double> _scrollOffsets = new();
+    private readonly Dictionary<ListBox, SmoothScroller> _scrollers = new();
     private readonly HashSet<DocumentViewModel> _wired = new();
     private readonly DispatcherTimer _zoomTimer;
     private TextBox? _searchBox;
@@ -44,6 +46,11 @@ public partial class MainWindow : Window
         Loaded += (_, _) => Backdrop.Apply(this, ThemeService.IsDark);
         Closing += MainWindow_Closing;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ViewModel.PasteImageRequested += () =>
+        {
+            if (ViewModel.SelectedDocument is { } d && Clipboard.ContainsImage())
+                PasteImageFromClipboard(d);
+        };
 
         StateChanged += (_, _) => UpdateMaximizeRestoreIcon();
         Loaded += (_, _) => UpdateMaximizeRestoreIcon();
@@ -98,14 +105,14 @@ public partial class MainWindow : Window
             _preFullscreenInspector = ViewModel.ShowInspector;
             ViewModel.ShowSidebar = false;
             ViewModel.ShowInspector = false;
-            WindowStyle = WindowStyle.None;
+            // WindowStyle stays None (custom chrome) — fullscreen just drops the resize
+            // border and covers the taskbar.
             ResizeMode = ResizeMode.NoResize;
             WindowState = WindowState.Normal; // force a state change so the taskbar is covered
             WindowState = WindowState.Maximized;
         }
         else
         {
-            WindowStyle = WindowStyle.SingleBorderWindow;
             ResizeMode = ResizeMode.CanResize;
             WindowState = _preFullscreenState;
             ViewModel.ShowSidebar = _preFullscreenSidebar;
@@ -135,6 +142,7 @@ public partial class MainWindow : Window
             {
                 _wired.Remove(doc);
                 _viewers.Remove(doc);
+                _scrollOffsets.Remove(doc);
                 doc.PropertyChanged -= Doc_PropertyChanged;
             }
 
@@ -147,7 +155,7 @@ public partial class MainWindow : Window
             doc.PagesReset += () => Dispatcher.BeginInvoke(() => ScrollToPage(doc, doc.CurrentPageIndex));
             doc.EditTextRequested += (page, rect) => OnEditTextRequested(doc, page, rect);
             doc.PlaceImageRequested += (page, rect) => OnPlaceImageRequested(doc, page, rect);
-            doc.FreeTextRequested += (page, rect) => OnFreeTextRequested(doc, page, rect);
+            doc.InlineEditRequested += vm => OnInlineEditRequested(doc, vm);
             doc.EditFreeTextRequested += vm => OnEditFreeTextRequested(doc, vm);
             doc.PropertyChanged += Doc_PropertyChanged;
         }
@@ -173,11 +181,21 @@ public partial class MainWindow : Window
     private void PagesHost_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         // The TabControl reuses one ContentPresenter across tabs, so re-register on switch.
-        if (sender is ListBox lb && e.NewValue is DocumentViewModel doc)
+        if (sender is not ListBox lb) return;
+
+        // Remember where the outgoing document was scrolled to — switching tabs resets
+        // the shared ScrollViewer to 0, and without this the document reopens at the
+        // wrong spot (the "tab switch loses my place" bug).
+        if (e.OldValue is DocumentViewModel oldDoc && FindScrollViewer(lb) is { } oldSv)
+            _scrollOffsets[oldDoc] = oldSv.VerticalOffset;
+
+        if (e.NewValue is DocumentViewModel doc)
         {
             _viewers[doc] = lb;
-            Dispatcher.BeginInvoke(() => ScrollToPage(doc, doc.CurrentPageIndex),
-                DispatcherPriority.Loaded);
+            double target = _scrollOffsets.TryGetValue(doc, out var saved)
+                ? saved
+                : OffsetOfPage(doc, doc.CurrentPageIndex);
+            RestoreScrollWhenReady(lb, doc, target, 0);
         }
     }
 
@@ -207,23 +225,70 @@ public partial class MainWindow : Window
 
     private const double PageGap = 12; // template margin 6 top + 6 bottom
 
+    private static double OffsetOfPage(DocumentViewModel doc, int pageIndex)
+    {
+        double offset = 0;
+        for (int i = 0; i < pageIndex && i < doc.Pages.Count; i++)
+            offset += doc.Pages[i].DisplayHeight + PageGap;
+        return offset;
+    }
+
     private void ScrollToPage(DocumentViewModel doc, int pageIndex)
     {
         if (!doc.IsContinuous) { return; } // VisiblePages swap handles it
         if (!_viewers.TryGetValue(doc, out var lb)) return;
+        RestoreScrollWhenReady(lb, doc, OffsetOfPage(doc, pageIndex), 0);
+    }
+
+    /// <summary>Scroll to <paramref name="offset"/> once the ScrollViewer's extent can
+    /// actually hold it. Right after a tab switch (or a pages reset) the extent is still
+    /// near zero because containers realize lazily — a premature ScrollToVerticalOffset
+    /// gets clamped to ~0 and the position is lost. Realize the target page first, then
+    /// retry on background priority until the extent is built (or we give up).</summary>
+    private void RestoreScrollWhenReady(ListBox lb, DocumentViewModel doc, double offset, int attempt)
+    {
+        if (!doc.IsContinuous) return;
+        if (!_viewers.TryGetValue(doc, out var current) || !ReferenceEquals(current, lb))
+            return; // user switched tabs again — abandon
         var sv = FindScrollViewer(lb);
         if (sv == null) return;
 
-        double offset = 0;
-        for (int i = 0; i < pageIndex && i < doc.Pages.Count; i++)
-            offset += doc.Pages[i].DisplayHeight + PageGap;
-        sv.ScrollToVerticalOffset(offset);
+        if (attempt == 0)
+        {
+            if (_scrollers.TryGetValue(lb, out var sc)) sc.Stop();
+            // Force realization up to the target page so the extent becomes real.
+            int page = PageIndexAtOffset(doc, offset);
+            if (page >= 0 && page < lb.Items.Count) lb.ScrollIntoView(lb.Items[page]);
+        }
+
+        double max = Math.Max(0, sv.ExtentHeight - sv.ViewportHeight);
+        if (max >= offset - 1 || attempt >= 30)
+        {
+            sv.ScrollToVerticalOffset(Math.Min(offset, max));
+            return;
+        }
+        Dispatcher.BeginInvoke(() => RestoreScrollWhenReady(lb, doc, offset, attempt + 1),
+            DispatcherPriority.Background);
+    }
+
+    private static int PageIndexAtOffset(DocumentViewModel doc, double offset)
+    {
+        double y = 0;
+        for (int i = 0; i < doc.Pages.Count; i++)
+        {
+            y += doc.Pages[i].DisplayHeight + PageGap;
+            if (y > offset) return i;
+        }
+        return doc.Pages.Count - 1;
     }
 
     private void PagesHost_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (sender is not ListBox lb || lb.DataContext is not DocumentViewModel doc || !doc.IsContinuous)
             return;
+
+        // User scrolled outside the animation (scrollbar drag, keyboard) — re-sync.
+        if (_scrollers.TryGetValue(lb, out var sc)) sc.Sync();
 
         // Which page sits a third of the way down the viewport?
         double probe = e.VerticalOffset + e.ViewportHeight / 3;
@@ -246,10 +311,77 @@ public partial class MainWindow : Window
 
     private void PagesHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
         if (ViewModel.SelectedDocument is not { } doc) return;
-        doc.Zoom = Math.Clamp(doc.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 6);
-        e.Handled = true;
+
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            if (sender is ListBox zoomLb && _scrollers.TryGetValue(zoomLb, out var zoomSc)) zoomSc.Stop();
+            doc.Zoom = Math.Clamp(doc.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 6);
+            e.Handled = true;
+            return;
+        }
+
+        // Eased wheel scrolling: animate toward a target offset instead of jumping
+        // line-by-line (works for both notched wheels and precision touchpads).
+        if (sender is ListBox lb && FindScrollViewer(lb) is { } sv)
+        {
+            if (!_scrollers.TryGetValue(lb, out var scroller))
+                _scrollers[lb] = scroller = new SmoothScroller(sv);
+            scroller.ScrollBy(-e.Delta * 1.0);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Exponential-decay scroll animation toward a target offset, driven by
+    /// CompositionTarget.Rendering so it tracks the monitor's refresh rate.</summary>
+    private sealed class SmoothScroller
+    {
+        private readonly ScrollViewer _sv;
+        private double _target;
+        private bool _animating;
+
+        public SmoothScroller(ScrollViewer sv)
+        {
+            _sv = sv;
+            _target = sv.VerticalOffset;
+        }
+
+        public void ScrollBy(double delta)
+        {
+            _target = Math.Clamp(_target + delta, 0, Math.Max(0, _sv.ExtentHeight - _sv.ViewportHeight));
+            if (_animating) return;
+            _animating = true;
+            CompositionTarget.Rendering += Step;
+        }
+
+        /// <summary>Adopt the current offset as the target (after external scrolls).</summary>
+        public void Sync()
+        {
+            if (!_animating) _target = _sv.VerticalOffset;
+        }
+
+        /// <summary>Stop animating immediately (programmatic scrolls take over).</summary>
+        public void Stop()
+        {
+            if (!_animating) return;
+            CompositionTarget.Rendering -= Step;
+            _animating = false;
+            _target = _sv.VerticalOffset;
+        }
+
+        private void Step(object? sender, EventArgs e)
+        {
+            double current = _sv.VerticalOffset;
+            double next = current + (_target - current) * 0.28;
+            if (Math.Abs(next - _target) < 0.6)
+            {
+                CompositionTarget.Rendering -= Step;
+                _animating = false;
+                _sv.ScrollToVerticalOffset(_target);
+                return;
+            }
+            _sv.ScrollToVerticalOffset(next);
+        }
     }
 
     private void PageRoot_Loaded(object sender, RoutedEventArgs e)
@@ -395,34 +527,79 @@ public partial class MainWindow : Window
         doc.ActiveTool = ToolKind.Select;
     }
 
-    private void OnFreeTextRequested(DocumentViewModel doc, int pageIndex, RectD area)
+    // ------------------------------------------------------------- inline text editing
+
+    private readonly Dictionary<PageViewModel, TextBox> _inlineEditors = new();
+    private (DocumentViewModel Doc, AnnotationViewModel Vm, TextBox Tb)? _inlineEdit;
+
+    private void InlineEditor_Loaded(object sender, RoutedEventArgs e) => TrackInlineEditor(sender);
+    private void InlineEditor_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) =>
+        TrackInlineEditor(sender);
+
+    private void TrackInlineEditor(object sender)
     {
-        var result = FreeTextDialog.Show(this, "Add text",
-            "Text to place on the page:", doc.ActiveColorHex, initialSize: 12);
-        if (result is { Text.Length: > 0 } r)
-        {
-            double size = r.Size ?? 12;
-            doc.AddAnnotation(new Graphite.Core.Annotations.Annotation
-            {
-                Kind = Graphite.Core.Annotations.AnnotationKind.FreeText,
-                PageIndex = pageIndex,
-                Bounds = new RectD(area.X, area.Y,
-                    Math.Max(area.Width, 40), Math.Max(area.Height, size * 1.5)),
-                Contents = r.Text,
-                ColorHex = r.TextColorHex,
-                FontSize = size,
-                FontFamily = r.FontFamily,
-                Bold = r.Bold,
-                Italic = r.Italic,
-                Underline = r.Underline,
-                FillColorHex = r.FillColorHex,
-                BorderColorHex = r.BorderColorHex,
-            });
-        }
-        doc.ActiveTool = ToolKind.Select;
+        // With container recycling the same TextBox serves different pages — always
+        // remap to the CURRENT DataContext.
+        if (sender is TextBox tb && tb.DataContext is PageViewModel page)
+            _inlineEditors[page] = tb;
     }
 
-    /// <summary>Double-click (or Enter) on an existing text box reopens the same dialog,
+    private void OnInlineEditRequested(DocumentViewModel doc, AnnotationViewModel vm)
+    {
+        // Deferred: the annotation visuals settle first, and the page container must exist.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (vm.PageIndex >= doc.Pages.Count) return;
+            var page = doc.Pages[vm.PageIndex];
+            if (!_inlineEditors.TryGetValue(page, out var tb)) return;
+
+            double s = page.DisplayWidth / Math.Max(page.WidthPt, 1);
+            var b = vm.Model.Bounds;
+            Canvas.SetLeft(tb, b.X * s);
+            Canvas.SetTop(tb, b.Y * s);
+            tb.Width = Math.Max(60, b.Width * s);
+            tb.FontSize = Math.Max(6, vm.Model.FontSize * s);
+            tb.FontFamily = new FontFamily(vm.Model.FontFamily);
+            Brush fg;
+            try { fg = new SolidColorBrush((Color)ColorConverter.ConvertFromString(vm.Model.ColorHex)); }
+            catch { fg = Brushes.Black; }
+            tb.Foreground = fg;
+            tb.CaretBrush = fg;
+            tb.Text = vm.Model.Contents;
+            tb.Visibility = Visibility.Visible;
+            _inlineEdit = (doc, vm, tb);
+            tb.Focus();
+            tb.CaretIndex = tb.Text.Length;
+        }, DispatcherPriority.Input);
+    }
+
+    private void CommitInlineEdit(bool cancel = false)
+    {
+        if (_inlineEdit is not { } edit) return;
+        _inlineEdit = null;
+        edit.Tb.Visibility = Visibility.Collapsed;
+        string text = edit.Tb.Text.Trim();
+        if (cancel || text.Length == 0)
+        {
+            // Nothing written — quietly drop the just-created empty text box (the
+            // creation undo snapshot already covers it, no extra undo step).
+            edit.Doc.DiscardAnnotation(edit.Vm);
+            return;
+        }
+        edit.Vm.Model.Contents = text;
+        edit.Vm.Model.Modified = DateTime.Now;
+        edit.Doc.NotifyAnnotationChanged();
+    }
+
+    private void InlineEditor_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { CommitInlineEdit(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { CommitInlineEdit(cancel: true); e.Handled = true; }
+    }
+
+    private void InlineEditor_LostFocus(object sender, RoutedEventArgs e) => CommitInlineEdit();
+
+    /// <summary>Double-click (or Enter) on an existing text box reopens the full dialog,
     /// pre-filled, so its text, font, size, style and colors can be edited directly.
     /// The box's position and size on the page are untouched — drag it or its corner
     /// handles with the Select tool to move/resize.</summary>
@@ -488,6 +665,52 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------- global input
 
+    /// <summary>Paste an image straight from the clipboard onto the current page —
+    /// no file picker. It lands as a movable/resizable overlay (Select tool), exactly
+    /// like a placed image file, and is baked into the PDF on save.</summary>
+    private void PasteImageFromClipboard(DocumentViewModel doc)
+    {
+        var bmp = Clipboard.GetImage();
+        if (bmp == null) return;
+        try
+        {
+            // Baking placed images into the PDF goes through a file path, so the
+            // clipboard bitmap is persisted to a session temp PNG.
+            string temp = Path.Combine(Path.GetTempPath(), $"graphite-paste-{Guid.NewGuid():N}.png");
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+            using (var fs = File.Create(temp)) encoder.Save(fs);
+            bmp.Freeze();
+
+            // 96 dpi pixels -> points; fit within 80% of the page, centered.
+            double wPt = bmp.PixelWidth * 72.0 / 96.0;
+            double hPt = bmp.PixelHeight * 72.0 / 96.0;
+            var (pw, ph) = doc.Renderer.PageSizes[doc.CurrentPageIndex];
+            double fit = Math.Min(1.0, Math.Min(pw * 0.8 / Math.Max(wPt, 1), ph * 0.8 / Math.Max(hPt, 1)));
+            wPt *= fit;
+            hPt *= fit;
+
+            doc.AddImage(new PendingImage
+            {
+                PageIndex = doc.CurrentPageIndex,
+                Path = temp,
+                Bitmap = bmp,
+                Rect = new RectD((pw - wPt) / 2, (ph - hPt) / 2, wPt, hPt),
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageDialog.Show(this, ex.Message, "Graphite", DialogButtons.OK, DialogIcon.Warning);
+        }
+    }
+
+    private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Clicking anywhere outside the inline text editor commits what was typed.
+        if (_inlineEdit is { } edit && !edit.Tb.IsMouseOver)
+            CommitInlineEdit();
+    }
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         var doc = ViewModel.SelectedDocument;
@@ -520,7 +743,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control &&
+        if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control &&
+            doc != null && Clipboard.ContainsImage() &&
+            Keyboard.FocusedElement is not TextBox)
+        {
+            PasteImageFromClipboard(doc);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control &&
             Keyboard.FocusedElement is not TextBox && doc != null)
         {
             _ = doc.UndoAsync();
