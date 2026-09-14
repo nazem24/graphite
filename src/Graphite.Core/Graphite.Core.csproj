@@ -10,7 +10,7 @@
     <!-- PDFium-based rasterizer (rendering) -->
     <PackageReference Include="PDFtoImage" Version="4.1.1" />
     <!-- Page-level document surgery: merge, split, rotate, annotations, content append -->
-    <PackageReference Include="PdfSharp" Version="6.1.1" />
+    <PackageReference Include="PdfSharp" Version="6.2.4" />
     <!-- Text extraction with glyph coordinates, bookmarks/outline -->
     <PackageReference Include="PdfPig" Version="0.1.9" />
     <!-- Office export -->
