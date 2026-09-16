@@ -54,6 +54,14 @@ public partial class MainWindow : Window
 
         StateChanged += (_, _) => UpdateMaximizeRestoreIcon();
         Loaded += (_, _) => UpdateMaximizeRestoreIcon();
+
+        // Quiet background update check shortly after launch — it only speaks up
+        // when a newer release actually exists.
+        Loaded += async (_, _) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4));
+            _ = ViewModel.CheckForUpdatesAsync(silent: true);
+        };
     }
 
     // ------------------------------------------------------------- custom caption buttons
@@ -127,7 +135,9 @@ public partial class MainWindow : Window
         var dirty = ViewModel.Documents.Where(d => d.IsDirty).ToList();
         if (dirty.Count == 0) return;
         var answer = MessageDialog.Show(this,
-            $"{dirty.Count} document(s) have unsaved changes. Close anyway?",
+            dirty.Count == 1
+                ? "1 document has unsaved changes. Close anyway?"
+                : $"{dirty.Count} documents have unsaved changes. Close anyway?",
             "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
         if (answer != MessageBoxResult.Yes) e.Cancel = true;
     }
@@ -451,6 +461,11 @@ public partial class MainWindow : Window
             doc.Zoom = Math.Clamp((viewport - 48) / maxWidth, 0.25, 6);
     }
 
+    private void ZoomReset_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedDocument is { } doc) doc.Zoom = 1.0;
+    }
+
     // ------------------------------------------------------------- menus
 
     private void OrganizeMenu_Click(object sender, RoutedEventArgs e)
@@ -472,6 +487,23 @@ public partial class MainWindow : Window
     private void HighlightTool_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (ViewModel.SelectedDocument?.ActiveTool != ToolKind.Highlight) return;
+        if (sender is not FrameworkElement { ContextMenu: { } menu } fe) return;
+
+        e.Handled = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            menu.DataContext = ViewModel;
+            menu.PlacementTarget = fe;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }, DispatcherPriority.Input);
+    }
+
+    /// <summary>Same click-again pattern as the Highlight tool: once the Signature tool
+    /// is already active, clicking it again opens its menu (Edit signature…).</summary>
+    private void SignatureTool_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (ViewModel.SelectedDocument?.ActiveTool != ToolKind.Signature) return;
         if (sender is not FrameworkElement { ContextMenu: { } menu } fe) return;
 
         e.Handled = true;

@@ -540,6 +540,63 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void EditSignature() => SignatureDialog.Edit(Owner!);
 
+    // ------------------------------------------------------------- updates
+
+    /// <summary>Running build's version, shown on the start page.</summary>
+    public string AppVersion { get; } = UpdateService.CurrentVersion.ToString(3);
+
+    [RelayCommand]
+    private Task CheckForUpdates() => CheckForUpdatesAsync(silent: false);
+
+    /// <summary>Silent checks (app start) only surface a dialog when an update exists;
+    /// manual checks (menu / palette) also report "up to date" and errors.</summary>
+    public async Task CheckForUpdatesAsync(bool silent)
+    {
+        try
+        {
+            var info = await UpdateService.CheckAsync();
+            if (info == null)
+            {
+                if (!silent)
+                    MessageDialog.Show(Owner, $"Graphite {AppVersion} is up to date.",
+                        "Updates", DialogButtons.OK, DialogIcon.Info);
+                return;
+            }
+
+            var answer = MessageDialog.Show(Owner,
+                $"Graphite {info.Tag.TrimStart('v', 'V')} is available — you're running {AppVersion}.\n\n" +
+                "Download and install it now? Graphite will restart to finish the update.",
+                "Update available", DialogButtons.YesNo, DialogIcon.Info);
+            if (answer != MessageBoxResult.Yes) return;
+
+            if (info.ZipUrl == null)
+            {
+                UpdateService.OpenReleasePage(info);
+                return;
+            }
+
+            try
+            {
+                await UpdateService.DownloadAndRestartAsync(info);
+            }
+            catch (Exception ex)
+            {
+                // In-place update failed (offline mid-download, unwritable install
+                // folder, …) — fall back to the release page so the user can update
+                // manually.
+                var fallback = MessageDialog.Show(Owner,
+                    $"The automatic update couldn't finish ({ex.Message}).\n\nOpen the download page instead?",
+                    "Update failed", DialogButtons.YesNo, DialogIcon.Warning);
+                if (fallback == MessageBoxResult.Yes)
+                    UpdateService.OpenReleasePage(info);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!silent) Error(ex);
+        }
+    }
+
     // ------------------------------------------------------------- command palette
 
     /// <summary>Raised by the command palette; the window performs the actual paste
@@ -585,13 +642,14 @@ public partial class MainViewModel : ObservableObject
     {
         var list = new List<PaletteCommand>
         {
-            new("Open a document…", "Ctrl+O", () => _ = Open()),
+            new("Open document…", "Ctrl+O", () => _ = Open()),
             new("Merge PDFs…", null, () => _ = Merge()),
-            new("Switch light / dark theme", null, ToggleTheme),
-            new("Toggle fullscreen reading", "F11", ToggleFullscreen),
+            new("Toggle theme", null, ToggleTheme),
+            new("Toggle fullscreen", "F11", ToggleFullscreen),
             new("Edit signature…", null, EditSignature),
             new("Toggle sidebar", null, () => ShowSidebar = !ShowSidebar),
             new("Toggle markup panel", null, () => ShowInspector = !ShowInspector),
+            new("Check for updates…", null, () => _ = CheckForUpdates()),
         };
 
         if (SelectedDocument is { } doc)

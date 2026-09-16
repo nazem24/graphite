@@ -348,7 +348,8 @@ public sealed class AnnotationLayer : FrameworkElement
         {
             case ToolKind.Ink:
             case ToolKind.Highlight when IsFreehandHighlight:
-                AppendSmoothed(_inkPoints, new PointD(_current.X, _current.Y));
+                foreach (var sample in InkSamples(e))
+                    AppendSmoothed(_inkPoints, sample);
                 break;
             case ToolKind.Highlight or ToolKind.Underline or ToolKind.StrikeOut or ToolKind.Select:
                 _liveWordRects = _doc.Index
@@ -609,15 +610,40 @@ public sealed class AnnotationLayer : FrameworkElement
         _doc.NotifyAnnotationChanged();
     }
 
+    /// <summary>All pointer samples carried by this move event, oldest first. A pen
+    /// reports at a much higher rate than WPF dispatches mouse moves; the extra samples
+    /// travel coalesced inside the event and are recoverable through the stylus device.
+    /// Using only GetPosition throws away most of the pen's actual path, which forced
+    /// the curve fit to guess around corners — the main reason handwriting felt wrong.
+    /// Falls back to the single event position for mouse input.</summary>
+    private IEnumerable<PointD> InkSamples(MouseEventArgs e)
+    {
+        if (e.StylusDevice is { } stylus)
+        {
+            var pts = stylus.GetStylusPoints(this);
+            if (pts.Count > 0)
+            {
+                foreach (var sp in pts)
+                {
+                    var page = ToPage(new Point(sp.X, sp.Y));
+                    yield return new PointD(page.X, page.Y);
+                }
+                yield break;
+            }
+        }
+        yield return new PointD(_current.X, _current.Y);
+    }
+
     /// <summary>Appends a raw pointer sample to an in-progress ink/freehand-highlight stroke,
-    /// gating out oversampled near-duplicate points and blending toward the new sample rather
-    /// than jumping straight to it. <see cref="StrokeSmoothing"/> already fits a curve through
-    /// every recorded point, so cleaning up the input here — not the curve fit — is what turns a
-    /// shaky mouse trace into a fluid-looking stroke.</summary>
+    /// gating out oversampled near-duplicate points and applying only a whisper of low-pass
+    /// filtering. The old values (1.2 pt spacing, 0.55 blend) made the stroke trail the pen
+    /// tip by several samples and then "catch up" at stroke end — that lag-then-snap is what
+    /// felt like overcorrection when writing letters. <see cref="StrokeSmoothing"/> handles
+    /// the visible smoothing, so this filter only needs to take the edge off sensor jitter.</summary>
     private static void AppendSmoothed(List<PointD> pts, PointD raw)
     {
-        const double minSpacing = 1.2;  // page points
-        const double smoothing = 0.55;  // 0 = raw input, 1 = frozen
+        const double minSpacing = 0.5;  // page points
+        const double smoothing = 0.15;  // 0 = raw input, 1 = frozen
 
         if (pts.Count == 0) { pts.Add(raw); return; }
 

@@ -5,10 +5,13 @@ namespace Graphite.App.Controls;
 
 /// <summary>
 /// Turns a raw sequence of pointer samples into a smooth curve, instead of the jagged,
-/// segmented look you get from connecting mouse/pen samples with straight lines.
-/// Fits a Catmull-Rom spline through the points (it passes through every sampled point,
-/// unlike a Bezier fit that would drift away from the input) and converts it to cubic
-/// Bezier segments, which is what StreamGeometry can actually render.
+/// segmented look you get from connecting pen samples with straight lines.
+///
+/// The fit is a quadratic-Bezier-through-midpoints chain: every segment ends at the
+/// midpoint between two samples and uses the sample itself as its control point. The
+/// curve therefore hugs the input — it never overshoots into loops or spikes the way a
+/// Catmull-Rom spline through every (jittery) sample does, which is what made quick
+/// direction changes while writing letters look "over-corrected".
 /// </summary>
 public static class StrokeSmoothing
 {
@@ -21,30 +24,38 @@ public static class StrokeSmoothing
         {
             ctx.BeginFigure(pts[0], false, false);
 
-            if (pts.Count < 3)
+            switch (pts.Count)
             {
-                for (int i = 1; i < pts.Count; i++)
-                    ctx.LineTo(pts[i], true, true);
-            }
-            else
-            {
-                for (int i = 0; i < pts.Count - 1; i++)
-                {
-                    var p0 = pts[Math.Max(i - 1, 0)];
-                    var p1 = pts[i];
-                    var p2 = pts[i + 1];
-                    var p3 = pts[Math.Min(i + 2, pts.Count - 1)];
+                case 1:
+                    break;
+                case 2:
+                    ctx.LineTo(pts[1], true, true);
+                    break;
+                default:
+                    // First segment: straight to the first midpoint so the stroke starts
+                    // exactly under the pen tip (no lag at stroke start).
+                    var mid = Midpoint(pts[0], pts[1]);
+                    ctx.LineTo(mid, true, true);
 
-                    // Standard Catmull-Rom -> Bezier control point conversion (tension 1/6).
-                    var c1 = new Point(p1.X + (p2.X - p0.X) / 6.0, p1.Y + (p2.Y - p0.Y) / 6.0);
-                    var c2 = new Point(p2.X - (p3.X - p1.X) / 6.0, p2.Y - (p3.Y - p1.Y) / 6.0);
+                    // Middle segments: curve sample -> midpoint, with the sample as the
+                    // control point. Consecutive segments share tangents at the midpoints,
+                    // so the stroke stays C1-smooth without passing through every sample.
+                    for (int i = 1; i < pts.Count - 1; i++)
+                    {
+                        var next = Midpoint(pts[i], pts[i + 1]);
+                        ctx.QuadraticBezierTo(pts[i], next, true, true);
+                    }
 
-                    ctx.BezierTo(c1, c2, p2, true, true);
-                }
+                    // Last segment: land exactly on the final sample so the stroke ends
+                    // where the pen lifted.
+                    ctx.LineTo(pts[^1], true, true);
+                    break;
             }
         }
 
         geometry.Freeze();
         return geometry;
     }
+
+    private static Point Midpoint(Point a, Point b) => new((a.X + b.X) / 2, (a.Y + b.Y) / 2);
 }

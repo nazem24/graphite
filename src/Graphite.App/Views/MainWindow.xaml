@@ -81,11 +81,11 @@
                     <DockPanel>
                         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,10">
                             <RadioButton x:Name="SideThumbs" Style="{StaticResource ToolToggle}" IsChecked="True"
-                                         GroupName="Side" ToolTip="Page thumbnails">
+                                         GroupName="Side" ToolTip="Thumbnails">
                                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Thumbs}"/>
                             </RadioButton>
                             <RadioButton x:Name="SideOutline" Style="{StaticResource ToolToggle}" Margin="4,0,0,0"
-                                         GroupName="Side" ToolTip="Bookmarks / outline">
+                                         GroupName="Side" ToolTip="Outline">
                                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Outline}"/>
                             </RadioButton>
                         </StackPanel>
@@ -253,78 +253,86 @@
 
                         <!-- floating page controls -->
                         <Border Style="{StaticResource GlassPill}" VerticalAlignment="Bottom"
-                                HorizontalAlignment="Center" Margin="0,0,0,16" Padding="6,3"
+                                HorizontalAlignment="Center" Margin="0,0,0,16" Padding="7,4"
+                                CornerRadius="21"
                                 Background="{DynamicResource App.CardBrush}"
                                 BorderBrush="{DynamicResource App.StrokeBrush}">
                             <StackPanel Orientation="Horizontal">
-                                <Button Style="{StaticResource IconButton}" Padding="5" Click="PrevPage_Click" ToolTip="Previous page">
+                                <!-- page navigation -->
+                                <Button Style="{StaticResource IconButton}" Padding="6" Click="PrevPage_Click" ToolTip="Previous page">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronLeft}"
                                           Width="11" Height="11" Stretch="Uniform"/>
                                 </Button>
-                                <Button Style="{StaticResource IconButton}" Padding="6,4" BorderThickness="0"
+                                <Button Style="{StaticResource IconButton}" Padding="8,4" BorderThickness="0"
                                         Command="{Binding DataContext.GoToPageDialogCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         ToolTip="Go to page… (Ctrl+G)">
                                     <TextBlock Text="{Binding PageStatus}" FontSize="12" Foreground="{DynamicResource App.TextBrush}"/>
                                 </Button>
-                                <Button Style="{StaticResource IconButton}" Padding="5" Click="NextPage_Click" ToolTip="Next page">
+                                <Button Style="{StaticResource IconButton}" Padding="6" Click="NextPage_Click" ToolTip="Next page">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronRight}"
                                           Width="11" Height="11" Stretch="Uniform"/>
                                 </Button>
 
-                                <Rectangle Style="{StaticResource ToolSep}" Height="14"/>
+                                <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
 
-                                <Button Style="{StaticResource IconButton}" Padding="5"
+                                <!-- zoom -->
+                                <Button Style="{StaticResource IconButton}" Padding="6"
                                         Command="{Binding DataContext.ZoomOutCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         ToolTip="Zoom out (Ctrl+-)">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomOut}"
                                           Width="13" Height="13" Stretch="Uniform"/>
                                 </Button>
-                                <TextBlock Text="{Binding Zoom, Converter={StaticResource ZoomToPercent}}"
-                                           VerticalAlignment="Center" MinWidth="40" TextAlignment="Center" FontSize="12"
-                                           Foreground="{DynamicResource App.TextBrush}"/>
-                                <Button Style="{StaticResource IconButton}" Padding="5"
+                                <Button Style="{StaticResource IconButton}" Padding="5,4" BorderThickness="0"
+                                        Click="ZoomReset_Click" ToolTip="Reset zoom to 100%">
+                                    <TextBlock Text="{Binding Zoom, Converter={StaticResource ZoomToPercent}}"
+                                               VerticalAlignment="Center" MinWidth="40" TextAlignment="Center" FontSize="12"
+                                               Foreground="{DynamicResource App.TextBrush}"/>
+                                </Button>
+                                <Button Style="{StaticResource IconButton}" Padding="6"
                                         Command="{Binding DataContext.ZoomInCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         ToolTip="Zoom in (Ctrl++)">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomIn}"
                                           Width="13" Height="13" Stretch="Uniform"/>
                                 </Button>
-                                <Button Style="{StaticResource IconButton}" Padding="5" Click="FitWidth_Click" ToolTip="Fit page width">
+                                <Button Style="{StaticResource IconButton}" Padding="6" Click="FitWidth_Click" ToolTip="Fit width">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.FitWidth}"
                                           Width="13" Height="13" Stretch="Uniform"/>
                                 </Button>
 
-                                <Rectangle Style="{StaticResource ToolSep}" Height="14"/>
+                                <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
 
-                                <RadioButton Style="{StaticResource ToolToggle}" Padding="5" GroupName="Layout"
-                                             ToolTip="Continuous scrolling"
+                                <!-- layout -->
+                                <RadioButton Style="{StaticResource ToolToggle}" Padding="6" GroupName="Layout"
+                                             ToolTip="Continuous"
                                              IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Continuous}">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Continuous}"
                                           Width="12" Height="12" Stretch="Uniform"/>
                                 </RadioButton>
-                                <RadioButton Style="{StaticResource ToolToggle}" Padding="5" GroupName="Layout"
+                                <RadioButton Style="{StaticResource ToolToggle}" Padding="6" GroupName="Layout"
                                              ToolTip="Single page"
                                              IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Single}">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.SinglePage}"
                                           Width="12" Height="12" Stretch="Uniform"/>
                                 </RadioButton>
-                                <RadioButton Style="{StaticResource ToolToggle}" Padding="5" GroupName="Layout"
-                                             ToolTip="Two-page spread"
+                                <RadioButton Style="{StaticResource ToolToggle}" Padding="6" GroupName="Layout"
+                                             ToolTip="Two pages"
                                              IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Spread}">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Spread}"
                                           Width="12" Height="12" Stretch="Uniform"/>
                                 </RadioButton>
 
-                                <Rectangle Style="{StaticResource ToolSep}" Height="14"/>
+                                <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
 
-                                <ToggleButton Style="{StaticResource IconButton}" Padding="5"
+                                <!-- reading -->
+                                <ToggleButton Style="{StaticResource IconButton}" Padding="6"
                                               IsChecked="{Binding InvertPages}"
-                                              ToolTip="Invert page colors">
+                                              ToolTip="Dark pages">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Invert}"
                                           Width="13" Height="13" Stretch="Uniform"/>
                                 </ToggleButton>
-                                <Button Style="{StaticResource IconButton}" Padding="5"
+                                <Button Style="{StaticResource IconButton}" Padding="6"
                                         Command="{Binding DataContext.ToggleFullscreenCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        ToolTip="Fullscreen reading (F11)">
+                                        ToolTip="Fullscreen (F11)">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Fullscreen}"
                                           Width="13" Height="13" Stretch="Uniform"/>
                                 </Button>
@@ -389,14 +397,14 @@
                     <DockPanel>
                         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,10">
                             <RadioButton x:Name="TabComments" Style="{StaticResource ToolToggle}" IsChecked="True"
-                                         GroupName="Inspector" ToolTip="Comments &amp; markup">
+                                         GroupName="Inspector" ToolTip="Annotations">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Note}"/>
                                     <TextBlock Text="Markup" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="TabSearch" Style="{StaticResource ToolToggle}" Margin="4,0,0,0"
-                                         GroupName="Inspector" Loaded="SearchRadio_Loaded" ToolTip="Search in document">
+                                         GroupName="Inspector" Loaded="SearchRadio_Loaded" ToolTip="Search (Ctrl+F)">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}"/>
                                     <TextBlock Text="Search" Margin="6,0,0,0" VerticalAlignment="Center"/>
@@ -408,7 +416,7 @@
                             <!-- markup summary -->
                             <DockPanel Visibility="{Binding IsChecked, ElementName=TabComments, Converter={StaticResource BoolToVis}}">
                                 <TextBlock DockPanel.Dock="Top" Margin="14,2,14,8" Style="{StaticResource Caption}"
-                                           Text="{Binding Annotations.Count, StringFormat={}{0} annotation(s) in this document}"/>
+                                           Text="{Binding Annotations.Count, StringFormat={}Annotations: {0}}"/>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding Annotations}" Margin="10,0">
                                         <ItemsControl.ItemTemplate>
@@ -439,7 +447,7 @@
                                                         <TextBox Text="{Binding Contents, UpdateSourceTrigger=LostFocus}"
                                                                  Margin="0,7,0,0" TextWrapping="Wrap" AcceptsReturn="True"
                                                                  MinHeight="26" FontSize="12"
-                                                                 ToolTip="Comment text"/>
+                                                                 ToolTip="Comment"/>
                                                         <ItemsControl ItemsSource="{Binding Replies}" Margin="10,6,0,0">
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate>
@@ -463,7 +471,7 @@
                                                                       Width="13" Height="13" Stretch="Uniform"/>
                                                             </Button>
                                                             <TextBox Text="{Binding ReplyDraft, UpdateSourceTrigger=PropertyChanged}"
-                                                                     FontSize="12" ToolTip="Write a reply"/>
+                                                                     FontSize="12" ToolTip="Reply…"/>
                                                         </DockPanel>
                                                     </StackPanel>
                                                 </Border>
@@ -487,7 +495,7 @@
                                         </Button>
                                         <TextBox Loaded="SearchBox_Loaded" KeyDown="SearchBox_KeyDown"
                                                  Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                                                 ToolTip="Search text"/>
+                                                 ToolTip="Find in document"/>
                                     </DockPanel>
                                     <TextBlock Text="{Binding MatchStatus}" Style="{StaticResource Caption}" Margin="2,6,0,0"/>
                                 </StackPanel>
@@ -561,13 +569,13 @@
                             ToolTip="Command palette (Ctrl+K)">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Command}"/>
                     </Button>
-                    <ToggleButton Style="{StaticResource IconButton}" IsChecked="{Binding ShowSidebar}" ToolTip="Toggle sidebar">
+                    <ToggleButton Style="{StaticResource IconButton}" IsChecked="{Binding ShowSidebar}" ToolTip="Sidebar">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Sidebar}"/>
                     </ToggleButton>
-                    <ToggleButton Style="{StaticResource IconButton}" IsChecked="{Binding ShowInspector}" ToolTip="Toggle markup panel">
+                    <ToggleButton Style="{StaticResource IconButton}" IsChecked="{Binding ShowInspector}" ToolTip="Markup panel">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Inspector}"/>
                     </ToggleButton>
-                    <Button Style="{StaticResource IconButton}" Command="{Binding ToggleThemeCommand}" ToolTip="Switch light / dark theme">
+                    <Button Style="{StaticResource IconButton}" Command="{Binding ToggleThemeCommand}" ToolTip="Theme">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}"
                               RenderTransformOrigin="0.5,0.5">
                             <Path.RenderTransform>
@@ -598,16 +606,31 @@
                         </StackPanel>
                         <Button.ContextMenu>
                             <ContextMenu>
-                                <MenuItem Header="Open… (Ctrl+O)" Command="{Binding OpenCommand}"/>
-                                <MenuItem Header="Open from OneDrive" Command="{Binding OpenOneDriveCommand}"/>
+                                <MenuItem Header="Open… (Ctrl+O)" Command="{Binding OpenCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Open from OneDrive" Command="{Binding OpenOneDriveCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Cloud}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
                                 <Separator/>
-                                <MenuItem Header="Save (Ctrl+S)" Command="{Binding SaveCommand}"/>
+                                <MenuItem Header="Save (Ctrl+S)" Command="{Binding SaveCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Save}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
                                 <MenuItem Header="Save As… (Ctrl+Shift+S)" Command="{Binding SaveAsCommand}"/>
-                                <MenuItem Header="Save encrypted copy…" Command="{Binding SaveEncryptedCopyCommand}"/>
+                                <MenuItem Header="Save encrypted copy…" Command="{Binding SaveEncryptedCopyCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Lock}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
                                 <Separator/>
-                                <MenuItem Header="Print… (Ctrl+P)" Command="{Binding PrintCommand}"/>
+                                <MenuItem Header="Print… (Ctrl+P)" Command="{Binding PrintCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Print}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
                                 <Separator/>
-                                <MenuItem Header="Document properties" Command="{Binding ShowPropertiesCommand}"/>
+                                <MenuItem Header="Document properties" Command="{Binding ShowPropertiesCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Info}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Check for updates…" Command="{Binding CheckForUpdatesCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Download}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
                             </ContextMenu>
                         </Button.ContextMenu>
                     </Button>
@@ -625,7 +648,6 @@
                         </StackPanel.Style>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
-                        <TextBlock Text="Edit" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.65"/>
 
                         <Button Style="{StaticResource IconButton}" Command="{Binding UndoCommand}" ToolTip="Undo (Ctrl+Z)">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Undo}"/>
@@ -635,10 +657,9 @@
                         </Button>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
-                        <TextBlock Text="Pages" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.65"/>
 
                         <!-- organize menu -->
-                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="Organize pages">
+                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="Pages">
                             <StackPanel Orientation="Horizontal">
                                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.InsertPage}"/>
                                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
@@ -646,22 +667,38 @@
                             </StackPanel>
                             <Button.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="Merge PDFs…" Command="{Binding MergeCommand}"/>
-                                    <MenuItem Header="Split into single pages…" Command="{Binding SplitCommand}"/>
+                                    <MenuItem Header="Merge PDFs…" Command="{Binding MergeCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Merge}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Split into single pages…" Command="{Binding SplitCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Split}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
                                     <Separator/>
-                                    <MenuItem Header="Insert pages from PDF…" Command="{Binding InsertPagesCommand}"/>
-                                    <MenuItem Header="Insert blank page" Command="{Binding InsertBlankPageCommand}"/>
-                                    <MenuItem Header="Delete pages…" Command="{Binding DeletePagesCommand}"/>
-                                    <MenuItem Header="Extract pages…" Command="{Binding ExtractPagesCommand}"/>
+                                    <MenuItem Header="Insert pages from PDF…" Command="{Binding InsertPagesCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.InsertPage}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Insert blank page" Command="{Binding InsertBlankPageCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Add}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Delete pages…" Command="{Binding DeletePagesCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Delete}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Extract pages…" Command="{Binding ExtractPagesCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Extract}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
                                     <Separator/>
-                                    <MenuItem Header="Rotate current page left" Command="{Binding RotatePageLeftCommand}"/>
-                                    <MenuItem Header="Rotate current page right" Command="{Binding RotatePageRightCommand}"/>
+                                    <MenuItem Header="Rotate page left" Command="{Binding RotatePageLeftCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.RotateLeft}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Rotate page right" Command="{Binding RotatePageRightCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.RotateRight}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
 
                         <!-- export / convert menu (OCR lives here too) -->
-                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="Export / convert">
+                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="Export">
                             <StackPanel Orientation="Horizontal">
                                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Export}"/>
                                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
@@ -669,20 +706,29 @@
                             </StackPanel>
                             <Button.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="Export to Word (.docx)…" Command="{Binding ExportWordCommand}"/>
-                                    <MenuItem Header="Export to Excel (.xlsx)…" Command="{Binding ExportExcelCommand}"/>
-                                    <MenuItem Header="Export to PowerPoint (.pptx)…" Command="{Binding ExportPowerPointCommand}"/>
-                                    <MenuItem Header="Export pages as images…" Command="{Binding ExportImagesCommand}"/>
+                                    <MenuItem Header="Export to Word (.docx)…" Command="{Binding ExportWordCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Export}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Export to Excel (.xlsx)…" Command="{Binding ExportExcelCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Export}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Export to PowerPoint (.pptx)…" Command="{Binding ExportPowerPointCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Export}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Export pages as images…" Command="{Binding ExportImagesCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Image}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
                                     <Separator/>
-                                    <MenuItem Header="Recognize text (OCR)…" Command="{Binding RunOcrCommand}"/>
+                                    <MenuItem Header="Recognize text (OCR)…" Command="{Binding RunOcrCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ocr}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
-                        <TextBlock Text="Tools" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.65"/>
 
-                        <!-- annotation tools -->
+                        <!-- select + text markup -->
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Select"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Select}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Select}"/>
@@ -690,7 +736,7 @@
                         <!-- Highlight: one button. Click activates it; click again (already active)
                              or right-click opens the text-select / freehand mode menu. -->
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
-                                     ToolTip="Highlight"
+                                     ToolTip="Highlight — click again for options"
                                      PreviewMouseLeftButtonDown="HighlightTool_PreviewMouseDown"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Highlight}">
                             <Grid Width="16" Height="16">
@@ -701,12 +747,15 @@
                             </Grid>
                             <RadioButton.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="Select text to highlight" Command="{Binding SetHighlightModeCommand}" CommandParameter="text"/>
-                                    <MenuItem Header="Freehand highlighting" Command="{Binding SetHighlightModeCommand}" CommandParameter="freehand"/>
+                                    <MenuItem Header="Highlight selected text" Command="{Binding SetHighlightModeCommand}" CommandParameter="text">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Highlight}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Freehand marker" Command="{Binding SetHighlightModeCommand}" CommandParameter="freehand">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ink}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
                                 </ContextMenu>
                             </RadioButton.ContextMenu>
                         </RadioButton>
-
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Underline"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Underline}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Underline}"/>
@@ -715,7 +764,11 @@
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=StrikeOut}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Strike}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Draw"
+
+                        <Rectangle Style="{StaticResource ToolSep}"/>
+
+                        <!-- pen + eraser -->
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Pen"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Ink}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ink}"/>
                         </RadioButton>
@@ -723,6 +776,19 @@
                                      ToolTip="Eraser"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Eraser}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Eraser}"/>
+                        </RadioButton>
+
+                        <Rectangle Style="{StaticResource ToolSep}"/>
+
+                        <!-- shapes + text -->
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                                     ToolTip="Text box"
+                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Text}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextTool}"/>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Arrow"
+                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Arrow}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Arrow}"/>
                         </RadioButton>
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Rectangle"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Rect}">
@@ -732,36 +798,39 @@
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Ellipse}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ellipse}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
-                                     ToolTip="Add text"
-                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Text}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextTool}"/>
-                        </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Arrow"
-                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Arrow}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Arrow}"/>
-                        </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
-                                     ToolTip="Signature"
-                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Signature}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Signature}"/>
-                        </RadioButton>
-                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="Edit signature">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
-                                  Width="10" Height="10" Stretch="Uniform"/>
-                            <Button.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Edit signature…" Command="{Binding EditSignatureCommand}"/>
-                                </ContextMenu>
-                            </Button.ContextMenu>
-                        </Button>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
-                        <TextBlock Text="Style" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.65"/>
+
+                        <!-- signature + content -->
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                                     ToolTip="Signature — click again to edit"
+                                     PreviewMouseLeftButtonDown="SignatureTool_PreviewMouseDown"
+                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Signature}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Signature}"/>
+                            <RadioButton.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Edit signature…" Command="{Binding EditSignatureCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Signature}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </RadioButton.ContextMenu>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                                     ToolTip="Insert image"
+                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=PlaceImage}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Image}"/>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                                     ToolTip="Edit page text"
+                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=EditText}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.EditText}"/>
+                        </RadioButton>
+
+                        <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- markup color -->
                         <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click"
-                                ToolTip="Color for the active tool">
+                                ToolTip="Markup color">
                             <Border Width="16" Height="16" CornerRadius="8"
                                     BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"
                                     Background="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource HexToBrush}}"/>
@@ -803,7 +872,7 @@
 
                         <!-- stroke thickness -->
                         <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click"
-                                ToolTip="Line thickness">
+                                ToolTip="Stroke thickness">
                             <TextBlock Text="{Binding SelectedDocument.ActiveStrokeWidth, StringFormat={}{0} pt}"
                                        FontSize="11" VerticalAlignment="Center"/>
                             <Button.ContextMenu>
@@ -817,20 +886,6 @@
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
-
-                        <Rectangle Style="{StaticResource ToolSep}"/>
-                        <TextBlock Text="Content" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.65"/>
-
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
-                                     ToolTip="Edit text"
-                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=EditText}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.EditText}"/>
-                        </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
-                                     ToolTip="Place image"
-                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=PlaceImage}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Image}"/>
-                        </RadioButton>
                     </StackPanel>
                 </StackPanel>
             </DockPanel>
@@ -907,17 +962,17 @@
                         </Path.RenderTransform>
                     </Path>
                     <TextBlock Text="Graphite" Style="{StaticResource H1}" HorizontalAlignment="Center" Margin="0,34,0,2"/>
-                    <TextBlock Text="PDF, precisely." Style="{StaticResource Caption}" FontSize="13" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Read, mark up, and edit PDFs." Style="{StaticResource Caption}" FontSize="13" HorizontalAlignment="Center"/>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,26,0,0">
-                        <Button Style="{StaticResource AccentButton}" Command="{Binding OpenCommand}" Content="Open a document…"/>
+                        <Button Style="{StaticResource AccentButton}" Command="{Binding OpenCommand}" Content="Open document…"/>
                         <Button Style="{StaticResource GhostButton}" Command="{Binding OpenOneDriveCommand}"
-                                Content="From OneDrive" Margin="10,0,0,0"/>
+                                Content="Open from OneDrive" Margin="10,0,0,0"/>
                     </StackPanel>
-                    <TextBlock Text="…or drop PDF or Office files anywhere in this window."
+                    <TextBlock Text="or drag a PDF or Office file into this window"
                                Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,12,0,0"/>
 
-                    <TextBlock Text="RECENT" Style="{StaticResource Caption}" Margin="6,30,0,6" FontSize="10"
+                    <TextBlock Text="Recent files" Style="{StaticResource Caption}" Margin="6,30,0,6" FontSize="10"
                                Visibility="{Binding RecentFiles.Count, Converter={StaticResource NonZeroToVis}}"/>
                     <ListBox Style="{StaticResource GList}" ItemsSource="{Binding RecentFiles}" MaxHeight="220"
                              SelectionChanged="RecentList_SelectionChanged">
@@ -932,6 +987,19 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+
+                    <DockPanel Margin="4,22,0,0">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Padding="4,2"
+                                Command="{Binding CheckForUpdatesCommand}" ToolTip="Check for updates">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Download}"
+                                      Width="11" Height="11" Stretch="Uniform" VerticalAlignment="Center"/>
+                                <TextBlock Text="Check for updates" Style="{StaticResource Caption}" Margin="5,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <TextBlock Text="{Binding AppVersion, StringFormat={}Version {0}}"
+                                   Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                    </DockPanel>
                 </StackPanel>
             </Border>
         </Grid>
@@ -975,7 +1043,7 @@
                     <TextBox x:Name="PaletteBox" DockPanel.Dock="Top" FontSize="15" Padding="10,8"
                              Text="{Binding PaletteQuery, UpdateSourceTrigger=PropertyChanged}"
                              PreviewKeyDown="PaletteBox_KeyDown"
-                             ToolTip="Type a command…"/>
+                             ToolTip="Type a command"/>
                     <ListBox x:Name="PaletteList" Style="{StaticResource GList}" Margin="0,8,0,0" MaxHeight="380"
                              ItemsSource="{Binding PaletteResults}"
                              SelectedIndex="{Binding PaletteSelectedIndex}"

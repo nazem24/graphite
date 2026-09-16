@@ -25,6 +25,7 @@ jobs:
         run: pwsh -File tools/get-tessdata.ps1
 
       - name: Publish self-contained win-x64 build
+        shell: pwsh
         run: >
           dotnet publish src/Graphite.App/Graphite.App.csproj
           -c Release
@@ -32,6 +33,7 @@ jobs:
           --self-contained true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version="$("${{ github.ref_name }}".TrimStart('v'))"
           -o publish
 
       - name: Zip the published output

@@ -604,8 +604,14 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
-                    <Border x:Name="bd" Background="Transparent" CornerRadius="7" Padding="11,6">
-                        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+                    <Border x:Name="bd" Background="Transparent" CornerRadius="7" Padding="10,6">
+                        <DockPanel>
+                            <ContentPresenter x:Name="icon" Content="{TemplateBinding Icon}"
+                                              Width="15" Height="15" Margin="0,0,9,0"
+                                              VerticalAlignment="Center"/>
+                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
+                                              VerticalAlignment="Center"/>
+                        </DockPanel>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsHighlighted" Value="True">
@@ -613,6 +619,9 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.35"/>
+                        </Trigger>
+                        <Trigger Property="Icon" Value="{x:Null}">
+                            <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
