@@ -287,6 +287,15 @@ public partial class MainWindow : Window
         if (sender is not ListBox lb || lb.DataContext is not DocumentViewModel doc || !doc.IsContinuous)
             return;
 
+        // ScrollChanged BUBBLES: any nested ScrollViewer inside a page container reports
+        // here too — notably the inline text editor's content host, which fires it on
+        // every keystroke as the caret moves. Its tiny offsets (viewport ~12 DIP) would
+        // reset the current-page probe to page 1 per keystroke, and the eviction window
+        // that follows would blank the very page being edited. Only the ListBox's own
+        // ScrollViewer may drive current-page tracking.
+        if (!ReferenceEquals(e.OriginalSource, FindScrollViewer(lb)))
+            return;
+
         // User scrolled outside the animation (scrollbar drag, keyboard) — re-sync.
         if (_scrollers.TryGetValue(lb, out var sc)) sc.Sync();
 
