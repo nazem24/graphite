@@ -44,6 +44,9 @@ public partial class MainWindow : Window
         };
 
         Loaded += (_, _) => Backdrop.Apply(this, ThemeService.IsDark);
+        // WindowStyle="None" + WindowChrome doesn't clamp maximize to the work area —
+        // without this hook the maximized window covers the taskbar.
+        Loaded += (_, _) => MaximizeWorkArea.Hook(this);
         Closing += MainWindow_Closing;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         ViewModel.PasteImageRequested += () =>
@@ -114,13 +117,15 @@ public partial class MainWindow : Window
             ViewModel.ShowSidebar = false;
             ViewModel.ShowInspector = false;
             // WindowStyle stays None (custom chrome) — fullscreen just drops the resize
-            // border and covers the taskbar.
+            // border and covers the taskbar. Lift the work-area clamp so it really can.
+            MaximizeWorkArea.AllowCoverTaskbar = true;
             ResizeMode = ResizeMode.NoResize;
             WindowState = WindowState.Normal; // force a state change so the taskbar is covered
             WindowState = WindowState.Maximized;
         }
         else
         {
+            MaximizeWorkArea.AllowCoverTaskbar = false;
             ResizeMode = ResizeMode.CanResize;
             WindowState = _preFullscreenState;
             ViewModel.ShowSidebar = _preFullscreenSidebar;
