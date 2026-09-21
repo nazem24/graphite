@@ -92,49 +92,93 @@ public partial class MainViewModel : ObservableObject
                     string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
                 if (existing != null) { SelectedDocument = existing; continue; }
 
-                DocumentViewModel doc;
                 if (OfficeToPdf.CanConvert(path))
-                {
-                    string temp = Path.Combine(Path.GetTempPath(), $"graphite-{Guid.NewGuid():N}.pdf");
-                    try
-                    {
-                        await Task.Run(() => OfficeToPdf.Convert(path, temp));
-                        doc = await DocumentViewModel.FromBytesAsync(await File.ReadAllBytesAsync(temp), null);
-                    }
-                    finally
-                    {
-                        try { File.Delete(temp); } catch { /* best effort */ }
-                    }
-                }
+                    await OpenOfficeAsPdfAsync(path);
                 else
-                {
-                    byte[] bytes = await File.ReadAllBytesAsync(path);
-
-                    // Password-protected? Ask, decrypt in memory, and continue normally.
-                    if (Graphite.Core.Pdf.PdfSecurity.IsPasswordProtected(bytes))
-                    {
-                        var decrypted = PromptAndDecrypt(bytes, Path.GetFileName(path));
-                        if (decrypted == null) continue; // user cancelled
-                        bytes = decrypted.Value.Bytes;
-                        doc = await DocumentViewModel.FromBytesAsync(bytes, path);
-                        // Remember the password so saving re-encrypts instead of
-                        // silently stripping the file's protection.
-                        doc.SourcePassword = decrypted.Value.Password;
-                    }
-                    else
-                    {
-                        doc = await DocumentViewModel.FromBytesAsync(bytes, path);
-                    }
-                    ThemeService.AddRecentFile(path);
-                    RecentFiles.Remove(path);
-                    RecentFiles.Insert(0, path);
-                }
-
-                Documents.Add(doc);
-                SelectedDocument = doc;
+                    await OpenPdfAsync(path);
             }
             catch (Exception ex) { Error(ex); }
         }
+    }
+
+    /// <summary>Convert an Office document to a PDF saved next to the source file
+    /// (report.docx → report.pdf), then open that PDF as a normal file-backed document.
+    /// When the source folder isn't writable, fall back to a throwaway temp copy.</summary>
+    private async Task OpenOfficeAsPdfAsync(string path)
+    {
+        string target = Path.Combine(
+            Path.GetDirectoryName(path) ?? "",
+            Path.GetFileNameWithoutExtension(path) + ".pdf");
+
+        if (File.Exists(target))
+        {
+            var answer = MessageDialog.Show(Owner,
+                $"\"{Path.GetFileName(target)}\" already exists next to the document.\n\n" +
+                "Yes = convert again and replace it · No = open the existing PDF · Cancel = do nothing.",
+                "Convert to PDF", DialogButtons.YesNoCancel, DialogIcon.Info);
+            if (answer == MessageBoxResult.Cancel) return;
+            if (answer == MessageBoxResult.No) { await OpenPdfAsync(target); return; }
+        }
+
+        try
+        {
+            await Task.Run(() => OfficeToPdf.Convert(path, target));
+            await OpenPdfAsync(target);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Can't write next to the source (read-only folder, locked file) — fall
+            // back to an in-memory temp copy so the document still opens.
+            string temp = Path.Combine(Path.GetTempPath(), $"graphite-{Guid.NewGuid():N}.pdf");
+            try
+            {
+                await Task.Run(() => OfficeToPdf.Convert(path, temp));
+                var doc = await DocumentViewModel.FromBytesAsync(await File.ReadAllBytesAsync(temp), null);
+                Documents.Add(doc);
+                SelectedDocument = doc;
+                MessageDialog.Show(Owner,
+                    $"Couldn't save the PDF next to the document ({ex.Message}), so it was opened as a " +
+                    "temporary copy instead. Use Save as… to keep it.",
+                    "Convert to PDF", DialogButtons.OK, DialogIcon.Warning);
+            }
+            finally
+            {
+                try { File.Delete(temp); } catch { /* best effort */ }
+            }
+        }
+    }
+
+    private async Task OpenPdfAsync(string path)
+    {
+        // Already open? Just focus it.
+        var existing = Documents.FirstOrDefault(d =>
+            string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) { SelectedDocument = existing; return; }
+
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        DocumentViewModel doc;
+
+        // Password-protected? Ask, decrypt in memory, and continue normally.
+        if (Graphite.Core.Pdf.PdfSecurity.IsPasswordProtected(bytes))
+        {
+            var decrypted = PromptAndDecrypt(bytes, Path.GetFileName(path));
+            if (decrypted == null) return; // user cancelled
+            bytes = decrypted.Value.Bytes;
+            doc = await DocumentViewModel.FromBytesAsync(bytes, path);
+            // Remember the password so saving re-encrypts instead of
+            // silently stripping the file's protection.
+            doc.SourcePassword = decrypted.Value.Password;
+        }
+        else
+        {
+            doc = await DocumentViewModel.FromBytesAsync(bytes, path);
+        }
+        ThemeService.AddRecentFile(path);
+        RecentFiles.Remove(path);
+        RecentFiles.Insert(0, path);
+
+        Documents.Add(doc);
+        SelectedDocument = doc;
     }
 
     private static (byte[] Bytes, string Password)? PromptAndDecrypt(byte[] bytes, string fileName)

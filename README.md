@@ -61,8 +61,9 @@ app; type a few letters, Enter runs it.
 
 **Conversion** — export to Word (.docx, reconstructed paragraphs), Excel (.xlsx, one
 sheet per page with inferred columns), PowerPoint (.pptx, one slide per page) and
-PNG/JPEG/WebP images. Opening a Word/Excel/PowerPoint file converts it to PDF
-automatically (uses the installed Microsoft Office via COM; requires Office).
+PNG/JPEG/WebP images. Opening a Word/Excel/PowerPoint file converts it to a PDF
+saved next to the original and opens that (uses the installed Microsoft Office
+via COM; requires Office).
 
 **OCR** — Tesseract-based recognition for scanned pages. Recognized pages become
 searchable and selectable immediately, and an invisible text layer is baked into the
