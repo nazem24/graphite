@@ -85,6 +85,23 @@ public partial class DocumentViewModel : ObservableObject
     /// true = draw a freehand translucent marker stroke anywhere on the page.</summary>
     [ObservableProperty] private bool highlightFreehand;
 
+    /// <summary>Toolbar checked state for the text-snapping Highlight button. Setting it
+    /// to true activates the Highlight tool in text mode (false is ignored — the tool
+    /// group unchecks buttons that way).</summary>
+    public bool IsTextHighlightActive
+    {
+        get => ActiveTool == ToolKind.Highlight && !HighlightFreehand;
+        set { if (value) { HighlightFreehand = false; ActiveTool = ToolKind.Highlight; } }
+    }
+
+    /// <summary>Toolbar checked state for the freehand Marker button (lives with the pen
+    /// and eraser). Setting it to true activates the Highlight tool in freehand mode.</summary>
+    public bool IsFreehandMarkerActive
+    {
+        get => ActiveTool == ToolKind.Highlight && HighlightFreehand;
+        set { if (value) { HighlightFreehand = true; ActiveTool = ToolKind.Highlight; } }
+    }
+
     /// <summary>Stroke width used for freehand highlighter strokes (not user-adjustable
     /// via the line-thickness control, which is for underline/strike/drawing/shapes).</summary>
     public const double FreehandHighlightWidth = 14.0;
@@ -370,6 +387,14 @@ public partial class DocumentViewModel : ObservableObject
     {
         if (_toolColors.TryGetValue(value, out var color)) ActiveColorHex = color;
         if (_toolWidths.TryGetValue(value, out var width)) ActiveStrokeWidth = width;
+        OnPropertyChanged(nameof(IsTextHighlightActive));
+        OnPropertyChanged(nameof(IsFreehandMarkerActive));
+    }
+
+    partial void OnHighlightFreehandChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsTextHighlightActive));
+        OnPropertyChanged(nameof(IsFreehandMarkerActive));
     }
 
     partial void OnActiveColorHexChanged(string value) => _toolColors[ActiveTool] = value;

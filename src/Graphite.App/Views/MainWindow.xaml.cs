@@ -484,27 +484,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>The Highlight tool button is one control: a plain click selects it as
-    /// usual, but if it's already the active tool, this click instead opens the
-    /// text-select / freehand mode menu (right-click also opens it, via ContextMenu).
-    /// The menu is opened on a deferred dispatch so the mouse-up that follows this
-    /// mouse-down doesn't land on the popup and immediately dismiss it.</summary>
-    private void HighlightTool_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (ViewModel.SelectedDocument?.ActiveTool != ToolKind.Highlight) return;
-        if (sender is not FrameworkElement { ContextMenu: { } menu } fe) return;
-
-        e.Handled = true;
-        Dispatcher.BeginInvoke(() =>
-        {
-            menu.DataContext = ViewModel;
-            menu.PlacementTarget = fe;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
-        }, DispatcherPriority.Input);
-    }
-
-    /// <summary>Same click-again pattern as the Highlight tool: once the Signature tool
+    /// <summary>Click-again pattern: once the Signature tool
     /// is already active, clicking it again opens its menu (Edit signature…).</summary>
     private void SignatureTool_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {

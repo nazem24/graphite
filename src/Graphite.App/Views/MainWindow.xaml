@@ -733,28 +733,12 @@
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Select}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Select}"/>
                         </RadioButton>
-                        <!-- Highlight: one button. Click activates it; click again (already active)
-                             or right-click opens the text-select / freehand mode menu. -->
+                        <!-- Highlight (text mode): drag over words to snap-highlight them.
+                             The freehand marker variant lives with the pen and eraser below. -->
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
-                                     ToolTip="Highlight — click again for options"
-                                     PreviewMouseLeftButtonDown="HighlightTool_PreviewMouseDown"
-                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Highlight}">
-                            <Grid Width="16" Height="16">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Highlight}"/>
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
-                                      Width="7" Height="7" Stretch="Uniform" StrokeThickness="1.1" Opacity="0.8"
-                                      HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-3,-3"/>
-                            </Grid>
-                            <RadioButton.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Highlight selected text" Command="{Binding SetHighlightModeCommand}" CommandParameter="text">
-                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Highlight}" Width="14" Height="14"/></MenuItem.Icon>
-                                    </MenuItem>
-                                    <MenuItem Header="Freehand marker" Command="{Binding SetHighlightModeCommand}" CommandParameter="freehand">
-                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ink}" Width="14" Height="14"/></MenuItem.Icon>
-                                    </MenuItem>
-                                </ContextMenu>
-                            </RadioButton.ContextMenu>
+                                     ToolTip="Highlight — drag over text to snap-highlight words"
+                                     IsChecked="{Binding SelectedDocument.IsTextHighlightActive}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextHighlight}"/>
                         </RadioButton>
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Underline"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Underline}">
@@ -767,10 +751,17 @@
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
-                        <!-- pen + eraser -->
+                        <!-- pen + freehand marker + eraser -->
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Pen"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Ink}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ink}"/>
+                        </RadioButton>
+                        <!-- Freehand marker: translucent highlighter stroke drawn anywhere on
+                             the page (the text-snapping variant lives with underline/strike). -->
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                                     ToolTip="Marker — draw a translucent freehand highlight"
+                                     IsChecked="{Binding SelectedDocument.IsFreehandMarkerActive}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.MarkerFreehand}"/>
                         </RadioButton>
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
                                      ToolTip="Eraser"
