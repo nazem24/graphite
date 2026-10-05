@@ -44,7 +44,7 @@ public sealed class PendingImage
     };
 }
 
-public partial class DocumentViewModel : ObservableObject
+public partial class DocumentViewModel : ObservableObject, IDisposable
 {
     private byte[] _bytes;
 
@@ -148,15 +148,24 @@ public partial class DocumentViewModel : ObservableObject
 
     private List<PendingImage> CloneImages() => PlacedImages.Select(i => i.Clone()).ToList();
 
-    private static void TrimStack(List<(byte[] Bytes, List<Annotation> Annots, List<PendingImage> Images)> stack)
+    private void TrimStack(List<(byte[] Bytes, List<Annotation> Annots, List<PendingImage> Images)> stack)
     {
-        long total = 0;
-        foreach (var s in stack) total += s.Bytes.Length;
-        while (stack.Count > 1 && (stack.Count > MaxUndo || total > MaxUndoBudgetBytes))
-        {
-            total -= stack[0].Bytes.Length;
+        while (stack.Count > MaxUndo) stack.RemoveAt(0);
+        // Annotation-only edits don't touch the PDF bytes, so most snapshots share the very
+        // same byte[] as their neighbours (and as the live document). Budget by the distinct
+        // buffers actually held — counting every snapshot's Bytes.Length charged a 50 MB PDF
+        // 50 MB per pen stroke and threw away undo history long before any memory was at stake.
+        while (stack.Count > 1 && DistinctUndoBytes() > MaxUndoBudgetBytes)
             stack.RemoveAt(0);
-        }
+    }
+
+    private long DistinctUndoBytes()
+    {
+        var seen = new HashSet<byte[]>(ReferenceEqualityComparer.Instance) { _bytes };
+        long total = 0;
+        foreach (var snap in _undo.Concat(_redo))
+            if (seen.Add(snap.Bytes)) total += snap.Bytes.Length;
+        return total;
     }
 
     /// <summary>Capture the current state; call BEFORE any mutation.</summary>
@@ -223,9 +232,7 @@ public partial class DocumentViewModel : ObservableObject
                 _bytes = bytes;
                 Outline.Clear();
                 foreach (var n in outline) Outline.Add(n);
-                Pages.Clear();
-                for (int i = 0; i < Renderer.PageCount; i++)
-                    Pages.Add(new PageViewModel(this, i));
+                RebuildPages();
                 SearchResults.Clear();
                 CurrentMatchIndex = -1;
                 CurrentPageIndex = Math.Clamp(CurrentPageIndex, 0, Pages.Count - 1);
@@ -276,6 +283,17 @@ public partial class DocumentViewModel : ObservableObject
         foreach (var node in outline) Outline.Add(node);
         foreach (var a in annotations) Annotations.Add(new AnnotationViewModel(this, a));
         RefreshVisiblePages();
+    }
+
+    /// <summary>Replace every page view-model after the PDF changed structurally. The old
+    /// ones are evicted first so renders they still have queued are skipped, not run.</summary>
+    private void RebuildPages()
+    {
+        foreach (var p in Pages) p.EvictFullImage();
+        Pages.Clear();
+        for (int i = 0; i < Renderer.PageCount; i++)
+            Pages.Add(new PageViewModel(this, i));
+        _viewFirst = _viewLast = -1;
     }
 
     private void RefreshVisiblePages()
@@ -332,18 +350,51 @@ public partial class DocumentViewModel : ObservableObject
         EvictFarPages(value);
     }
 
-    /// <summary>How many pages on either side of the current page stay rendered at
-    /// full size. Pages outside this window have their bitmap dropped — the
-    /// ListBox container recreates them (and re-renders) automatically once they
-    /// scroll back into view. Without this, a long document keeps every page it
-    /// has ever displayed as a full-resolution bitmap for as long as it's open.</summary>
-    private const int RenderBufferPages = 4;
+    /// <summary>Pages kept rendered beyond the visible ones (each side). Pages outside the
+    /// window have their bitmap dropped and re-render on demand once they come back into
+    /// view. Without this, a long document keeps every page it has ever displayed as a
+    /// full-resolution bitmap for as long as it's open.</summary>
+    private const int RenderBufferPages = 2;
+
+    // Range of pages currently on screen in continuous layout (-1 = not yet known).
+    private int _viewFirst = -1, _viewLast = -1;
+
+    /// <summary>Called by the viewer as it scrolls: renders whatever is on screen and drops
+    /// bitmaps for pages that are now far away. Driving eviction from the real viewport
+    /// (rather than a fixed window around the "current" page) fixes zoomed-out views,
+    /// where more pages are visible than the old ±4 window kept — those pages were evicted
+    /// while still on screen and stayed blank.</summary>
+    public void UpdateViewport(int first, int last)
+    {
+        if (Pages.Count == 0) return;
+        first = Math.Clamp(first, 0, Pages.Count - 1);
+        last = Math.Clamp(last, first, Pages.Count - 1);
+        if (first == _viewFirst && last == _viewLast) return;
+        _viewFirst = first;
+        _viewLast = last;
+        // Only fill in pages that have no bitmap at all; re-rendering at a new zoom level is
+        // left to the window's debounce timer, so a Ctrl+wheel zoom (which shifts the visible
+        // range on every notch) doesn't re-render the screen once per notch.
+        for (int i = first; i <= last; i++)
+            if (Pages[i].Image == null) _ = Pages[i].EnsureRenderedAsync();
+        EvictFarPages(CurrentPageIndex);
+    }
+
+    private (int Lo, int Hi) KeepRange(int centerIndex)
+    {
+        if (IsContinuous && _viewFirst >= 0)
+        {
+            // Keep as many pages again as are visible on each side (the panel's own cache
+            // realizes about one viewport up and down), but at least RenderBufferPages.
+            int margin = Math.Max(RenderBufferPages, _viewLast - _viewFirst + 1);
+            return (_viewFirst - margin, _viewLast + margin);
+        }
+        return (centerIndex - RenderBufferPages, centerIndex + RenderBufferPages + 1);
+    }
 
     private void EvictFarPages(int centerIndex)
     {
-        if (Pages.Count <= RenderBufferPages * 2 + 1) return; // small doc — nothing to gain
-        int lo = centerIndex - RenderBufferPages;
-        int hi = centerIndex + RenderBufferPages;
+        var (lo, hi) = KeepRange(centerIndex);
         foreach (var p in Pages)
             if (p.Index < lo || p.Index > hi) p.EvictFullImage();
     }
@@ -368,8 +419,7 @@ public partial class DocumentViewModel : ObservableObject
     /// shows stale panes.</summary>
     private void RerenderAllPages()
     {
-        int lo = CurrentPageIndex - RenderBufferPages;
-        int hi = CurrentPageIndex + RenderBufferPages;
+        var (lo, hi) = KeepRange(CurrentPageIndex);
         foreach (var p in Pages)
         {
             p.InvalidateBitmaps();
@@ -377,7 +427,6 @@ public partial class DocumentViewModel : ObservableObject
                 _ = p.EnsureRenderedAsync(force: true);
             else
                 p.EvictFullImage();
-            _ = p.EnsureThumbnailAsync();
         }
     }
 
@@ -502,9 +551,7 @@ public partial class DocumentViewModel : ObservableObject
             Outline.Clear();
             foreach (var n in outline) Outline.Add(n);
 
-            Pages.Clear();
-            for (int i = 0; i < Renderer.PageCount; i++)
-                Pages.Add(new PageViewModel(this, i));
+            RebuildPages();
 
             SearchResults.Clear();
             CurrentMatchIndex = -1;
@@ -750,5 +797,26 @@ public partial class DocumentViewModel : ObservableObject
             return recognized;
         }
         finally { IsBusy = false; }
+    }
+
+    // ------------------------------------------------------------- lifetime
+
+    private bool _disposed;
+
+    /// <summary>Release everything a closed document holds: cancel a running search, drop
+    /// undo/redo snapshots (each can be a full copy of the PDF), page bitmaps and the text
+    /// index. Safe to call more than once.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = null;
+        _undo.Clear();
+        _redo.Clear();
+        foreach (var p in Pages) p.EvictFullImage();
+        PlacedImages.Clear();
+        Index.Dispose();
     }
 }

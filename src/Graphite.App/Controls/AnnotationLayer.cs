@@ -764,7 +764,7 @@ public sealed class AnnotationLayer : FrameworkElement
         // search hits
         if (_page.SearchRects is { Count: > 0 } search)
         {
-            var brush = Frozen((Color)FindResource("App.SearchHighlightColor"), 0.35);
+            var brush = Brush(((Color)FindResource("App.SearchHighlightColor")).ToString(), 0.35);
             foreach (var r in search)
                 dc.DrawRoundedRectangle(brush, null, ToRect(r.Inflate(1), s), 2, 2);
         }
@@ -772,7 +772,7 @@ public sealed class AnnotationLayer : FrameworkElement
         // text selection
         if (_page.SelectionRects is { Count: > 0 } sel)
         {
-            var brush = Frozen((Color)FindResource("App.SelectionColor"), 0.30);
+            var brush = Brush(((Color)FindResource("App.SelectionColor")).ToString(), 0.30);
             foreach (var r in sel)
                 dc.DrawRectangle(brush, null, ToRect(r, s));
         }
@@ -1045,11 +1045,29 @@ public sealed class AnnotationLayer : FrameworkElement
 
     private static StreamGeometry Polyline(IReadOnlyList<PointD> pts, double s)
     {
+        // Every repaint of a page (selection change, eraser hover, dragging a shape) used to
+        // re-smooth and rebuild the geometry of every ink stroke on it — on a page of
+        // handwriting that's thousands of Bezier segments per mouse-move. Stroke point lists
+        // are never edited in place (erasing and undo create new lists), so the geometry can
+        // be cached per list and reused until the list grows (live ink) or the zoom changes.
+        if (GeometryCache.TryGetValue(pts, out var hit) && hit.Scale == s && hit.Count == pts.Count &&
+            (pts.Count == 0 || (hit.First == pts[0] && hit.Last == pts[^1])))
+            return hit.Geometry;
+
         var scaled = new Point[pts.Count];
         for (int i = 0; i < pts.Count; i++)
             scaled[i] = new Point(pts[i].X * s, pts[i].Y * s);
-        return StrokeSmoothing.ToSmoothGeometry(scaled);
+        var geometry = StrokeSmoothing.ToSmoothGeometry(scaled);
+        GeometryCache.AddOrUpdate(pts, new CachedGeometry(s, pts.Count,
+            pts.Count > 0 ? pts[0] : default, pts.Count > 0 ? pts[^1] : default, geometry));
+        return geometry;
     }
+
+    private sealed record CachedGeometry(double Scale, int Count, PointD First, PointD Last, StreamGeometry Geometry);
+
+    // Weakly keyed: entries vanish together with the stroke lists they belong to.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IReadOnlyList<PointD>, CachedGeometry>
+        GeometryCache = new();
 
     private static readonly Dictionary<string, Color> ColorCache = new();
 

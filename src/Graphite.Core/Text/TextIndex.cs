@@ -79,15 +79,31 @@ public sealed class TextIndex : IDisposable
         {
             if (_pages.TryGetValue(pageIndex, out var cached)) return cached;
 
-            var page = _doc!.GetPage(pageIndex + 1);
-            var pt = new PageText { PageIndex = pageIndex, Width = page.Width, Height = page.Height };
-            foreach (var w in page.GetWords())
+            // Disposed (document closed while a search/selection was still running) or out
+            // of range: behave like a page without text instead of throwing.
+            if (_doc == null || pageIndex < 0 || pageIndex >= PageCount)
+                return new PageText { PageIndex = pageIndex, Width = 0, Height = 0 };
+
+            PageText pt;
+            try
             {
-                var bb = w.BoundingBox;
-                // PdfPig: bottom-left origin -> convert to top-left origin.
-                var rect = new RectD(bb.Left, page.Height - bb.Top, bb.Width, bb.Height);
-                if (!string.IsNullOrWhiteSpace(w.Text))
-                    pt.Words.Add(new WordBox(w.Text, rect));
+                var page = _doc.GetPage(pageIndex + 1);
+                pt = new PageText { PageIndex = pageIndex, Width = page.Width, Height = page.Height };
+                foreach (var w in page.GetWords())
+                {
+                    var bb = w.BoundingBox;
+                    // PdfPig: bottom-left origin -> convert to top-left origin.
+                    var rect = new RectD(bb.Left, page.Height - bb.Top, bb.Width, bb.Height);
+                    if (!string.IsNullOrWhiteSpace(w.Text))
+                        pt.Words.Add(new WordBox(w.Text, rect));
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // One malformed page (broken font, bad content stream) used to abort the
+                // whole search / selection; treat it as a page without a text layer instead.
+                System.Diagnostics.Debug.WriteLine($"Text extraction failed on page {pageIndex + 1}: {ex.Message}");
+                pt = new PageText { PageIndex = pageIndex, Width = 0, Height = 0 };
             }
             pt.RebuildJoined();
             _pages[pageIndex] = pt;
@@ -176,6 +192,6 @@ public sealed class TextIndex : IDisposable
 
     public void Dispose()
     {
-        lock (_gate) { _doc?.Dispose(); _doc = null; }
+        lock (_gate) { _doc?.Dispose(); _doc = null; _pages.Clear(); PageCount = 0; }
     }
 }

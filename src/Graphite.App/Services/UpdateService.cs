@@ -23,6 +23,17 @@ public static class UpdateService
 
     private static readonly HttpClient Http = CreateClient();
 
+    /// <summary>Separate client for the package download: no overall timeout (the 15-minute
+    /// cap is applied per download via a cancellation token instead).</summary>
+    private static readonly HttpClient Download = CreateDownloadClient();
+
+    private static HttpClient CreateDownloadClient()
+    {
+        var http = new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Graphite-Updater");
+        return http;
+    }
+
     private static HttpClient CreateClient()
     {
         var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
@@ -91,8 +102,17 @@ public static class UpdateService
         string stageDir = Path.Combine(Path.GetTempPath(), $"graphite-update-{info.Tag}");
         string zipPath = stageDir + ".zip";
 
-        byte[] bytes = await Http.GetByteArrayAsync(info.ZipUrl);
-        await File.WriteAllBytesAsync(zipPath, bytes);
+        // Stream the package to disk. GetByteArrayAsync buffered the whole ~70 MB zip in
+        // memory and ran under the 20-second API timeout, so the update failed on any
+        // connection slower than ~30 Mbit/s.
+        using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15)))
+        using (var response = await Download.GetAsync(info.ZipUrl, HttpCompletionOption.ResponseHeadersRead, cts.Token))
+        {
+            response.EnsureSuccessStatusCode();
+            await using var source = await response.Content.ReadAsStreamAsync(cts.Token);
+            await using var target = File.Create(zipPath);
+            await source.CopyToAsync(target, cts.Token);
+        }
 
         if (Directory.Exists(stageDir)) Directory.Delete(stageDir, recursive: true);
         ZipFile.ExtractToDirectory(zipPath, stageDir);

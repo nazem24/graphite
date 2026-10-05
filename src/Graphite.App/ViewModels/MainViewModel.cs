@@ -39,8 +39,11 @@ public partial class MainViewModel : ObservableObject
 
     private static Window? Owner => Application.Current.MainWindow;
 
-    private static void Error(Exception ex) =>
+    private static void Error(Exception ex)
+    {
+        App.LogError("Operation failed", ex);
         MessageDialog.Show(Owner, ex.Message, "Graphite", DialogButtons.OK, DialogIcon.Warning);
+    }
 
     // ------------------------------------------------------------- open / close
 
@@ -214,7 +217,7 @@ public partial class MainViewModel : ObservableObject
             }
         }
         Documents.Remove(doc);
-        doc.Index.Dispose();
+        doc.Dispose();
     }
 
     // ------------------------------------------------------------- save

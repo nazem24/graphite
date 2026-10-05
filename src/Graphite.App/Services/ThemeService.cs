@@ -152,7 +152,11 @@ public static class ThemeService
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(_settings));
+            // Write-then-rename so a crash or power loss mid-write can't leave a truncated
+            // settings.json (which silently reset the theme, recent files and signature).
+            string tmp = SettingsPath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(_settings));
+            File.Move(tmp, SettingsPath, overwrite: true);
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Settings save failed: {ex.Message}"); }
     }

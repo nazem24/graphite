@@ -44,6 +44,7 @@ public partial class MainWindow : Window
         };
 
         Loaded += (_, _) => Backdrop.Apply(this, ThemeService.IsDark);
+        Loaded += (_, _) => PageViewModel.DeviceScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
         // WindowStyle="None" + WindowChrome doesn't clamp maximize to the work area —
         // without this hook the maximized window covers the taskbar.
         Loaded += (_, _) => MaximizeWorkArea.Hook(this);
@@ -51,7 +52,7 @@ public partial class MainWindow : Window
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         ViewModel.PasteImageRequested += () =>
         {
-            if (ViewModel.SelectedDocument is { } d && Clipboard.ContainsImage())
+            if (ViewModel.SelectedDocument is { } d && ClipboardHelper.Try(Clipboard.ContainsImage))
                 PasteImageFromClipboard(d);
         };
 
@@ -88,6 +89,16 @@ public partial class MainWindow : Window
         bool maximized = WindowState == WindowState.Maximized;
         MaximizeRestoreIcon.Data = (Geometry)FindResource(maximized ? "Icon.WinRestore" : "Icon.WinMaximize");
         MaximizeRestoreButton.ToolTip = maximized ? "Restore" : "Maximize";
+    }
+
+    /// <summary>Moving to a monitor with different scaling: re-render the visible pages at
+    /// the new pixel density (the zoom timer re-renders every page that has a bitmap).</summary>
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        PageViewModel.DeviceScale = newDpi.DpiScaleX;
+        _zoomTimer.Stop();
+        _zoomTimer.Start();
     }
 
     // ------------------------------------------------------------- fullscreen
@@ -159,6 +170,7 @@ public partial class MainWindow : Window
                 _viewers.Remove(doc);
                 _scrollOffsets.Remove(doc);
                 doc.PropertyChanged -= Doc_PropertyChanged;
+                PruneInlineEditors(doc);
             }
 
         if (e.NewItems == null) return;
@@ -167,7 +179,11 @@ public partial class MainWindow : Window
             if (!_wired.Add(doc)) continue;
             doc.ScrollToPageRequested += i => ScrollToPage(doc, i);
             doc.ZoomChangedEvent += () => { _zoomTimer.Stop(); _zoomTimer.Start(); };
-            doc.PagesReset += () => Dispatcher.BeginInvoke(() => ScrollToPage(doc, doc.CurrentPageIndex));
+            doc.PagesReset += () =>
+            {
+                PruneInlineEditors(doc);
+                Dispatcher.BeginInvoke(() => ScrollToPage(doc, doc.CurrentPageIndex));
+            };
             doc.EditTextRequested += (page, rect) => OnEditTextRequested(doc, page, rect);
             doc.PlaceImageRequested += (page, rect) => OnPlaceImageRequested(doc, page, rect);
             doc.InlineEditRequested += vm => OnInlineEditRequested(doc, vm);
@@ -314,23 +330,32 @@ public partial class MainWindow : Window
         // User scrolled outside the animation (scrollbar drag, keyboard) — re-sync.
         if (_scrollers.TryGetValue(lb, out var sc)) sc.Sync();
 
-        // Which page sits a third of the way down the viewport?
-        double probe = e.VerticalOffset + e.ViewportHeight / 3;
+        // One pass over the page heights: which pages are on screen, and which page sits a
+        // third of the way down the viewport (that one becomes the "current" page).
+        double top = e.VerticalOffset;
+        double bottom = top + e.ViewportHeight;
+        double probe = top + e.ViewportHeight / 3;
+        int first = -1, last = -1, current = -1;
         double y = 0;
         for (int i = 0; i < doc.Pages.Count; i++)
         {
+            double pageTop = y;
             y += doc.Pages[i].DisplayHeight + PageGap;
-            if (y >= probe)
-            {
-                if (doc.CurrentPageIndex != i)
-                {
-                    _syncingThumbs = true;
-                    doc.CurrentPageIndex = i;
-                    _syncingThumbs = false;
-                }
-                break;
-            }
+            if (first < 0 && y > top) first = i;
+            if (current < 0 && y >= probe) current = i;
+            if (pageTop < bottom) last = i;
+            else break;
         }
+        if (first < 0) return;
+        if (current < 0) current = last;
+
+        if (doc.CurrentPageIndex != current)
+        {
+            _syncingThumbs = true;
+            doc.CurrentPageIndex = current;
+            _syncingThumbs = false;
+        }
+        doc.UpdateViewport(first, last);
     }
 
     private void PagesHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -566,8 +591,25 @@ public partial class MainWindow : Window
     {
         // With container recycling the same TextBox serves different pages — always
         // remap to the CURRENT DataContext.
-        if (sender is TextBox tb && tb.DataContext is PageViewModel page)
+        if (sender is not TextBox tb) return;
+        // Drop any page this TextBox used to serve; otherwise the map keeps growing with
+        // every page ever realized and pins their view-models (and bitmaps) in memory.
+        foreach (var stale in _inlineEditors.Where(kv => ReferenceEquals(kv.Value, tb)).Select(kv => kv.Key).ToList())
+            _inlineEditors.Remove(stale);
+        if (tb.DataContext is PageViewModel page)
             _inlineEditors[page] = tb;
+    }
+
+    /// <summary>Forget inline-editor mappings for pages that no longer exist — after a
+    /// structural edit replaced the document's pages, or when the document was closed.
+    /// These entries were a leak: each one kept a whole closed document alive.</summary>
+    private void PruneInlineEditors(DocumentViewModel doc)
+    {
+        var live = ViewModel.Documents.Contains(doc) ? doc.Pages.ToHashSet() : new HashSet<PageViewModel>();
+        foreach (var page in _inlineEditors.Keys.Where(p => p.Doc == doc && !live.Contains(p)).ToList())
+            _inlineEditors.Remove(page);
+        if (_inlineEdit is { } edit && edit.Doc == doc && !ViewModel.Documents.Contains(doc))
+            _inlineEdit = null;
     }
 
     private void OnInlineEditRequested(DocumentViewModel doc, AnnotationViewModel vm)
@@ -696,13 +738,16 @@ public partial class MainWindow : Window
     /// like a placed image file, and is baked into the PDF on save.</summary>
     private void PasteImageFromClipboard(DocumentViewModel doc)
     {
-        var bmp = Clipboard.GetImage();
-        if (bmp == null) return;
         try
         {
+            // The clipboard is a shared system resource — another app holding it open makes
+            // these calls throw (CLIPBRD_E_CANT_OPEN), so they live inside the try too.
+            var bmp = ClipboardHelper.Try(Clipboard.GetImage);
+            if (bmp == null) return;
+
             // Baking placed images into the PDF goes through a file path, so the
-            // clipboard bitmap is persisted to a session temp PNG.
-            string temp = Path.Combine(Path.GetTempPath(), $"graphite-paste-{Guid.NewGuid():N}.png");
+            // clipboard bitmap is persisted to a session temp PNG (cleaned up on exit).
+            string temp = App.NewPasteTempFile();
             var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
             encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
             using (var fs = File.Create(temp)) encoder.Save(fs);
@@ -770,8 +815,8 @@ public partial class MainWindow : Window
         }
 
         if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control &&
-            doc != null && Clipboard.ContainsImage() &&
-            Keyboard.FocusedElement is not TextBox)
+            doc != null && Keyboard.FocusedElement is not TextBox &&
+            ClipboardHelper.Try(Clipboard.ContainsImage))
         {
             PasteImageFromClipboard(doc);
             e.Handled = true;
@@ -805,7 +850,7 @@ public partial class MainWindow : Window
                  doc is { SelectedText.Length: > 0 } &&
                  Keyboard.FocusedElement is not TextBox)
         {
-            Clipboard.SetText(doc.SelectedText);
+            ClipboardHelper.Try(() => { Clipboard.SetText(doc.SelectedText); return true; });
             e.Handled = true;
         }
         else if (e.Key == Key.Delete && doc?.SelectedAnnotation is { } sel &&
@@ -882,7 +927,7 @@ public partial class MainWindow : Window
 
     private async void Window_Drop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
+        if (e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] files)
         {
             var supported = files.Where(f =>
                 Path.GetExtension(f).ToLowerInvariant() is ".pdf" or ".doc" or ".docx" or ".rtf"
