@@ -6,7 +6,9 @@
         xmlns:conv="clr-namespace:Graphite.App.Converters"
         xmlns:core="clr-namespace:Graphite.Core;assembly=Graphite.Core"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="Graphite" Width="1440" Height="900" MinWidth="960" MinHeight="560"
+        Title="Graphite" Icon="/Assets/Graphite.ico" Width="1440" Height="900" MinWidth="960" MinHeight="560"
+        Stylus.IsFlicksEnabled="False" Stylus.IsPressAndHoldEnabled="False"
+        Stylus.IsTapFeedbackEnabled="False" Stylus.IsTouchFeedbackEnabled="False"
         WindowStyle="None"
         AllowDrop="True" Drop="Window_Drop" PreviewKeyDown="Window_PreviewKeyDown"
         PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown"
@@ -823,64 +825,70 @@
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
+                        <!-- markup colour + thickness, grouped as one quiet chip -->
+                        <Border CornerRadius="11" BorderThickness="1" Padding="1" Margin="2,0,0,0"
+                                BorderBrush="{DynamicResource App.StrokeBrush}" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
                         <!-- markup color -->
-                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click"
-                                ToolTip="Markup color">
-                            <Border Width="16" Height="16" CornerRadius="8"
-                                    BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"
-                                    Background="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource HexToBrush}}"/>
-                            <Button.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#F2C744">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#F2C744"/><TextBlock Text="Yellow" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#E8853C">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#E8853C"/><TextBlock Text="Orange" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#C24444">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#C24444"/><TextBlock Text="Red" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#C75E9A">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#C75E9A"/><TextBlock Text="Pink" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#3E6DB5">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#3E6DB5"/><TextBlock Text="Blue" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#2E8C83">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#2E8C83"/><TextBlock Text="Teal" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#4E9C51">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#4E9C51"/><TextBlock Text="Green" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#7B5EC7">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#7B5EC7"/><TextBlock Text="Purple" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#3B3B38">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#3B3B38"/><TextBlock Text="Graphite" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                    <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#111111">
-                                        <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#111111"/><TextBlock Text="Black" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
-                                    </MenuItem>
-                                </ContextMenu>
-                            </Button.ContextMenu>
-                        </Button>
+                            <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click"
+                                    ToolTip="Markup color">
+                                <Border Width="16" Height="16" CornerRadius="8"
+                                        BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"
+                                        Background="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource HexToBrush}}"/>
+                                <Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#F2C744">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#F2C744"/><TextBlock Text="Yellow" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#E8853C">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#E8853C"/><TextBlock Text="Orange" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#C24444">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#C24444"/><TextBlock Text="Red" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#C75E9A">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#C75E9A"/><TextBlock Text="Pink" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#3E6DB5">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#3E6DB5"/><TextBlock Text="Blue" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#2E8C83">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#2E8C83"/><TextBlock Text="Teal" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#4E9C51">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#4E9C51"/><TextBlock Text="Green" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#7B5EC7">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#7B5EC7"/><TextBlock Text="Purple" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#3B3B38">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#3B3B38"/><TextBlock Text="Graphite" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                        <MenuItem Command="{Binding SetToolColorCommand}" CommandParameter="#111111">
+                                            <MenuItem.Header><StackPanel Orientation="Horizontal"><Rectangle Width="14" Height="14" RadiusX="7" RadiusY="7" Fill="#111111"/><TextBlock Text="Black" Margin="8,0,0,0"/></StackPanel></MenuItem.Header>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
 
-                        <!-- stroke thickness -->
-                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click"
-                                ToolTip="Stroke thickness">
-                            <TextBlock Text="{Binding SelectedDocument.ActiveStrokeWidth, StringFormat={}{0} pt}"
-                                       FontSize="11" VerticalAlignment="Center"/>
-                            <Button.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Hairline — 1 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="1"/>
-                                    <MenuItem Header="Fine — 1.5 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="1.5"/>
-                                    <MenuItem Header="Regular — 2 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="2"/>
-                                    <MenuItem Header="Bold — 3 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="3"/>
-                                    <MenuItem Header="Heavy — 4.5 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="4.5"/>
-                                    <MenuItem Header="Marker — 6 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="6"/>
-                                </ContextMenu>
-                            </Button.ContextMenu>
-                        </Button>
+                            <!-- stroke thickness -->
+                            <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click"
+                                    ToolTip="Stroke thickness">
+                                <TextBlock Text="{Binding SelectedDocument.ActiveStrokeWidth, StringFormat={}{0} pt}"
+                                           FontSize="11" VerticalAlignment="Center"/>
+                                <Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Hairline — 1 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="1"/>
+                                        <MenuItem Header="Fine — 1.5 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="1.5"/>
+                                        <MenuItem Header="Regular — 2 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="2"/>
+                                        <MenuItem Header="Bold — 3 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="3"/>
+                                        <MenuItem Header="Heavy — 4.5 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="4.5"/>
+                                        <MenuItem Header="Marker — 6 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="6"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </StackPanel>
             </DockPanel>

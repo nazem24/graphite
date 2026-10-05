@@ -36,7 +36,7 @@
 
     <Style x:Key="IconPath" TargetType="Path">
         <Setter Property="Stroke" Value="{DynamicResource App.IconBrush}"/>
-        <Setter Property="StrokeThickness" Value="1.3"/>
+        <Setter Property="StrokeThickness" Value="1.4"/>
         <Setter Property="StrokeStartLineCap" Value="Round"/>
         <Setter Property="StrokeEndLineCap" Value="Round"/>
         <Setter Property="StrokeLineJoin" Value="Round"/>
@@ -76,14 +76,14 @@
         <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Focusable" Value="False"/>
-        <Setter Property="Padding" Value="7"/>
+        <Setter Property="Padding" Value="8"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ButtonBase">
                     <Grid x:Name="root" RenderTransformOrigin="0.5,0.5">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"/>
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="9"/>
                         <Border x:Name="hl" Background="{DynamicResource App.HoverBrush}"
-                                CornerRadius="8" Opacity="0"/>
+                                CornerRadius="9" Opacity="0"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
@@ -178,15 +178,15 @@
         <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Focusable" Value="False"/>
-        <Setter Property="Padding" Value="7"/>
+        <Setter Property="Padding" Value="8"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid>
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="9"
                                 BorderThickness="1" BorderBrush="Transparent"/>
                         <Border x:Name="hl" Background="{DynamicResource App.HoverBrush}"
-                                CornerRadius="8" Opacity="0"/>
+                                CornerRadius="9" Opacity="0"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
@@ -211,7 +211,6 @@
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.AccentSoftBrush}"/>
-                            <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource App.AccentSystemBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.35"/>
@@ -641,9 +640,10 @@
 
     <Style x:Key="ToolSep" TargetType="Rectangle">
         <Setter Property="Width" Value="1"/>
-        <Setter Property="Height" Value="18"/>
+        <Setter Property="Height" Value="14"/>
         <Setter Property="Fill" Value="{DynamicResource App.StrokeBrush}"/>
-        <Setter Property="Margin" Value="7,0"/>
+        <Setter Property="Opacity" Value="0.8"/>
+        <Setter Property="Margin" Value="6,0"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 

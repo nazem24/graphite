@@ -52,7 +52,53 @@ public sealed class AnnotationLayer : FrameworkElement
     {
         DataContextChanged += OnDataContextChanged;
         Unloaded += (_, _) => Detach();
+
+        // Windows' pen gesture layer is what makes WPF handwriting feel "off": press-and-hold
+        // waits to see whether a touch is a long press, flicks swallow fast strokes as
+        // gestures, and tap/touch feedback draws ripples. None of that is wanted while inking.
+        Stylus.SetIsPressAndHoldEnabled(this, false);
+        Stylus.SetIsFlicksEnabled(this, false);
+        Stylus.SetIsTapFeedbackEnabled(this, false);
+        Stylus.SetIsTouchFeedbackEnabled(this, false);
+
+        AddVisualChild(_liveInkVisual);
     }
+
+    // -------------------------------------------------------------- live ink
+
+    // The stroke being written lives in its own visual, so every pen sample repaints just
+    // that one stroke instead of re-running OnRender for every annotation, search hit and
+    // text box on the page. That repaint was the main source of lag on busy pages.
+    private readonly DrawingVisual _liveInkVisual = new();
+
+    protected override int VisualChildrenCount => 1;
+
+    protected override Visual GetVisualChild(int index) =>
+        index == 0 ? _liveInkVisual : throw new ArgumentOutOfRangeException(nameof(index));
+
+    private void UpdateLiveInk()
+    {
+        using var dc = _liveInkVisual.RenderOpen();
+        if (!_dragging || _doc == null || _inkPoints.Count < 2) return;
+        double s = Scale;
+
+        if (_doc.ActiveTool == ToolKind.Ink)
+        {
+            var pen = FrozenPen(new Pen(Brush(_doc.ActiveColorHex), _doc.ActiveStrokeWidth * s)
+            { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round });
+            dc.DrawGeometry(null, pen, Polyline(_inkPoints, s));
+        }
+        else if (IsFreehandHighlight)
+        {
+            var pen = FrozenPen(new Pen(
+                Brush(_doc.ActiveColorHex, DocumentViewModel.FreehandHighlightOpacity),
+                Math.Max(4.0, DocumentViewModel.FreehandHighlightWidth * s))
+            { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round });
+            dc.DrawGeometry(null, pen, Polyline(_inkPoints, s));
+        }
+    }
+
+    private void ClearLiveInk() => _liveInkVisual.RenderOpen().Close();
 
     // -------------------------------------------------------------- wiring
 
@@ -350,7 +396,8 @@ public sealed class AnnotationLayer : FrameworkElement
             case ToolKind.Highlight when IsFreehandHighlight:
                 foreach (var sample in InkSamples(e))
                     AppendSmoothed(_inkPoints, sample);
-                break;
+                UpdateLiveInk();
+                return;   // only the live stroke changed — skip the full-layer repaint
             case ToolKind.Highlight or ToolKind.Underline or ToolKind.StrikeOut or ToolKind.Select:
                 _liveWordRects = _doc.Index
                     .WordsInRect(_page.Index, DragRect())
@@ -382,6 +429,7 @@ public sealed class AnnotationLayer : FrameworkElement
         }
         if (!_dragging || _page == null || _doc == null) return;
         _dragging = false;
+        ClearLiveInk();
         ReleaseMouseCapture();
         _current = ToPage(e.GetPosition(this));
         var rect = DragRect();
@@ -642,14 +690,20 @@ public sealed class AnnotationLayer : FrameworkElement
     /// the visible smoothing, so this filter only needs to take the edge off sensor jitter.</summary>
     private static void AppendSmoothed(List<PointD> pts, PointD raw)
     {
-        const double minSpacing = 0.5;  // page points
-        const double smoothing = 0.15;  // 0 = raw input, 1 = frozen
+        const double minSpacing = 0.35;  // page points
 
         if (pts.Count == 0) { pts.Add(raw); return; }
 
         var last = pts[^1];
         double dx = raw.X - last.X, dy = raw.Y - last.Y;
-        if (dx * dx + dy * dy < minSpacing * minSpacing) return;
+        double dist2 = dx * dx + dy * dy;
+        if (dist2 < minSpacing * minSpacing) return;
+
+        // Speed-adaptive low-pass: tiny, slow movements (where sensor jitter and hand
+        // tremor dominate) are smoothed firmly, while quick strokes pass almost raw so the
+        // line never trails the pen tip. 0 = raw input, 1 = frozen.
+        double dist = Math.Sqrt(dist2);
+        double smoothing = 0.42 / (1.0 + dist / 1.4);
 
         pts.Add(new PointD(
             last.X + (raw.X - last.X) * (1 - smoothing),
@@ -894,23 +948,9 @@ public sealed class AnnotationLayer : FrameworkElement
 
         switch (tool)
         {
-            case ToolKind.Highlight when IsFreehandHighlight && _inkPoints.Count > 1:
-                var hip = FrozenPen(new Pen(
-                    Brush(_doc.ActiveColorHex, DocumentViewModel.FreehandHighlightOpacity),
-                    Math.Max(4.0, DocumentViewModel.FreehandHighlightWidth * s))
-                { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round });
-                dc.DrawGeometry(null, hip, Polyline(_inkPoints, s));
-                break;
-
             case ToolKind.Highlight or ToolKind.Underline or ToolKind.StrikeOut or ToolKind.Select:
                 foreach (var r in _liveWordRects) dc.DrawRectangle(LiveWordBrush, null, ToRect(r, s));
                 dc.DrawRectangle(null, LiveWordPen, rect);
-                break;
-
-            case ToolKind.Ink when _inkPoints.Count > 1:
-                var ip = FrozenPen(new Pen(Brush(_doc.ActiveColorHex), _doc.ActiveStrokeWidth * s)
-                { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round });
-                dc.DrawGeometry(null, ip, Polyline(_inkPoints, s));
                 break;
 
             case ToolKind.Rect or ToolKind.EditText or ToolKind.PlaceImage
