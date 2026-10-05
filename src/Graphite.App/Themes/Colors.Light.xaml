@@ -27,6 +27,7 @@
     <SolidColorBrush x:Key="App.TextSecondaryBrush" Color="#71716C"/>
     <SolidColorBrush x:Key="App.IconBrush" Color="#3B3B38"/>
 
+    <SolidColorBrush x:Key="App.BrandBlueBrush" Color="#3F77DB"/>
     <SolidColorBrush x:Key="App.AccentBrush" Color="#2B2B29"/>
     <SolidColorBrush x:Key="App.AccentContrastBrush" Color="#FAFAF8"/>
 

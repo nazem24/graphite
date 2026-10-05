@@ -5,8 +5,10 @@
          Each glyph is drawn to read clearly at 16px: one idea per icon, no interior
          clutter, optical alignment over mathematical centering. -->
 
-    <!-- Brand: faceted pencil, point down-left. -->
-    <Geometry x:Key="Icon.Logo">M2.6 13.4 L3.4 10.2 L10.8 2.8 L13.2 5.2 L5.8 12.6 Z M9.6 4 L12 6.4</Geometry>
+    <!-- Brand: two nested hexagon strokes (graphite sheets seen end-on), both open at the
+         same corner so the pair reads as a G. Outer = text colour, inner = brand blue. -->
+    <Geometry x:Key="Icon.Logo.Outer">M13.89 8 L13.89 11.4 L8 14.8 L2.11 11.4 L2.11 4.6 L8 1.2 L11.53 3.24</Geometry>
+    <Geometry x:Key="Icon.Logo.Inner">M11.2 8 L11.2 9.85 L8 11.7 L4.8 9.85 L4.8 6.15 L8 4.3 L9.92 5.41</Geometry>
 
     <!-- File -->
     <Geometry x:Key="Icon.Open">M1.8 3.8 H6.2 L7.8 5.6 H14.2 V12.4 H1.8 Z</Geometry>

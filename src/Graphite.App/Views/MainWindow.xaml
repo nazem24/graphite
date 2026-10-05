@@ -557,8 +557,12 @@
             <DockPanel Margin="10,6">
                 <!-- brand -->
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,12,0">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo}"
-                          Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.4"/>
+                    <Grid Width="16" Height="16">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Outer}"
+                              Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.7"/>
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Inner}"
+                              Stroke="{DynamicResource App.BrandBlueBrush}" StrokeThickness="1.7"/>
+                    </Grid>
                     <TextBlock Text="Graphite" FontWeight="SemiBold" FontSize="14" Margin="8,0,0,0"
                                VerticalAlignment="Center"/>
                 </StackPanel>
@@ -945,13 +949,15 @@
                     <DropShadowEffect BlurRadius="32" ShadowDepth="6" Direction="270" Opacity="0.18"/>
                 </Border.Effect>
                 <StackPanel>
-                    <Path Data="{StaticResource Icon.Logo}" Stroke="{DynamicResource App.TextBrush}"
-                          StrokeThickness="2" Width="16" Height="16" Stretch="Uniform"
-                          HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                        <Path.RenderTransform>
+                    <Grid Width="16" Height="16" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
                             <ScaleTransform ScaleX="3.4" ScaleY="3.4"/>
-                        </Path.RenderTransform>
-                    </Path>
+                        </Grid.RenderTransform>
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Outer}"
+                              Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.5"/>
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Inner}"
+                              Stroke="{DynamicResource App.BrandBlueBrush}" StrokeThickness="1.5"/>
+                    </Grid>
                     <TextBlock Text="Graphite" Style="{StaticResource H1}" HorizontalAlignment="Center" Margin="0,34,0,2"/>
                     <TextBlock Text="Read, mark up, and edit PDFs." Style="{StaticResource Caption}" FontSize="13" HorizontalAlignment="Center"/>
 
