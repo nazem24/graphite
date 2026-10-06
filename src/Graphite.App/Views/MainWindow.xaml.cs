@@ -1467,7 +1467,7 @@ public partial class MainWindow : Window
             PasswordBox => false,
             ComboBox or ComboBoxItem => false,
             TreeView or TreeViewItem => false,
-            MenuItem or ContextMenu => false,
+            MenuItem or System.Windows.Controls.ContextMenu => false,
             System.Windows.Controls.Primitives.RangeBase => false,
             ListBoxItem { DataContext: not PageViewModel } => false,
             _ => true,
