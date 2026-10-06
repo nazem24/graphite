@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using Graphite.App.Services;
 using Graphite.App.ViewModels;
 using Graphite.Core;
 using Graphite.Core.Annotations;
@@ -52,6 +54,34 @@ public sealed class AnnotationLayer : FrameworkElement
         if (_gestureUndoPushed) return;
         _gestureUndoPushed = true;
         _doc?.PushUndo();
+    }
+
+    // -------------------------------------------------------------- search-match pulse
+
+    /// <summary>1 → 0 while the current search match announces itself with a soft ring.</summary>
+    public static readonly DependencyProperty PulseProperty = DependencyProperty.Register(
+        nameof(Pulse), typeof(double), typeof(AnnotationLayer),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public double Pulse
+    {
+        get => (double)GetValue(PulseProperty);
+        set => SetValue(PulseProperty, value);
+    }
+
+    private bool CurrentMatchIsOnThisPage() =>
+        _doc != null && _page != null &&
+        _doc.CurrentMatchIndex >= 0 && _doc.CurrentMatchIndex < _doc.SearchResults.Count &&
+        _doc.SearchResults[_doc.CurrentMatchIndex].PageIndex == _page.Index;
+
+    private void StartMatchPulse(double delayMs)
+    {
+        if (!Motion.Enabled) return;
+        BeginAnimation(PulseProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(850))
+        {
+            BeginTime = TimeSpan.FromMilliseconds(delayMs), // let the scroll glide arrive first
+            EasingFunction = Motion.EaseOut,
+        });
     }
 
     public AnnotationLayer()
@@ -127,6 +157,10 @@ public sealed class AnnotationLayer : FrameworkElement
             {
                 _doc.AnnotationsVisualChanged += InvalidateVisualSafe;
                 _doc.PropertyChanged += OnDocPropertyChanged;
+
+                // A page that is created just after a jump to a search match still pulses.
+                if (CurrentMatchIsOnThisPage() && (DateTime.UtcNow - _doc.LastMatchJumpUtc).TotalMilliseconds < 700)
+                    StartMatchPulse(120);
             }
         }
         InvalidateVisual();
@@ -167,6 +201,10 @@ public sealed class AnnotationLayer : FrameworkElement
                 ClearLiveInk();
             }
             InvalidateVisualSafe();
+        }
+        else if (e.PropertyName is nameof(DocumentViewModel.CurrentMatchIndex) && CurrentMatchIsOnThisPage())
+        {
+            StartMatchPulse(240);
         }
     }
 
@@ -1086,6 +1124,17 @@ public sealed class AnnotationLayer : FrameworkElement
             var brush = Brush(((Color)FindResource("App.SearchHighlightColor")).ToString(), 0.35);
             foreach (var r in search)
                 dc.DrawRoundedRectangle(brush, null, ToRect(r.Inflate(1), s), 2, 2);
+
+            // The current match breathes: a ring that eases in from slightly outside and fades.
+            if (Pulse > 0.01 && CurrentMatchIsOnThisPage())
+            {
+                double p = Pulse;
+                var accent = (Color)FindResource("App.AccentSystemColor");
+                var fill = new SolidColorBrush(Color.FromArgb((byte)(70 * p), accent.R, accent.G, accent.B));
+                var ring = new Pen(new SolidColorBrush(Color.FromArgb((byte)(230 * p), accent.R, accent.G, accent.B)), 1.6);
+                foreach (var r in _doc.SearchResults[_doc.CurrentMatchIndex].Rects)
+                    dc.DrawRoundedRectangle(fill, ring, ToRect(r.Inflate(1 + 7 * p), s), 4, 4);
+            }
         }
 
         // text selection

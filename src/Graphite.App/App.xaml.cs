@@ -44,6 +44,7 @@ public partial class App : Application
 
         CleanupStalePasteFiles();
         ThemeService.Initialize();
+        IconMotion.Register();
 
         var window = new MainWindow();
         MainWindow = window;

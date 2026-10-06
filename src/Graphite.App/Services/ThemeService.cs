@@ -10,6 +10,9 @@ public static class ThemeService
     private sealed class Settings
     {
         public bool DarkTheme { get; set; }
+
+        /// <summary>User turned on "Reduce motion" (palette: Toggle reduced motion).</summary>
+        public bool ReduceMotion { get; set; }
         public List<string> RecentFiles { get; set; } = new();
 
         /// <summary>Saved signature: strokes of x,y pairs in a normalized 0..1 box
@@ -20,6 +23,16 @@ public static class ThemeService
     private static Settings _settings = new();
 
     public static bool IsDark => _settings.DarkTheme;
+
+    public static bool ReduceMotion => _settings.ReduceMotion;
+
+    /// <summary>Turn the app's movement effects off / on, and remember the choice.</summary>
+    public static void SetReduceMotion(bool reduce)
+    {
+        _settings.ReduceMotion = reduce;
+        Motion.UserReduced = reduce;
+        Save();
+    }
     public static IReadOnlyList<string> RecentFiles => _settings.RecentFiles;
 
     private static string SettingsPath =>
@@ -37,6 +50,7 @@ public static class ThemeService
             System.Diagnostics.Debug.WriteLine($"Settings load failed, using defaults: {ex.Message}");
             _settings = new Settings();
         }
+        Motion.UserReduced = _settings.ReduceMotion;
         ApplyTheme(_settings.DarkTheme);
     }
 
@@ -69,6 +83,7 @@ public static class ThemeService
     /// DynamicResource-bound element reads as a soft cross-fade instead of a hard cut.</summary>
     private static void BlipOpacity(Window w)
     {
+        if (!Motion.Enabled) return;
         var anim = new System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames();
         anim.KeyFrames.Add(new System.Windows.Media.Animation.EasingDoubleKeyFrame(1.0, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.Zero)));
         anim.KeyFrames.Add(new System.Windows.Media.Animation.EasingDoubleKeyFrame(0.82, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70)))

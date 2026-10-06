@@ -197,6 +197,10 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Set by the window: plays the tab's closing animation; the tab is removed
+    /// once the returned task completes.</summary>
+    public Func<DocumentViewModel, Task>? TabClosing { get; set; }
+
     [RelayCommand]
     private async Task CloseDocument(DocumentViewModel? doc)
     {
@@ -220,6 +224,12 @@ public partial class MainViewModel : ObservableObject
         // on an empty view — the tab strip is a plain ListBox, so that is on us.
         int index = Documents.IndexOf(doc);
         bool wasSelected = ReferenceEquals(SelectedDocument, doc);
+        // Let the tab strip play its collapse animation before the tab disappears.
+        if (TabClosing != null)
+        {
+            try { await TabClosing(doc); }
+            catch (Exception ex) { App.LogError("Tab close animation failed", ex); }
+        }
         Documents.Remove(doc);
         if (wasSelected || SelectedDocument == null || ReferenceEquals(SelectedDocument, doc))
             SelectedDocument = Documents.Count > 0 ? Documents[Math.Clamp(index, 0, Documents.Count - 1)] : null;
@@ -319,7 +329,8 @@ public partial class MainViewModel : ObservableObject
         {
             var pages = PageOperations.ParsePageRanges(ranges, doc.Pages.Count);
             if (pages.Count >= doc.Pages.Count) throw new InvalidOperationException("Cannot delete every page.");
-            await doc.ApplyOperationAsync("Deleting pages…", b => PageOperations.DeletePages(b, pages));
+            await doc.ApplyOperationAsync("Deleting pages…", b => PageOperations.DeletePages(b, pages),
+                new PageOpHint(PageOpKind.Delete, pages.Min()));
         }
         catch (Exception ex) { Error(ex); }
     }
@@ -354,7 +365,8 @@ public partial class MainViewModel : ObservableObject
         {
             byte[] other = await File.ReadAllBytesAsync(dlg.FileName);
             int at = doc.CurrentPageIndex + 1;
-            await doc.ApplyOperationAsync("Inserting pages…", b => PageOperations.InsertPdf(b, at, other));
+            await doc.ApplyOperationAsync("Inserting pages…", b => PageOperations.InsertPdf(b, at, other),
+                new PageOpHint(PageOpKind.Insert, at));
         }
         catch (Exception ex) { Error(ex); }
     }
@@ -367,7 +379,8 @@ public partial class MainViewModel : ObservableObject
         {
             int at = doc.CurrentPageIndex + 1;
             var (w, h) = doc.Renderer.PageSizes[doc.CurrentPageIndex];
-            await doc.ApplyOperationAsync("Inserting page…", b => PageOperations.InsertBlankPage(b, at, w, h));
+            await doc.ApplyOperationAsync("Inserting page…", b => PageOperations.InsertBlankPage(b, at, w, h),
+                new PageOpHint(PageOpKind.Insert, at));
         }
         catch (Exception ex) { Error(ex); }
     }
@@ -382,7 +395,11 @@ public partial class MainViewModel : ObservableObject
     {
         if (SelectedDocument is not { } doc) return;
         int index = page?.Index ?? doc.CurrentPageIndex;
-        try { await doc.ApplyOperationAsync("Rotating…", b => PageOperations.RotatePage(b, index, delta)); }
+        try
+        {
+            await doc.ApplyOperationAsync("Rotating…", b => PageOperations.RotatePage(b, index, delta),
+                new PageOpHint(PageOpKind.Rotate, index, 1, delta));
+        }
         catch (Exception ex) { Error(ex); }
     }
 
@@ -390,7 +407,11 @@ public partial class MainViewModel : ObservableObject
     private async Task MovePageUp(PageViewModel? page)
     {
         if (SelectedDocument is not { } doc || page == null || page.Index == 0) return;
-        try { await doc.ApplyOperationAsync("Reordering…", b => PageOperations.MovePage(b, page.Index, page.Index - 1)); }
+        try
+        {
+            await doc.ApplyOperationAsync("Reordering…", b => PageOperations.MovePage(b, page.Index, page.Index - 1),
+                new PageOpHint(PageOpKind.Move, page.Index, 1, page.Index - 1));
+        }
         catch (Exception ex) { Error(ex); }
     }
 
@@ -398,7 +419,11 @@ public partial class MainViewModel : ObservableObject
     private async Task MovePageDown(PageViewModel? page)
     {
         if (SelectedDocument is not { } doc || page == null || page.Index >= doc.Pages.Count - 1) return;
-        try { await doc.ApplyOperationAsync("Reordering…", b => PageOperations.MovePage(b, page.Index, page.Index + 1)); }
+        try
+        {
+            await doc.ApplyOperationAsync("Reordering…", b => PageOperations.MovePage(b, page.Index, page.Index + 1),
+                new PageOpHint(PageOpKind.Move, page.Index, 1, page.Index + 1));
+        }
         catch (Exception ex) { Error(ex); }
     }
 
@@ -407,7 +432,11 @@ public partial class MainViewModel : ObservableObject
     {
         if (SelectedDocument is not { } doc || page == null) return;
         if (doc.Pages.Count <= 1) return;
-        try { await doc.ApplyOperationAsync("Deleting page…", b => PageOperations.DeletePages(b, new[] { page.Index })); }
+        try
+        {
+            await doc.ApplyOperationAsync("Deleting page…", b => PageOperations.DeletePages(b, new[] { page.Index }),
+                new PageOpHint(PageOpKind.Delete, page.Index));
+        }
         catch (Exception ex) { Error(ex); }
     }
 
@@ -532,7 +561,7 @@ public partial class MainViewModel : ObservableObject
         string? input = InputDialog.Show(Owner!, "Go to page", $"Page number (1–{doc.Pages.Count}):",
             (doc.CurrentPageIndex + 1).ToString());
         if (input != null && int.TryParse(input, out int page))
-            doc.GoToPage(page - 1);
+            doc.GoToPage(page - 1, flash: true);
     }
 
     [RelayCommand]
@@ -631,37 +660,54 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
+            // The quiet startup check shows a small non-blocking toast; a manual check
+            // (menu / palette) keeps the explicit dialog.
+            if (silent && UpdateAvailable != null)
+            {
+                UpdateAvailable.Invoke(info.Tag.TrimStart('v', 'V'), () => InstallUpdateAsync(info));
+                return;
+            }
+
             var answer = MessageDialog.Show(Owner,
                 $"Graphite {info.Tag.TrimStart('v', 'V')} is available — you're running {AppVersion}.\n\n" +
                 "Download and install it now? Graphite will restart to finish the update.",
                 "Update available", DialogButtons.YesNo, DialogIcon.Info);
             if (answer != MessageBoxResult.Yes) return;
 
-            if (info.ZipUrl == null)
-            {
-                UpdateService.OpenReleasePage(info);
-                return;
-            }
-
-            try
-            {
-                await UpdateService.DownloadAndRestartAsync(info);
-            }
-            catch (Exception ex)
-            {
-                // In-place update failed (offline mid-download, unwritable install
-                // folder, …) — fall back to the release page so the user can update
-                // manually.
-                var fallback = MessageDialog.Show(Owner,
-                    $"The automatic update couldn't finish ({ex.Message}).\n\nOpen the download page instead?",
-                    "Update failed", DialogButtons.YesNo, DialogIcon.Warning);
-                if (fallback == MessageBoxResult.Yes)
-                    UpdateService.OpenReleasePage(info);
-            }
+            await InstallUpdateAsync(info);
         }
         catch (Exception ex)
         {
             if (!silent) Error(ex);
+        }
+    }
+
+    /// <summary>Raised (instead of a dialog) when the quiet startup check finds a newer
+    /// release: the new version and the action that installs it.</summary>
+    public event Action<string, Func<Task>>? UpdateAvailable;
+
+    private static async Task InstallUpdateAsync(UpdateInfo info)
+    {
+        if (info.ZipUrl == null)
+        {
+            UpdateService.OpenReleasePage(info);
+            return;
+        }
+
+        try
+        {
+            await UpdateService.DownloadAndRestartAsync(info);
+        }
+        catch (Exception ex)
+        {
+            // In-place update failed (offline mid-download, unwritable install
+            // folder, …) — fall back to the release page so the user can update
+            // manually.
+            var fallback = MessageDialog.Show(Owner,
+                $"The automatic update couldn't finish ({ex.Message}).\n\nOpen the download page instead?",
+                "Update failed", DialogButtons.YesNo, DialogIcon.Warning);
+            if (fallback == MessageBoxResult.Yes)
+                UpdateService.OpenReleasePage(info);
         }
     }
 
@@ -715,6 +761,7 @@ public partial class MainViewModel : ObservableObject
             new("Toggle theme", null, ToggleTheme),
             new("Toggle fullscreen", "F11", ToggleFullscreen),
             new("Edit signature…", null, EditSignature),
+            new("Toggle reduced motion", null, () => ThemeService.SetReduceMotion(!ThemeService.ReduceMotion)),
             new("Toggle sidebar", null, () => ShowSidebar = !ShowSidebar),
             new("Toggle markup panel", null, () => ShowInspector = !ShowInspector),
             new("Check for updates…", null, () => _ = CheckForUpdates()),

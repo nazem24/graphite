@@ -57,6 +57,7 @@ public partial class MainWindow : Window
                 PasteImageFromClipboard(d);
         };
 
+        InitMotion();
         StateChanged += (_, _) => UpdateMaximizeRestoreIcon();
         Loaded += (_, _) => UpdateMaximizeRestoreIcon();
 
@@ -113,16 +114,24 @@ public partial class MainWindow : Window
             ApplyFullscreen(ViewModel.IsFullscreen);
         else if (e.PropertyName == nameof(MainViewModel.SelectedDocument) && ViewModel.SelectedDocument != null)
             AnimateDocSwitch();
+        else if (e.PropertyName == nameof(MainViewModel.ShowSidebar))
+            AnimatePanels(true);
+        else if (e.PropertyName == nameof(MainViewModel.ShowInspector))
+            AnimatePanels(false);
         else if (e.PropertyName == nameof(MainViewModel.IsPaletteOpen) && ViewModel.IsPaletteOpen)
+        {
+            StaggerPalette();
             Dispatcher.BeginInvoke(() =>
             {
                 PaletteBox.Focus();
                 PaletteBox.SelectAll();
             }, DispatcherPriority.Input);
+        }
     }
 
     private void ApplyFullscreen(bool on)
     {
+        ApplyFullscreenChrome(on);
         if (on)
         {
             _preFullscreenState = WindowState;
@@ -174,6 +183,8 @@ public partial class MainWindow : Window
                 _scrollOffsets.Remove(doc);
                 _pins.Remove(doc);
                 _lastShownPage.Remove(doc);
+                _lastLayout.Remove(doc);
+                _ocrScanning.Remove(doc);
                 doc.PropertyChanged -= Doc_PropertyChanged;
                 PruneInlineEditors(doc);
             }
@@ -195,11 +206,15 @@ public partial class MainWindow : Window
             doc.InlineEditRequested += vm => OnInlineEditRequested(doc, vm);
             doc.EditFreeTextRequested += vm => OnEditFreeTextRequested(doc, vm);
             doc.PropertyChanged += Doc_PropertyChanged;
+            WireMotion(doc);
         }
     }
 
     private void Doc_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (sender is DocumentViewModel changed)
+            MotionOnDocPropertyChanged(changed, e.PropertyName);
+
         // Picking the Signature tool with no saved signature opens the drawing pad first.
         if (e.PropertyName == nameof(DocumentViewModel.ActiveTool) &&
             sender is DocumentViewModel { ActiveTool: ToolKind.Signature } doc &&
@@ -832,7 +847,7 @@ public partial class MainWindow : Window
         bool had = _lastShownPage.TryGetValue(doc, out int prev);
         _lastShownPage[doc] = page;
         FindScrollViewer(lb)?.ScrollToTop();
-        if (!had || prev == page) return;
+        if (!had || prev == page || !Motion.Enabled) return;
 
         if (lb.RenderTransform is not TranslateTransform tt)
             lb.RenderTransform = tt = new TranslateTransform();
@@ -848,6 +863,7 @@ public partial class MainWindow : Window
     /// <summary>Tab switch: the incoming document eases in instead of snapping.</summary>
     private void AnimateDocSwitch()
     {
+        if (!Motion.Enabled) return;
         if (DocHost.RenderTransform is not TranslateTransform tt) return;
         var span = TimeSpan.FromMilliseconds(220);
         tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, span)
@@ -976,7 +992,7 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is OutlineNode { PageIndex: { } page } &&
             ViewModel.SelectedDocument is { } doc)
-            doc.GoToPage(page);
+            doc.GoToPage(page, flash: true);
     }
 
     private void PrevPage_Click(object sender, RoutedEventArgs e) =>
@@ -1043,6 +1059,7 @@ public partial class MainWindow : Window
 
     private void ColorPopup_Opened(object? sender, EventArgs e)
     {
+        if (!Motion.Enabled) return;
         var span = TimeSpan.FromMilliseconds(170);
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         if (ColorCard.RenderTransform is ScaleTransform st)
@@ -1066,6 +1083,7 @@ public partial class MainWindow : Window
             menu.PlacementTarget = fe;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             menu.IsOpen = true;
+            FlipChevron(fe, menu);
         }
     }
 
@@ -1548,6 +1566,7 @@ public partial class MainWindow : Window
 
     private async void Window_Drop(object sender, DragEventArgs e)
     {
+        HideDropOverlay();
         if (e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] files)
         {
             var supported = files.Where(f =>

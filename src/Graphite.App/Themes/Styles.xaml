@@ -267,6 +267,11 @@
                                 </BeginStoryboard>
                             </Trigger.ExitActions>
                         </Trigger>
+                        <!-- Tools in the command bar use one shared gliding pill (MainWindow.UpdateToolPill)
+                             instead of each button fading its own selected fill. -->
+                        <Trigger Property="Tag" Value="Glide">
+                            <Setter TargetName="sel" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.35"/>
                         </Trigger>

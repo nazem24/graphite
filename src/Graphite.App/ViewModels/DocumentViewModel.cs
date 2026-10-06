@@ -22,6 +22,13 @@ public enum PageLayout
     Continuous, Single, Spread
 }
 
+public enum PageOpKind { None, Rotate, Delete, Insert, Move }
+
+/// <summary>What a structural page operation did, so the view can animate it (the page
+/// list itself is rebuilt from scratch afterwards). Index = first affected page; Extra =
+/// rotation delta (±90) or the move's destination index; Count is filled in by the document.</summary>
+public readonly record struct PageOpHint(PageOpKind Kind, int Index, int Count = 1, int Extra = 0);
+
 /// <summary>An image placed on a page. It stays a movable/resizable overlay object —
 /// selectable and draggable via the Select tool — until the document is saved or a
 /// structural page operation runs, at which point it's baked into the PDF content
@@ -249,6 +256,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             SelectedImage = null;
             IsDirty = true;
             AnnotationsVisualChanged?.Invoke();
+            StateRestored?.Invoke();
         }
         finally { IsBusy = false; }
     }
@@ -269,6 +277,18 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public event Action<int, RectD>? PlaceImageRequested;
     public event Action<AnnotationViewModel>? InlineEditRequested;
     public event Action<AnnotationViewModel>? EditFreeTextRequested;
+
+    // Motion hooks — the window turns these into animations.
+    public event Action<PageOpHint>? PageOperationApplied;
+    public event Action? StateRestored;                 // undo / redo finished
+    public event Action? Saved;                         // a save completed
+    public event Action<int>? PageFlashRequested;       // "you just landed here" highlight
+    public event Action<int>? OcrPageStarted;
+    public event Action<int>? OcrPageRecognized;
+
+    /// <summary>When the current search match last changed (lets a page that is realized a
+    /// moment later still play the match pulse).</summary>
+    public DateTime LastMatchJumpUtc { get; private set; }
 
     public bool IsContinuous => Layout == PageLayout.Continuous;
 
@@ -483,11 +503,17 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedAnnotationChanged(AnnotationViewModel? value) => AnnotationsVisualChanged?.Invoke();
 
+    partial void OnSelectedAnnotationChanged(AnnotationViewModel? oldValue, AnnotationViewModel? newValue)
+    {
+        oldValue?.RefreshSelection();
+        newValue?.RefreshSelection();
+    }
+
     // Reading history (Alt+Left / Alt+Right).
     private readonly List<int> _histBack = new();
     private readonly List<int> _histForward = new();
 
-    public void GoToPage(int pageIndex, bool recordHistory = true)
+    public void GoToPage(int pageIndex, bool recordHistory = true, bool flash = false)
     {
         pageIndex = Math.Clamp(pageIndex, 0, Pages.Count - 1);
         if (recordHistory && pageIndex != CurrentPageIndex)
@@ -498,6 +524,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         }
         CurrentPageIndex = pageIndex;
         ScrollToPageRequested?.Invoke(pageIndex);
+        if (flash) PageFlashRequested?.Invoke(pageIndex);
     }
 
     /// <summary>Previous/next page — steps by two in spread layout.</summary>
@@ -510,7 +537,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         _histForward.Add(CurrentPageIndex);
         int target = _histBack[^1];
         _histBack.RemoveAt(_histBack.Count - 1);
-        GoToPage(target, recordHistory: false);
+        GoToPage(target, recordHistory: false, flash: true);
     }
 
     public void NavigateForward()
@@ -519,7 +546,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         _histBack.Add(CurrentPageIndex);
         int target = _histForward[^1];
         _histForward.RemoveAt(_histForward.Count - 1);
-        GoToPage(target, recordHistory: false);
+        GoToPage(target, recordHistory: false, flash: true);
     }
 
     // ------------------------------------------------------------- operations
@@ -528,10 +555,12 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     /// Run a structural operation (bytes -> bytes). Current annotations are baked
     /// into the PDF first so they travel with their pages, then re-read afterwards.
     /// </summary>
-    public async Task ApplyOperationAsync(string busyMessage, Func<byte[], byte[]> operation)
+    public async Task ApplyOperationAsync(string busyMessage, Func<byte[], byte[]> operation,
+        PageOpHint hint = default)
     {
         IsBusy = true;
         BusyText = busyMessage;
+        int pagesBefore = Pages.Count;
         try
         {
             var models = Annotations.Select(a => a.Model.Clone()).ToList();
@@ -572,6 +601,9 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             IsDirty = true;
             OnPropertyChanged(nameof(PageStatus));
             PagesReset?.Invoke();
+
+            if (hint.Kind != PageOpKind.None)
+                PageOperationApplied?.Invoke(hint with { Count = Math.Max(1, Math.Abs(Pages.Count - pagesBefore)) });
         }
         finally { IsBusy = false; }
     }
@@ -630,6 +662,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             FilePath = path;
             IsDirty = false;
             OnPropertyChanged(nameof(Title));
+            Saved?.Invoke();
         }
         finally { IsBusy = false; }
     }
@@ -810,6 +843,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public void GoToMatch(int index)
     {
         if (SearchResults.Count == 0) return;
+        LastMatchJumpUtc = DateTime.UtcNow;
         CurrentMatchIndex = ((index % SearchResults.Count) + SearchResults.Count) % SearchResults.Count;
         GoToPage(SearchResults[CurrentMatchIndex].PageIndex);
         OnPropertyChanged(nameof(MatchStatus));
@@ -854,6 +888,8 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             // Progress<T> marshals to the UI thread (captured SynchronizationContext),
             // so BusyText is never set from a background thread.
             var busy = new Progress<string>(t => BusyText = t);
+            var started = new Progress<int>(p => OcrPageStarted?.Invoke(p));
+            var recognizedPage = new Progress<int>(p => OcrPageRecognized?.Invoke(p));
             var textLayers = new Dictionary<int, IReadOnlyList<WordBox>>();
             await Task.Run(() =>
             {
@@ -862,6 +898,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
                 {
                     if (Index.HasText(p)) continue;
                     ((IProgress<string>)busy).Report($"OCR — page {p + 1} of {Pages.Count}…");
+                    ((IProgress<int>)started).Report(p);
 
                     byte[] png = Renderer.RenderEncoded(p, 300.0 / 72.0);
                     var result = ocr.RecognizeImage(png);
@@ -872,6 +909,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
                     Index.SetOcrWords(p, words, w, h);
                     textLayers[p] = words;
                     recognized++;
+                    ((IProgress<int>)recognizedPage).Report(p);
                 }
             });
 

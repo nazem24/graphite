@@ -10,7 +10,8 @@
         Stylus.IsFlicksEnabled="False" Stylus.IsPressAndHoldEnabled="False"
         Stylus.IsTapFeedbackEnabled="False" Stylus.IsTouchFeedbackEnabled="False"
         WindowStyle="None"
-        AllowDrop="True" Drop="Window_Drop" PreviewKeyDown="Window_PreviewKeyDown"
+        AllowDrop="True" Drop="Window_Drop" DragEnter="Window_DragEnter" DragOver="Window_DragOver"
+        PreviewMouseMove="Window_PreviewMouseMove" PreviewKeyDown="Window_PreviewKeyDown"
         PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown"
         Background="{DynamicResource App.BackgroundBrush}"
         TextElement.Foreground="{DynamicResource App.TextBrush}"
@@ -34,6 +35,7 @@
         <conv:ZeroToVisibilityConverter x:Key="ZeroToVis"/>
         <conv:ZeroToVisibilityConverter x:Key="NonZeroToVis" Invert="True"/>
         <conv:NullToVisibilityConverter x:Key="NullToVis"/>
+        <conv:NullToVisibilityConverter x:Key="NullToVisInv" Invert="True"/>
         <conv:HexToBrushConverter x:Key="HexToBrush"/>
         <conv:EnumToBoolConverter x:Key="EnumToBool"/>
         <conv:InvertBoolConverter x:Key="InvertBool"/>
@@ -68,20 +70,12 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- ============ left sidebar: thumbnails / outline ============ -->
-                <Border Grid.Column="0" Width="208" Margin="12,4,0,12"
-                        Visibility="{Binding DataContext.ShowSidebar, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
-                    <Border.Style>
-                        <Style TargetType="Border" BasedOn="{StaticResource GlassCard}">
-                            <Style.Triggers>
-                                <Trigger Property="Visibility" Value="Visible">
-                                    <Trigger.EnterActions>
-                                        <BeginStoryboard Storyboard="{StaticResource FadeIn}"/>
-                                    </Trigger.EnterActions>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <DockPanel>
+                <!-- The two side panels slide in/out from code (MainWindow.AnimatePanel): width,
+                     margin and opacity animate together, and the content keeps a fixed width so it
+                     slides instead of reflowing. Tag + Loaded sync the initial state. -->
+                <Border Grid.Column="0" Width="208" Margin="12,4,0,12" ClipToBounds="True"
+                        Style="{StaticResource GlassCard}" Tag="SidebarPanel" Loaded="Panel_Loaded">
+                    <DockPanel Width="206" HorizontalAlignment="Right">
                         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,10">
                             <RadioButton x:Name="SideThumbs" Style="{StaticResource ToolToggle}" IsChecked="True"
                                          GroupName="Side" ToolTip="Thumbnails">
@@ -108,8 +102,8 @@
                                                     HorizontalAlignment="Center">
                                             <Border BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"
                                                     Background="White" CornerRadius="4" ClipToBounds="True">
-                                                <Image Source="{Binding Thumbnail}" Width="140"
-                                                       Height="{Binding ThumbHeight}" Stretch="Uniform"/>
+                                                <ctrl:FadeImage Source="{Binding Thumbnail}" Width="140"
+                                                                Height="{Binding ThumbHeight}" Stretch="Uniform"/>
                                             </Border>
                                             <TextBlock Text="{Binding Label}" Style="{StaticResource Caption}"
                                                        HorizontalAlignment="Center" Margin="0,4,0,2"/>
@@ -241,7 +235,9 @@
                                         <Border BorderBrush="#33000000" BorderThickness="1"
                                                 Width="{Binding DisplayWidth}" Height="{Binding DisplayHeight}">
                                             <Grid>
-                                                <Image Source="{Binding Image}" Stretch="Fill"/>
+                                                <!-- skeleton while the page bitmap is still being rendered -->
+                                                <ctrl:ShimmerBorder Visibility="{Binding Image, Converter={StaticResource NullToVisInv}}"/>
+                                                <ctrl:FadeImage Source="{Binding Image}" Stretch="Fill"/>
                                                 <ctrl:AnnotationLayer/>
                                                 <!-- Inline text editing host: the Text tool drops an empty
                                                      text box and typing happens right here on the page. -->
@@ -252,6 +248,22 @@
                                                              Background="Transparent" BorderThickness="0" Padding="0"
                                                              AcceptsReturn="False" VerticalContentAlignment="Top"/>
                                                 </Canvas>
+                                                <!-- "you landed here" flash (jumps, history, markup cards) -->
+                                                <Border x:Name="FlashRing" IsHitTestVisible="False" Opacity="0"
+                                                        BorderThickness="3" BorderBrush="{DynamicResource App.AccentSystemBrush}"
+                                                        Background="{DynamicResource App.AccentSoftBrush}"/>
+                                                <!-- OCR: a scan line while a page is being read, a shimmer when it is done -->
+                                                <Grid x:Name="OcrFx" IsHitTestVisible="False" ClipToBounds="True" Visibility="Collapsed">
+                                                    <Rectangle x:Name="OcrBand" Height="56" VerticalAlignment="Top">
+                                                        <Rectangle.Fill>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                                <GradientStop Color="#003E6DB5" Offset="0"/>
+                                                                <GradientStop Color="#663E6DB5" Offset="0.85"/>
+                                                                <GradientStop Color="#CC3E6DB5" Offset="1"/>
+                                                            </LinearGradientBrush>
+                                                        </Rectangle.Fill>
+                                                    </Rectangle>
+                                                </Grid>
                                             </Grid>
                                         </Border>
                                     </Grid>
@@ -260,7 +272,7 @@
                         </ListBox>
 
                         <!-- floating page controls -->
-                        <Border Style="{StaticResource GlassPill}" VerticalAlignment="Bottom"
+                        <Border Style="{StaticResource GlassPill}" VerticalAlignment="Bottom" Tag="PageBar"
                                 HorizontalAlignment="Center" Margin="0,0,0,16" Padding="7,4"
                                 CornerRadius="21"
                                 Background="{DynamicResource App.CardBrush}"
@@ -399,20 +411,9 @@
                 </Border>
 
                 <!-- ============ right panel: comments / search ============ -->
-                <Border Grid.Column="2" Width="292" Margin="0,4,12,12"
-                        Visibility="{Binding DataContext.ShowInspector, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
-                    <Border.Style>
-                        <Style TargetType="Border" BasedOn="{StaticResource GlassCard}">
-                            <Style.Triggers>
-                                <Trigger Property="Visibility" Value="Visible">
-                                    <Trigger.EnterActions>
-                                        <BeginStoryboard Storyboard="{StaticResource FadeIn}"/>
-                                    </Trigger.EnterActions>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <DockPanel>
+                <Border Grid.Column="2" Width="292" Margin="0,4,12,12" ClipToBounds="True"
+                        Style="{StaticResource GlassCard}" Tag="InspectorPanel" Loaded="Panel_Loaded">
+                    <DockPanel Width="290" HorizontalAlignment="Left">
                         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,10">
                             <RadioButton x:Name="TabComments" Style="{StaticResource ToolToggle}" IsChecked="True"
                                          GroupName="Inspector" ToolTip="Annotations">
@@ -440,8 +441,28 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border Background="{DynamicResource App.CardBrush}"
-                                                        BorderBrush="{DynamicResource App.StrokeSoftBrush}" BorderThickness="1"
-                                                        CornerRadius="10" Padding="10" Margin="0,0,0,8">
+                                                        Tag="{Binding PulseCount, Mode=OneWay, NotifyOnTargetUpdated=True}"
+                                                        BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,8"
+                                                        RenderTransformOrigin="0.5,0.5">
+                                                    <Border.RenderTransform>
+                                                        <TranslateTransform/>
+                                                    </Border.RenderTransform>
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource App.StrokeSoftBrush}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource App.AccentSystemBrush}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <!-- Fires when the card first appears and on every click of it. -->
+                                                    <Border.Triggers>
+                                                        <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                                                            <BeginStoryboard Storyboard="{StaticResource ValuePulse}"/>
+                                                        </EventTrigger>
+                                                    </Border.Triggers>
                                                     <Border.InputBindings>
                                                         <MouseBinding MouseAction="LeftClick" Command="{Binding GoToCommand}"/>
                                                     </Border.InputBindings>
@@ -450,7 +471,7 @@
                                                             <Rectangle Width="10" Height="10" RadiusX="3" RadiusY="3"
                                                                        Fill="{Binding Swatch}" VerticalAlignment="Center"/>
                                                             <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
-                                                                    Command="{Binding DeleteCommand}" Padding="3" ToolTip="Delete annotation">
+                                                                    Click="DeleteCard_Click" Padding="3" ToolTip="Delete annotation">
                                                                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Close}"
                                                                       Width="10" Height="10" Stretch="Uniform"/>
                                                             </Button>
@@ -515,7 +536,17 @@
                                                  Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
                                                  ToolTip="Find in document"/>
                                     </DockPanel>
-                                    <TextBlock Text="{Binding MatchStatus}" Style="{StaticResource Caption}" Margin="2,6,0,0"/>
+                                    <TextBlock Text="{Binding MatchStatus, NotifyOnTargetUpdated=True}"
+                                               Style="{StaticResource Caption}" Margin="2,6,0,0">
+                                        <TextBlock.RenderTransform>
+                                            <TranslateTransform/>
+                                        </TextBlock.RenderTransform>
+                                        <TextBlock.Triggers>
+                                            <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                                                <BeginStoryboard Storyboard="{StaticResource ValuePulse}"/>
+                                            </EventTrigger>
+                                        </TextBlock.Triggers>
+                                    </TextBlock>
                                 </StackPanel>
                                 <ListBox Style="{StaticResource GList}" ItemsSource="{Binding SearchResults}"
                                          SelectionChanged="Results_SelectionChanged" Margin="8,0">
@@ -594,8 +625,7 @@
         </Grid>
 
         <!-- ======================= floating glass command bar ======================= -->
-        <Border Grid.Row="1" Style="{StaticResource GlassCard}" CornerRadius="14" Margin="12,0,12,6"
-                Visibility="{Binding IsFullscreen, Converter={StaticResource InvBoolToVis}}"
+        <Border x:Name="CommandBar" Grid.Row="1" Style="{StaticResource GlassCard}" CornerRadius="14" Margin="12,0,12,6"
                 RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform>
                 <TranslateTransform/>
@@ -658,7 +688,7 @@
                     <!-- File: open/save/print/security/properties, collapsed into one menu -->
                     <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="File">
                         <StackPanel Orientation="Horizontal">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}"/>
+                            <Path x:Name="FileIcon" Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}"/>
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
                                   Width="10" Height="10" Stretch="Uniform" Margin="3,0,0,0"/>
                         </StackPanel>
@@ -695,7 +725,19 @@
                         </Button.ContextMenu>
                     </Button>
 
-                    <StackPanel Orientation="Horizontal">
+                    <Grid>
+                    <!-- Selection pill: one shared highlight that glides to whichever tool is active
+                         (MainWindow.UpdateToolPill); the buttons' own selected fill is switched off
+                         through Tag="Glide". -->
+                    <Border x:Name="ToolPill" Width="32" Height="32" CornerRadius="9" Opacity="0"
+                            HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
+                            Background="{DynamicResource App.AccentSoftBrush}">
+                        <Border.RenderTransform>
+                            <TranslateTransform/>
+                        </Border.RenderTransform>
+                    </Border>
+                    <StackPanel x:Name="ToolsPanel" Orientation="Horizontal"
+                                ToggleButton.Checked="Tools_CheckedChanged" ToggleButton.Unchecked="Tools_CheckedChanged">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
                                 <Setter Property="IsEnabled" Value="True"/>
@@ -789,29 +831,29 @@
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- select + text markup -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Select"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Select"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Select}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Select}"/>
                         </RadioButton>
                         <!-- Lasso: draw a loop around ink, shapes and text boxes to grab them, then
                              drag to move, press Delete (or the × chip) to remove, or pick a colour. -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Lasso — draw a loop to select markup, then move or delete it"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Lasso}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Lasso}"/>
                         </RadioButton>
                         <!-- Highlight (text mode): drag over words to snap-highlight them.
                              The freehand marker variant lives with the pen and eraser below. -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Highlight — drag over text to snap-highlight words"
                                      IsChecked="{Binding SelectedDocument.IsTextHighlightActive}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextHighlight}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Underline"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Underline"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Underline}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Underline}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Strikethrough"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Strikethrough"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=StrikeOut}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Strike}"/>
                         </RadioButton>
@@ -819,18 +861,18 @@
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- pen + freehand marker + eraser -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Pen"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Pen"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Ink}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ink}"/>
                         </RadioButton>
                         <!-- Freehand marker: translucent highlighter stroke drawn anywhere on
                              the page (the text-snapping variant lives with underline/strike). -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Marker — draw a translucent freehand highlight"
                                      IsChecked="{Binding SelectedDocument.IsFreehandMarkerActive}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.MarkerFreehand}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Eraser"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Eraser}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Eraser}"/>
@@ -839,20 +881,20 @@
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- shapes + text -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Text box"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Text}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextTool}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Arrow"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Arrow"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Arrow}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Arrow}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Rectangle"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Rectangle"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Rect}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Rect}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" ToolTip="Ellipse"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Ellipse"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Ellipse}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ellipse}"/>
                         </RadioButton>
@@ -860,7 +902,7 @@
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- signature + content -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Signature — click again to edit"
                                      PreviewMouseLeftButtonDown="SignatureTool_PreviewMouseDown"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Signature}">
@@ -873,12 +915,12 @@
                                 </ContextMenu>
                             </RadioButton.ContextMenu>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Insert image"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=PlaceImage}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Image}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools"
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Edit page text"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=EditText}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.EditText}"/>
@@ -984,6 +1026,7 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
+                    </Grid>
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -1026,6 +1069,7 @@
 
         <!-- ======================= start page ======================= -->
         <Grid Grid.Row="2" Visibility="{Binding Documents.Count, Converter={StaticResource ZeroToVis}}">
+            <ctrl:AmbientBackdrop/>
             <Border Style="{StaticResource GlassCard}" Width="480" HorizontalAlignment="Center"
                     VerticalAlignment="Center" Padding="36,40" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform>
@@ -1091,6 +1135,36 @@
                 </StackPanel>
             </Border>
         </Grid>
+
+        <!-- ======================= drop target ======================= -->
+        <Grid x:Name="DropOverlay" Grid.RowSpan="3" Margin="10" IsHitTestVisible="False" Visibility="Collapsed">
+            <Rectangle RadiusX="18" RadiusY="18" StrokeThickness="2" StrokeDashArray="5 4"
+                       Stroke="{DynamicResource App.AccentSystemBrush}" Fill="{DynamicResource App.AccentSoftBrush}"/>
+            <TextBlock Text="Drop to open" FontSize="18" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource App.TextBrush}"/>
+        </Grid>
+
+        <!-- ======================= toast ======================= -->
+        <Border x:Name="Toast" Grid.Row="2" Visibility="Collapsed" Style="{StaticResource GlassCard}"
+                Background="{DynamicResource App.GlassSolidBrush}" MaxWidth="380" Padding="16,12"
+                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,28,28">
+            <Border.RenderTransform>
+                <TranslateTransform/>
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.28"/>
+            </Border.Effect>
+            <StackPanel>
+                <TextBlock x:Name="ToastTitle" FontWeight="SemiBold" FontSize="13"/>
+                <TextBlock x:Name="ToastText" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                    <Button Style="{StaticResource GhostButton}" Content="Later" Click="ToastDismiss_Click"/>
+                    <Button x:Name="ToastAction" Style="{StaticResource AccentButton}" Margin="8,0,0,0"
+                            Click="ToastAction_Click"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
 
         <!-- ======================= command palette ======================= -->
         <Grid Grid.RowSpan="3" Background="#30000000"

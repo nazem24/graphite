@@ -88,11 +88,23 @@ public partial class AnnotationViewModel : ObservableObject
     [RelayCommand]
     private void Delete() => Doc.RemoveAnnotation(this);
 
+    /// <summary>True while this annotation is the document's selected one (drives the
+    /// accent outline on its card in the Markup panel).</summary>
+    public bool IsSelected => ReferenceEquals(Doc.SelectedAnnotation, this);
+
+    public void RefreshSelection() => OnPropertyChanged(nameof(IsSelected));
+
+    /// <summary>Bumped every time the card is clicked; the card binds it so each click
+    /// replays a short "settle" pulse, even when the annotation was already selected.</summary>
+    public int PulseCount { get; private set; }
+
     [RelayCommand]
     private void GoTo()
     {
         Doc.SelectedImage = null;
         Doc.SelectedAnnotation = this;
-        Doc.GoToPage(PageIndex);
+        Doc.GoToPage(PageIndex, flash: true);
+        PulseCount++;
+        OnPropertyChanged(nameof(PulseCount));
     }
 }
