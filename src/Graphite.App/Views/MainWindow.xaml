@@ -835,13 +835,6 @@
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Select}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Select}"/>
                         </RadioButton>
-                        <!-- Lasso: draw a loop around ink, shapes and text boxes to grab them, then
-                             drag to move, press Delete (or the × chip) to remove, or pick a colour. -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Lasso — draw a loop to select markup, then move or delete it"
-                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Lasso}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Lasso}"/>
-                        </RadioButton>
                         <!-- Highlight (text mode): drag over words to snap-highlight them.
                              The freehand marker variant lives with the pen and eraser below. -->
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
@@ -871,6 +864,13 @@
                                      ToolTip="Marker — draw a translucent freehand highlight"
                                      IsChecked="{Binding SelectedDocument.IsFreehandMarkerActive}">
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.MarkerFreehand}"/>
+                        </RadioButton>
+                        <!-- Lasso: draw a loop around ink, shapes and text boxes to grab them, then
+                             drag to move, press Delete (or the × chip) to remove, or pick a colour. -->
+                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
+                                     ToolTip="Lasso — draw a loop to select markup, then move or delete it"
+                                     IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Lasso}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Lasso}"/>
                         </RadioButton>
                         <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
                                      ToolTip="Eraser"
@@ -1063,7 +1063,7 @@
                         Visibility="{Binding Documents.Count, Converter={StaticResource NonZeroToVis}}"
                         RenderTransformOrigin="0.5,0.5">
             <ContentControl.RenderTransform>
-                <TranslateTransform/>
+                <ScaleTransform/>
             </ContentControl.RenderTransform>
         </ContentControl>
 

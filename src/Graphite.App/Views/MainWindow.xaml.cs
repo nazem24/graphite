@@ -860,18 +860,19 @@ public partial class MainWindow : Window
         lb.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1, span) { FillBehavior = FillBehavior.Stop });
     }
 
-    /// <summary>Tab switch: the incoming document eases in instead of snapping.</summary>
+    /// <summary>Tab switch: the incoming document zooms in a touch and fades up.</summary>
     private void AnimateDocSwitch()
     {
         if (!Motion.Enabled) return;
-        if (DocHost.RenderTransform is not TranslateTransform tt) return;
-        var span = TimeSpan.FromMilliseconds(220);
-        tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, span)
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            FillBehavior = FillBehavior.Stop,
-        });
-        DocHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0.25, 1, span) { FillBehavior = FillBehavior.Stop });
+        if (DocHost.RenderTransform is not ScaleTransform st) return;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var span = TimeSpan.FromMilliseconds(260);
+        st.BeginAnimation(ScaleTransform.ScaleXProperty,
+            new DoubleAnimation(0.96, 1, span) { EasingFunction = ease, FillBehavior = FillBehavior.Stop });
+        st.BeginAnimation(ScaleTransform.ScaleYProperty,
+            new DoubleAnimation(0.96, 1, span) { EasingFunction = ease, FillBehavior = FillBehavior.Stop });
+        DocHost.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0.15, 1, TimeSpan.FromMilliseconds(220)) { FillBehavior = FillBehavior.Stop });
     }
 
     /// <summary>Time-based exponential glide toward a (possibly moving) target offset,
