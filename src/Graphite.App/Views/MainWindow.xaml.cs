@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Graphite.App.Interop;
 using Graphite.App.Services;
@@ -110,6 +111,8 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainViewModel.IsFullscreen))
             ApplyFullscreen(ViewModel.IsFullscreen);
+        else if (e.PropertyName == nameof(MainViewModel.SelectedDocument) && ViewModel.SelectedDocument != null)
+            AnimateDocSwitch();
         else if (e.PropertyName == nameof(MainViewModel.IsPaletteOpen) && ViewModel.IsPaletteOpen)
             Dispatcher.BeginInvoke(() =>
             {
@@ -169,6 +172,8 @@ public partial class MainWindow : Window
                 _wired.Remove(doc);
                 _viewers.Remove(doc);
                 _scrollOffsets.Remove(doc);
+                _pins.Remove(doc);
+                _lastShownPage.Remove(doc);
                 doc.PropertyChanged -= Doc_PropertyChanged;
                 PruneInlineEditors(doc);
             }
@@ -179,10 +184,11 @@ public partial class MainWindow : Window
             if (!_wired.Add(doc)) continue;
             doc.ScrollToPageRequested += i => ScrollToPage(doc, i);
             doc.ZoomChangedEvent += () => { _zoomTimer.Stop(); _zoomTimer.Start(); };
+            doc.ZoomApplied += (oldZoom, newZoom) => OnZoomApplied(doc, oldZoom, newZoom);
             doc.PagesReset += () =>
             {
                 PruneInlineEditors(doc);
-                Dispatcher.BeginInvoke(() => ScrollToPage(doc, doc.CurrentPageIndex));
+                Dispatcher.BeginInvoke(() => ScrollToPage(doc, doc.CurrentPageIndex, instant: true));
             };
             doc.EditTextRequested += (page, rect) => OnEditTextRequested(doc, page, rect);
             doc.PlaceImageRequested += (page, rect) => OnPlaceImageRequested(doc, page, rect);
@@ -203,6 +209,18 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------- viewer plumbing
 
+    // Pages the user explicitly navigated to (arrow keys, buttons, thumbnails). While a page
+    // is pinned, scrolling never re-derives the current page from the viewport, so the
+    // counter can't drift away from the page the user just stepped to (last pages that
+    // can't reach the top, zoomed-out views where several pages are visible, …). Any
+    // manual scroll (wheel, scrollbar, touch pan, zoom) releases the pin.
+    private readonly Dictionary<DocumentViewModel, int> _pins = new();
+    private readonly Dictionary<DocumentViewModel, int> _lastShownPage = new();
+    private int _trackingSuspended;   // >0 while we move the scroll position ourselves
+    private bool _restoring;          // a tab switch / far jump is still settling
+    private int _restoreGen;          // supersedes older settle loops
+    private Point? _zoomAnchor;       // viewport point to keep fixed during the next zoom change
+
     private void PagesHost_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is ListBox lb && lb.DataContext is DocumentViewModel doc)
@@ -211,13 +229,16 @@ public partial class MainWindow : Window
 
     private void PagesHost_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        // The TabControl reuses one ContentPresenter across tabs, so re-register on switch.
+        // DocHost reuses one ContentPresenter across tabs, so re-register on switch.
         if (sender is not ListBox lb) return;
+        StopScroller(lb);
 
         // Remember where the outgoing document was scrolled to — switching tabs resets
         // the shared ScrollViewer to 0, and without this the document reopens at the
-        // wrong spot (the "tab switch loses my place" bug).
-        if (e.OldValue is DocumentViewModel oldDoc && FindScrollViewer(lb) is { } oldSv)
+        // wrong spot (the "tab switch loses my place" bug). A restore that never finished
+        // would record a bogus offset, so it keeps the earlier one.
+        if (e.OldValue is DocumentViewModel oldDoc && !_restoring &&
+            ViewModel.Documents.Contains(oldDoc) && FindScrollViewer(lb) is { } oldSv)
             _scrollOffsets[oldDoc] = oldSv.VerticalOffset;
 
         if (e.NewValue is DocumentViewModel doc)
@@ -226,7 +247,14 @@ public partial class MainWindow : Window
             double target = _scrollOffsets.TryGetValue(doc, out var saved)
                 ? saved
                 : OffsetOfPage(doc, doc.CurrentPageIndex);
-            RestoreScrollWhenReady(lb, doc, target, 0);
+            _restoreGen++;
+            _restoring = true;
+            RestoreScrollWhenReady(lb, doc, target, 0, _restoreGen);
+        }
+        else
+        {
+            _restoreGen++;
+            _restoring = false;
         }
     }
 
@@ -243,50 +271,170 @@ public partial class MainWindow : Window
         }
     }
 
-    private static ScrollViewer? FindScrollViewer(DependencyObject root)
+    private static ScrollViewer? FindScrollViewer(DependencyObject root) => FindDescendant<ScrollViewer>(root);
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
         {
             var child = VisualTreeHelper.GetChild(root, i);
-            if (child is ScrollViewer sv) return sv;
-            if (FindScrollViewer(child) is { } nested) return nested;
+            if (child is T match) return match;
+            if (FindDescendant<T>(child) is { } nested) return nested;
+        }
+        return null;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? d) where T : DependencyObject
+    {
+        while (d != null)
+        {
+            if (d is T match) return match;
+            d = d is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(d)
+                : LogicalTreeHelper.GetParent(d);
         }
         return null;
     }
 
     private const double PageGap = 12; // template margin 6 top + 6 bottom
 
-    private static double OffsetOfPage(DocumentViewModel doc, int pageIndex)
+    /// <summary>Model-based offset of a page's top edge (every page has an exact, bound
+    /// height, so this matches the real layout when pages are realized; the virtualizing
+    /// panel only estimates it for pages it hasn't built yet).</summary>
+    private static double OffsetOfPage(DocumentViewModel doc, int pageIndex, double? zoom = null)
     {
+        double z = zoom ?? doc.Zoom;
         double offset = 0;
         for (int i = 0; i < pageIndex && i < doc.Pages.Count; i++)
-            offset += doc.Pages[i].DisplayHeight + PageGap;
+            offset += doc.Pages[i].HeightPt * z + PageGap;
         return offset;
     }
 
-    private void ScrollToPage(DocumentViewModel doc, int pageIndex)
+    /// <summary>Exact scroll offset that puts a page at the top of the viewport. Uses the
+    /// real container when it is realized (immune to the panel's size estimates), the
+    /// model otherwise.</summary>
+    private static double PageOffset(ListBox lb, ScrollViewer sv, DocumentViewModel doc, int page)
     {
-        if (!doc.IsContinuous) { return; } // VisiblePages swap handles it
-        if (!_viewers.TryGetValue(doc, out var lb)) return;
-        RestoreScrollWhenReady(lb, doc, OffsetOfPage(doc, pageIndex), 0);
+        if (lb.ItemContainerGenerator.ContainerFromIndex(page) is FrameworkElement { ActualHeight: > 0 } c)
+        {
+            try { return sv.VerticalOffset + c.TransformToAncestor(sv).Transform(new Point(0, 0)).Y; }
+            catch (InvalidOperationException) { /* not in the visual tree yet */ }
+        }
+        return OffsetOfPage(doc, page);
+    }
+
+    private SmoothScroller? GetScroller(ListBox lb)
+    {
+        var sv = FindScrollViewer(lb);
+        if (sv == null) return null;
+        if (_scrollers.TryGetValue(lb, out var existing))
+        {
+            if (ReferenceEquals(existing.Viewer, sv)) return existing;
+            existing.Stop();
+        }
+        return _scrollers[lb] = new SmoothScroller(sv);
+    }
+
+    private void StopScroller(ListBox lb)
+    {
+        if (_scrollers.TryGetValue(lb, out var s)) s.Stop();
+    }
+
+    /// <summary>Move to a page. Nearby pages glide there; far-away pages (and structural
+    /// resets) jump, because animating across hundreds of virtualized pages would only
+    /// thrash the renderer.</summary>
+    private void ScrollToPage(DocumentViewModel doc, int pageIndex, bool instant = false)
+    {
+        if (!doc.IsContinuous) { AnimatePageTurn(doc); return; }
+        if (!_viewers.TryGetValue(doc, out var lb) || !ReferenceEquals(lb.DataContext, doc)) return;
+        var sv = FindScrollViewer(lb);
+        if (sv == null || doc.Pages.Count == 0) return;
+        pageIndex = Math.Clamp(pageIndex, 0, doc.Pages.Count - 1);
+
+        _pins[doc] = pageIndex;
+        _lastShownPage[doc] = pageIndex;
+
+        double modelTarget = OffsetOfPage(doc, pageIndex);
+        bool near = !instant && !_restoring && sv.ViewportHeight > 0 && sv.ExtentHeight > 0 &&
+                    Math.Abs(modelTarget - sv.VerticalOffset) <= sv.ViewportHeight * 6;
+        if (near && GetScroller(lb) is { } scroller)
+        {
+            int page = pageIndex;
+            scroller.ScrollTo(() => PageOffset(lb, sv, doc, page), rate: 13);
+            return;
+        }
+
+        StopScroller(lb);
+        _restoreGen++;
+        _restoring = true;
+        JumpToPage(lb, doc, pageIndex, 0, _restoreGen);
+    }
+
+    /// <summary>Instant jump: realize the target page, then nudge until its real top edge
+    /// is at the top of the viewport (the panel's offsets are estimates until the pages in
+    /// between are built, so one ScrollToVerticalOffset isn't reliable for mixed page sizes).</summary>
+    private void JumpToPage(ListBox lb, DocumentViewModel doc, int page, int attempt, int gen)
+    {
+        if (gen != _restoreGen) return; // superseded by a newer jump / tab switch
+        var sv = FindScrollViewer(lb);
+        if (sv == null || !doc.IsContinuous || lb.Items.Count == 0 ||
+            !_viewers.TryGetValue(doc, out var cur) || !ReferenceEquals(cur, lb) ||
+            !ReferenceEquals(lb.DataContext, doc))
+        {
+            FinishRestore(lb, doc);
+            return;
+        }
+        page = Math.Clamp(page, 0, lb.Items.Count - 1);
+
+        if (lb.ItemContainerGenerator.ContainerFromIndex(page) is not FrameworkElement { ActualHeight: > 0 } c)
+        {
+            if (attempt >= 30) { FinishRestore(lb, doc); return; }
+            lb.ScrollIntoView(lb.Items[page]); // forces the container to be built
+            Dispatcher.BeginInvoke(() => JumpToPage(lb, doc, page, attempt + 1, gen), DispatcherPriority.Background);
+            return;
+        }
+
+        double top;
+        try { top = c.TransformToAncestor(sv).Transform(new Point(0, 0)).Y; }
+        catch (InvalidOperationException)
+        {
+            Dispatcher.BeginInvoke(() => JumpToPage(lb, doc, page, attempt + 1, gen), DispatcherPriority.Background);
+            return;
+        }
+
+        double max = Math.Max(0, sv.ExtentHeight - sv.ViewportHeight);
+        double target = Math.Clamp(sv.VerticalOffset + top, 0, max);
+        if (attempt < 12 && Math.Abs(target - sv.VerticalOffset) > 0.5)
+        {
+            sv.ScrollToVerticalOffset(target);
+            Dispatcher.BeginInvoke(() => JumpToPage(lb, doc, page, attempt + 1, gen), DispatcherPriority.Background);
+            return;
+        }
+        FinishRestore(lb, doc);
     }
 
     /// <summary>Scroll to <paramref name="offset"/> once the ScrollViewer's extent can
     /// actually hold it. Right after a tab switch (or a pages reset) the extent is still
     /// near zero because containers realize lazily — a premature ScrollToVerticalOffset
     /// gets clamped to ~0 and the position is lost. Realize the target page first, then
-    /// retry on background priority until the extent is built (or we give up).</summary>
-    private void RestoreScrollWhenReady(ListBox lb, DocumentViewModel doc, double offset, int attempt)
+    /// retry on background priority until the extent is built (or we give up). Page
+    /// tracking stays suspended meanwhile, so the intermediate offsets (0, then clamped
+    /// values) can't overwrite the document's current page.</summary>
+    private void RestoreScrollWhenReady(ListBox lb, DocumentViewModel doc, double offset, int attempt, int gen)
     {
-        if (!doc.IsContinuous) return;
-        if (!_viewers.TryGetValue(doc, out var current) || !ReferenceEquals(current, lb))
-            return; // user switched tabs again — abandon
+        if (gen != _restoreGen) return; // user switched tabs again / another jump took over
         var sv = FindScrollViewer(lb);
-        if (sv == null) return;
+        if (sv == null || !doc.IsContinuous ||
+            !_viewers.TryGetValue(doc, out var current) || !ReferenceEquals(current, lb) ||
+            !ReferenceEquals(lb.DataContext, doc))
+        {
+            FinishRestore(lb, doc);
+            return;
+        }
 
         if (attempt == 0)
         {
-            if (_scrollers.TryGetValue(lb, out var sc)) sc.Stop();
+            StopScroller(lb);
             // Force realization up to the target page so the extent becomes real.
             int page = PageIndexAtOffset(doc, offset);
             if (page >= 0 && page < lb.Items.Count) lb.ScrollIntoView(lb.Items[page]);
@@ -296,10 +444,21 @@ public partial class MainWindow : Window
         if (max >= offset - 1 || attempt >= 30)
         {
             sv.ScrollToVerticalOffset(Math.Min(offset, max));
+            // Let that final scroll lay out, then re-sync the counter from the real viewport.
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (gen == _restoreGen) FinishRestore(lb, doc);
+            }, DispatcherPriority.Background);
             return;
         }
-        Dispatcher.BeginInvoke(() => RestoreScrollWhenReady(lb, doc, offset, attempt + 1),
+        Dispatcher.BeginInvoke(() => RestoreScrollWhenReady(lb, doc, offset, attempt + 1, gen),
             DispatcherPriority.Background);
+    }
+
+    private void FinishRestore(ListBox lb, DocumentViewModel doc)
+    {
+        _restoring = false;
+        if (ReferenceEquals(lb.DataContext, doc)) SyncFromViewport(lb, doc);
     }
 
     private static int PageIndexAtOffset(DocumentViewModel doc, double offset)
@@ -327,15 +486,85 @@ public partial class MainWindow : Window
         if (!ReferenceEquals(e.OriginalSource, FindScrollViewer(lb)))
             return;
 
-        // User scrolled outside the animation (scrollbar drag, keyboard) — re-sync.
-        if (_scrollers.TryGetValue(lb, out var sc)) sc.Sync();
+        // Mid tab-switch / jump / zoom the offsets are transient — settle first.
+        if (_trackingSuspended > 0 || _restoring) return;
+        if (e.VerticalChange == 0 && e.ViewportHeightChange == 0 && e.ExtentHeightChange == 0) return;
 
-        // One pass over the page heights: which pages are on screen, and which page sits a
-        // third of the way down the viewport (that one becomes the "current" page).
-        double top = e.VerticalOffset;
-        double bottom = top + e.ViewportHeight;
-        double probe = top + e.ViewportHeight / 3;
-        int first = -1, last = -1, current = -1;
+        SyncFromViewport(lb, doc);
+    }
+
+    /// <summary>Re-derive which pages are on screen (for rendering) and which one is
+    /// "current" (for the counter) from where the viewer really is.</summary>
+    private void SyncFromViewport(ListBox lb, DocumentViewModel doc)
+    {
+        if (!doc.IsContinuous || doc.Pages.Count == 0) return;
+        var sv = FindScrollViewer(lb);
+        if (sv == null || sv.ViewportHeight <= 0) return;
+
+        if (!TryProbe(lb, sv, out int first, out int last, out int current) &&
+            !ModelProbe(doc, sv, out first, out last, out current))
+            return;
+
+        // A page the user navigated to stays the current one until they scroll themselves.
+        if (_pins.TryGetValue(doc, out int pin))
+        {
+            if (doc.CurrentPageIndex == pin && pin >= 0 && pin < doc.Pages.Count) current = pin;
+            else _pins.Remove(doc);
+        }
+
+        if (doc.CurrentPageIndex != current)
+        {
+            _syncingThumbs = true;
+            try { doc.CurrentPageIndex = current; }
+            finally { _syncingThumbs = false; }
+        }
+        doc.UpdateViewport(first, last);
+    }
+
+    /// <summary>Read the real layout: which realized page containers overlap the viewport,
+    /// and which one sits a third of the way down (that one becomes the current page).</summary>
+    private static bool TryProbe(ListBox lb, ScrollViewer sv, out int first, out int last, out int current)
+    {
+        first = last = current = -1;
+        if (FindDescendant<VirtualizingPanel>(sv) is not { } panel) return false;
+
+        double viewport = sv.ViewportHeight;
+        double probe = viewport / 3;
+        int below = -1;
+        double belowTop = double.MaxValue;
+
+        int count = VisualTreeHelper.GetChildrenCount(panel);
+        for (int c = 0; c < count; c++)
+        {
+            if (VisualTreeHelper.GetChild(panel, c) is not FrameworkElement fe || !fe.IsVisible || fe.ActualHeight <= 0)
+                continue;
+            int idx = lb.ItemContainerGenerator.IndexFromContainer(fe);
+            if (idx < 0) continue;
+
+            double top;
+            try { top = fe.TransformToAncestor(sv).Transform(new Point(0, 0)).Y; }
+            catch (InvalidOperationException) { continue; }
+            double bottom = top + fe.ActualHeight;
+            if (bottom <= 0 || top >= viewport) continue; // realized but off screen (cache)
+
+            if (first < 0 || idx < first) first = idx;
+            if (idx > last) last = idx;
+            if (top <= probe && probe < bottom) current = idx;
+            else if (top > probe && top < belowTop) { below = idx; belowTop = top; }
+        }
+
+        if (first < 0) return false;
+        if (current < 0) current = below >= 0 ? below : last;
+        return true;
+    }
+
+    /// <summary>Fallback when no containers are realized yet: walk the model heights.</summary>
+    private static bool ModelProbe(DocumentViewModel doc, ScrollViewer sv, out int first, out int last, out int current)
+    {
+        double top = sv.VerticalOffset;
+        double bottom = top + sv.ViewportHeight;
+        double probe = top + sv.ViewportHeight / 3;
+        first = last = current = -1;
         double y = 0;
         for (int i = 0; i < doc.Pages.Count; i++)
         {
@@ -346,87 +575,361 @@ public partial class MainWindow : Window
             if (pageTop < bottom) last = i;
             else break;
         }
-        if (first < 0) return;
+        if (first < 0) return false;
         if (current < 0) current = last;
-
-        if (doc.CurrentPageIndex != current)
-        {
-            _syncingThumbs = true;
-            doc.CurrentPageIndex = current;
-            _syncingThumbs = false;
-        }
-        doc.UpdateViewport(first, last);
+        return true;
     }
+
+    // ------------------------------------------------------------- wheel, zoom, touch
 
     private void PagesHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (ViewModel.SelectedDocument is not { } doc) return;
+        if (ViewModel.SelectedDocument is not { } doc || sender is not ListBox lb) return;
+        var sv = FindScrollViewer(lb);
+        if (sv == null) return;
 
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
-            if (sender is ListBox zoomLb && _scrollers.TryGetValue(zoomLb, out var zoomSc)) zoomSc.Stop();
-            doc.Zoom = Math.Clamp(doc.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 6);
+            // Proportional + anchored: a precision-touchpad pinch arrives as Ctrl+wheel with
+            // tiny deltas, so zoom follows the gesture smoothly, centred on the pointer.
+            StopScroller(lb);
+            _zoomAnchor = e.GetPosition(sv);
+            try { doc.Zoom = Math.Clamp(doc.Zoom * Math.Pow(1.0011, e.Delta), 0.25, 6); }
+            finally { _zoomAnchor = null; }
+            e.Handled = true;
+            return;
+        }
+
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+        {
+            sv.ScrollToHorizontalOffset(sv.HorizontalOffset - e.Delta);
             e.Handled = true;
             return;
         }
 
         // Eased wheel scrolling: animate toward a target offset instead of jumping
         // line-by-line (works for both notched wheels and precision touchpads).
-        if (sender is ListBox lb && FindScrollViewer(lb) is { } sv)
+        _pins.Remove(doc);
+        GetScroller(lb)?.ScrollBy(-e.Delta * 1.0);
+        e.Handled = true;
+    }
+
+    private void PagesHost_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Grabbing the scrollbar is a manual scroll: stop any glide and release the pin.
+        if (sender is ListBox lb && lb.DataContext is DocumentViewModel doc &&
+            e.OriginalSource is DependencyObject src &&
+            FindAncestor<System.Windows.Controls.Primitives.ScrollBar>(src) != null)
         {
-            if (!_scrollers.TryGetValue(lb, out var scroller))
-                _scrollers[lb] = scroller = new SmoothScroller(sv);
-            scroller.ScrollBy(-e.Delta * 1.0);
-            e.Handled = true;
+            StopScroller(lb);
+            _pins.Remove(doc);
         }
     }
 
-    /// <summary>Exponential-decay scroll animation toward a target offset, driven by
-    /// CompositionTarget.Rendering so it tracks the monitor's refresh rate.</summary>
+    /// <summary>Zoom changed: keep the content under the anchor (pinch centre, pointer, or
+    /// viewport centre) where it was, instead of letting it slide away from under the user.</summary>
+    private void OnZoomApplied(DocumentViewModel doc, double oldZoom, double newZoom)
+    {
+        if (oldZoom <= 0 || Math.Abs(newZoom - oldZoom) < 1e-9 || _restoring) return;
+        if (!_viewers.TryGetValue(doc, out var lb) || !ReferenceEquals(lb.DataContext, doc)) return;
+        var sv = FindScrollViewer(lb);
+        if (sv == null || sv.ViewportHeight <= 0 || sv.ViewportWidth <= 0) return;
+
+        StopScroller(lb);
+        _pins.Remove(doc);
+
+        double vw = sv.ViewportWidth, vh = sv.ViewportHeight;
+        var a = _zoomAnchor ?? new Point(vw / 2, vh / 2);
+        a = new Point(Math.Clamp(a.X, 0, vw), Math.Clamp(a.Y, 0, vh));
+        double ratio = newZoom / oldZoom;
+
+        // Where the anchor sits horizontally, relative to the centre line pages are centred on.
+        double wOld = Math.Max(sv.ExtentWidth, vw);
+        double xRel = sv.HorizontalOffset + a.X - wOld / 2;
+        double yOld = sv.VerticalOffset + a.Y;
+
+        // Vertically: which page is under the anchor, and how far into it (in page points).
+        int anchorPage = -1;
+        double innerPt = 0;
+        if (doc.IsContinuous && doc.Pages.Count > 0)
+        {
+            double off = 0;
+            for (int i = 0; i < doc.Pages.Count; i++)
+            {
+                double h = doc.Pages[i].HeightPt * oldZoom + PageGap;
+                if (yOld < off + h || i == doc.Pages.Count - 1)
+                {
+                    anchorPage = i;
+                    innerPt = (yOld - off - PageGap / 2) / oldZoom;
+                    break;
+                }
+                off += h;
+            }
+        }
+
+        _trackingSuspended++;
+        try
+        {
+            double newV = anchorPage >= 0
+                ? OffsetOfPage(doc, anchorPage, newZoom) + PageGap / 2 + innerPt * newZoom - a.Y
+                : yOld * ratio - a.Y;
+
+            lb.UpdateLayout(); // pages now have their new sizes
+            sv.ScrollToVerticalOffset(Math.Max(0, newV));
+            double wNew = Math.Max(sv.ExtentWidth, vw);
+            sv.ScrollToHorizontalOffset(Math.Max(0, wNew / 2 + xRel * ratio - a.X));
+            lb.UpdateLayout();
+
+            // The panel's offsets are estimates for pages it hasn't built; one correction
+            // against the real container pins the anchored point exactly.
+            if (anchorPage >= 0 &&
+                lb.ItemContainerGenerator.ContainerFromIndex(anchorPage) is FrameworkElement { ActualHeight: > 0 } c)
+            {
+                try
+                {
+                    double itemTop = c.TransformToAncestor(sv).Transform(new Point(0, 0)).Y;
+                    double desired = a.Y - PageGap / 2 - innerPt * newZoom;
+                    double delta = itemTop - desired;
+                    if (Math.Abs(delta) > 0.75)
+                    {
+                        sv.ScrollToVerticalOffset(Math.Max(0, sv.VerticalOffset + delta));
+                        lb.UpdateLayout();
+                    }
+                }
+                catch (InvalidOperationException) { }
+            }
+        }
+        finally { _trackingSuspended--; }
+        SyncFromViewport(lb, doc);
+    }
+
+    // ---- touch: two-finger pinch zoom + pan
+
+    private readonly Dictionary<int, TouchDevice> _touchDevices = new();
+    private int _pinchIdA = -1, _pinchIdB = -1;
+    private double _pinchStartDist, _pinchStartZoom;
+    private Point _pinchCentre;
+
+    private void PagesHost_PreviewTouchDown(object sender, TouchEventArgs e)
+    {
+        if (sender is not ListBox lb || ViewModel.SelectedDocument is not { } doc) return;
+        var sv = FindScrollViewer(lb);
+        if (sv == null) return;
+
+        foreach (var stale in _touchDevices.Where(kv => !kv.Value.IsActive).Select(kv => kv.Key).ToList())
+            _touchDevices.Remove(stale);
+        _touchDevices[e.TouchDevice.Id] = e.TouchDevice;
+
+        if (_pinchIdA < 0 && _touchDevices.Count >= 2)
+        {
+            var two = _touchDevices.Values.Take(2).ToArray();
+            BeginPinch(lb, sv, doc, two[0], two[1]);
+        }
+        if (_pinchIdA >= 0) e.Handled = true; // fingers belong to the gesture, not the page tools
+    }
+
+    private void BeginPinch(ListBox lb, ScrollViewer sv, DocumentViewModel doc, TouchDevice a, TouchDevice b)
+    {
+        Point pa = a.GetTouchPoint(sv).Position, pb = b.GetTouchPoint(sv).Position;
+        _pinchIdA = a.Id;
+        _pinchIdB = b.Id;
+        _pinchStartDist = Math.Max(1, (pa - pb).Length);
+        _pinchStartZoom = doc.Zoom;
+        _pinchCentre = new Point((pa.X + pb.X) / 2, (pa.Y + pb.Y) / 2);
+
+        StopScroller(lb);
+        _pins.Remove(doc);
+        // The first finger already started a promoted mouse gesture (an ink stroke, a drag…).
+        // Dropping the mouse capture makes the annotation layer cancel it.
+        Mouse.Capture(null);
+        lb.CaptureTouch(a);
+        lb.CaptureTouch(b);
+    }
+
+    private void PagesHost_PreviewTouchMove(object sender, TouchEventArgs e)
+    {
+        if (_pinchIdA < 0 || sender is not ListBox lb) return;
+        int id = e.TouchDevice.Id;
+        if (id != _pinchIdA && id != _pinchIdB) { e.Handled = true; return; }
+        e.Handled = true;
+        UpdatePinch(lb);
+    }
+
+    private void UpdatePinch(ListBox lb)
+    {
+        if (ViewModel.SelectedDocument is not { } doc || FindScrollViewer(lb) is not { } sv ||
+            !_touchDevices.TryGetValue(_pinchIdA, out var a) || !_touchDevices.TryGetValue(_pinchIdB, out var b))
+        {
+            EndPinch(lb);
+            return;
+        }
+
+        Point pa = a.GetTouchPoint(sv).Position, pb = b.GetTouchPoint(sv).Position;
+        var centre = new Point((pa.X + pb.X) / 2, (pa.Y + pb.Y) / 2);
+        double dist = Math.Max(1, (pa - pb).Length);
+        double zoom = Math.Clamp(_pinchStartZoom * dist / _pinchStartDist, 0.25, 6);
+
+        if (Math.Abs(zoom - doc.Zoom) > 0.0005)
+        {
+            _zoomAnchor = _pinchCentre; // content under the previous centre stays put…
+            try { doc.Zoom = zoom; }
+            finally { _zoomAnchor = null; }
+        }
+
+        double dx = centre.X - _pinchCentre.X, dy = centre.Y - _pinchCentre.Y;
+        if (dx != 0 || dy != 0)
+        {
+            // …then the two-finger drag carries it to the new centre.
+            _trackingSuspended++;
+            try
+            {
+                sv.ScrollToHorizontalOffset(Math.Max(0, sv.HorizontalOffset - dx));
+                sv.ScrollToVerticalOffset(Math.Max(0, sv.VerticalOffset - dy));
+                lb.UpdateLayout();
+            }
+            finally { _trackingSuspended--; }
+            SyncFromViewport(lb, doc);
+        }
+        _pinchCentre = centre;
+    }
+
+    private void PagesHost_PreviewTouchUp(object sender, TouchEventArgs e)
+    {
+        // Not marked handled: the primary finger's promoted mouse-up must still arrive so
+        // the system's button state doesn't stay "pressed".
+        int id = e.TouchDevice.Id;
+        _touchDevices.Remove(id);
+        if (id == _pinchIdA || id == _pinchIdB) EndPinch(sender as ListBox);
+    }
+
+    private void PagesHost_LostTouchCapture(object sender, TouchEventArgs e)
+    {
+        if (e.TouchDevice.IsActive) return; // capture just moved elsewhere; the finger is still down
+        int id = e.TouchDevice.Id;
+        _touchDevices.Remove(id);
+        if (id == _pinchIdA || id == _pinchIdB) EndPinch(sender as ListBox);
+    }
+
+    private void EndPinch(ListBox? lb)
+    {
+        if (_pinchIdA < 0) return;
+        int a = _pinchIdA, b = _pinchIdB;
+        _pinchIdA = _pinchIdB = -1;
+        if (lb == null) return;
+        if (_touchDevices.TryGetValue(a, out var da)) lb.ReleaseTouchCapture(da);
+        if (_touchDevices.TryGetValue(b, out var db)) lb.ReleaseTouchCapture(db);
+        if (lb.DataContext is DocumentViewModel doc) SyncFromViewport(lb, doc);
+    }
+
+    // ------------------------------------------------------------- animation helpers
+
+    /// <summary>Single / spread layouts swap their pages in place, so a short fade-and-slide
+    /// (direction follows the page number) keeps the turn from feeling like a hard cut.</summary>
+    private void AnimatePageTurn(DocumentViewModel doc)
+    {
+        if (!_viewers.TryGetValue(doc, out var lb) || !ReferenceEquals(lb.DataContext, doc)) return;
+        int page = doc.CurrentPageIndex;
+        bool had = _lastShownPage.TryGetValue(doc, out int prev);
+        _lastShownPage[doc] = page;
+        FindScrollViewer(lb)?.ScrollToTop();
+        if (!had || prev == page) return;
+
+        if (lb.RenderTransform is not TranslateTransform tt)
+            lb.RenderTransform = tt = new TranslateTransform();
+        var span = TimeSpan.FromMilliseconds(220);
+        tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(page > prev ? 22 : -22, 0, span)
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop,
+        });
+        lb.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1, span) { FillBehavior = FillBehavior.Stop });
+    }
+
+    /// <summary>Tab switch: the incoming document eases in instead of snapping.</summary>
+    private void AnimateDocSwitch()
+    {
+        if (DocHost.RenderTransform is not TranslateTransform tt) return;
+        var span = TimeSpan.FromMilliseconds(220);
+        tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, span)
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop,
+        });
+        DocHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0.25, 1, span) { FillBehavior = FillBehavior.Stop });
+    }
+
+    /// <summary>Time-based exponential glide toward a (possibly moving) target offset,
+    /// driven by CompositionTarget.Rendering so it follows the monitor's refresh rate and
+    /// feels identical at 60 and 144 Hz.</summary>
     private sealed class SmoothScroller
     {
         private readonly ScrollViewer _sv;
-        private double _target;
+        private Func<double>? _provider;
+        private double _fixed;
+        private double _rate = 18;
         private bool _animating;
+        private long _last;
+        private Action? _arrived;
 
-        public SmoothScroller(ScrollViewer sv)
-        {
-            _sv = sv;
-            _target = sv.VerticalOffset;
-        }
+        public SmoothScroller(ScrollViewer sv) => _sv = sv;
 
-        public void ScrollBy(double delta)
+        public ScrollViewer Viewer => _sv;
+        public bool IsAnimating => _animating;
+
+        private double Max => Math.Max(0, _sv.ExtentHeight - _sv.ViewportHeight);
+        private double Wanted => Math.Clamp(_provider?.Invoke() ?? _fixed, 0, Max);
+
+        /// <summary>Wheel step: accumulates onto the glide already in flight.</summary>
+        public void ScrollBy(double delta) =>
+            Begin(null, (_animating ? Wanted : _sv.VerticalOffset) + delta, null, 18);
+
+        /// <summary>Glide to a target that is re-evaluated every frame (so it can follow a
+        /// page whose real position firms up as it gets realized).</summary>
+        public void ScrollTo(Func<double> target, Action? arrived = null, double rate = 14) =>
+            Begin(target, 0, arrived, rate);
+
+        private void Begin(Func<double>? provider, double fixedTarget, Action? arrived, double rate)
         {
-            _target = Math.Clamp(_target + delta, 0, Math.Max(0, _sv.ExtentHeight - _sv.ViewportHeight));
+            _provider = provider;
+            _fixed = fixedTarget;
+            _arrived = arrived;
+            _rate = rate;
             if (_animating) return;
             _animating = true;
+            _last = System.Diagnostics.Stopwatch.GetTimestamp();
             CompositionTarget.Rendering += Step;
         }
 
-        /// <summary>Adopt the current offset as the target (after external scrolls).</summary>
-        public void Sync()
-        {
-            if (!_animating) _target = _sv.VerticalOffset;
-        }
-
-        /// <summary>Stop animating immediately (programmatic scrolls take over).</summary>
+        /// <summary>Stop gliding right here (a manual scroll or a jump takes over).</summary>
         public void Stop()
         {
             if (!_animating) return;
             CompositionTarget.Rendering -= Step;
             _animating = false;
-            _target = _sv.VerticalOffset;
+            _arrived = null;
+            _provider = null;
         }
 
         private void Step(object? sender, EventArgs e)
         {
+            if (!_sv.IsLoaded) { Stop(); return; }
+
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            double dt = Math.Clamp((now - _last) / (double)System.Diagnostics.Stopwatch.Frequency, 0.001, 0.05);
+            _last = now;
+
             double current = _sv.VerticalOffset;
-            double next = current + (_target - current) * 0.28;
-            if (Math.Abs(next - _target) < 0.6)
+            double target = Wanted;
+            double next = current + (target - current) * (1 - Math.Exp(-_rate * dt));
+            if (Math.Abs(target - next) < 0.5)
             {
                 CompositionTarget.Rendering -= Step;
                 _animating = false;
-                _sv.ScrollToVerticalOffset(_target);
+                _sv.ScrollToVerticalOffset(target);
+                var arrived = _arrived;
+                _arrived = null;
+                _provider = null;
+                arrived?.Invoke();
                 return;
             }
             _sv.ScrollToVerticalOffset(next);
@@ -461,6 +964,8 @@ public partial class MainWindow : Window
 
     private void Thumbs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        // Keep the highlighted thumbnail in view as the current page changes.
+        if (sender is ListBox { SelectedItem: { } selected } list) list.ScrollIntoView(selected);
         if (_syncingThumbs) return;
         if (sender is ListBox { IsMouseOver: true, SelectedIndex: >= 0 } lb &&
             lb.DataContext is DocumentViewModel doc)
@@ -495,6 +1000,50 @@ public partial class MainWindow : Window
     {
         if (ViewModel.SelectedDocument is { } doc) doc.Zoom = 1.0;
     }
+
+    // ------------------------------------------------------------- tab strip
+
+    private void TabStrip_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: { } item } lb) lb.ScrollIntoView(item);
+    }
+
+    /// <summary>With more tabs than fit, the wheel scrolls the strip sideways.</summary>
+    private void TabStrip_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ListBox lb || FindScrollViewer(lb) is not { ScrollableWidth: > 0 } sv) return;
+        sv.ScrollToHorizontalOffset(sv.HorizontalOffset - e.Delta);
+        e.Handled = true;
+    }
+
+    /// <summary>Middle-click closes a tab, like a browser.</summary>
+    private void TabStrip_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle) return;
+        if (e.OriginalSource is DependencyObject src &&
+            FindAncestor<ListBoxItem>(src) is { DataContext: DocumentViewModel doc })
+        {
+            ViewModel.CloseDocumentCommand.Execute(doc);
+            e.Handled = true;
+        }
+    }
+
+    // ------------------------------------------------------------- colour popup
+
+    private void ColorPopup_Opened(object? sender, EventArgs e)
+    {
+        var span = TimeSpan.FromMilliseconds(170);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        if (ColorCard.RenderTransform is ScaleTransform st)
+        {
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.94, 1, span) { EasingFunction = ease });
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.88, 1, span) { EasingFunction = ease });
+        }
+        ColorCard.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, span));
+    }
+
+    /// <summary>Picking a swatch applies the colour (via its command) and closes the popup.</summary>
+    private void ColorSwatch_Click(object sender, RoutedEventArgs e) => ColorToggle.IsChecked = false;
 
     // ------------------------------------------------------------- menus
 
@@ -814,6 +1363,40 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Lasso selection: Esc drops it, Delete removes what it holds.
+        if (doc is { HasLassoSelection: true } && Keyboard.FocusedElement is not TextBox)
+        {
+            if (e.Key == Key.Escape) { doc.ClearLasso(); e.Handled = true; return; }
+            if (e.Key == Key.Delete) { doc.DeleteLassoSelection(); e.Handled = true; return; }
+        }
+
+        // Page stepping: Up/Down (and PageUp/PageDown) go to the previous/next page,
+        // Home/End to the first/last — unless the focus is somewhere that wants those keys.
+        if (doc != null && Keyboard.Modifiers == ModifierKeys.None && PageKeysAvailable())
+        {
+            switch (e.Key)
+            {
+                case Key.Down:
+                case Key.PageDown:
+                    doc.StepPage(+1);
+                    e.Handled = true;
+                    return;
+                case Key.Up:
+                case Key.PageUp:
+                    doc.StepPage(-1);
+                    e.Handled = true;
+                    return;
+                case Key.Home:
+                    doc.GoToPage(0);
+                    e.Handled = true;
+                    return;
+                case Key.End:
+                    doc.GoToPage(doc.Pages.Count - 1);
+                    e.Handled = true;
+                    return;
+            }
+        }
+
         if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control &&
             doc != null && Keyboard.FocusedElement is not TextBox &&
             ClipboardHelper.Try(Clipboard.ContainsImage))
@@ -871,6 +1454,24 @@ public partial class MainWindow : Window
             doc.RequestEditFreeText(selFt);
             e.Handled = true;
         }
+    }
+
+    /// <summary>False while the keyboard focus sits in something that uses the arrow keys
+    /// itself (text boxes, combo boxes, menus, the outline tree, the search-result list…).</summary>
+    private bool PageKeysAvailable()
+    {
+        if (_inlineEdit != null) return false;
+        return Keyboard.FocusedElement switch
+        {
+            System.Windows.Controls.Primitives.TextBoxBase => false,
+            PasswordBox => false,
+            ComboBox or ComboBoxItem => false,
+            TreeView or TreeViewItem => false,
+            MenuItem or ContextMenu => false,
+            System.Windows.Controls.Primitives.RangeBase => false,
+            ListBoxItem { DataContext: not PageViewModel } => false,
+            _ => true,
+        };
     }
 
     // ------------------------------------------------------------- command palette

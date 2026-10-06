@@ -13,6 +13,7 @@
     <!-- File -->
     <Geometry x:Key="Icon.Open">M1.8 3.8 H6.2 L7.8 5.6 H14.2 V12.4 H1.8 Z</Geometry>
     <Geometry x:Key="Icon.Save">M8 1.8 V9.2 M5.2 6.4 L8 9.2 L10.8 6.4 M2.6 11.4 V13.8 H13.4 V11.4</Geometry>
+    <Geometry x:Key="Icon.SaveAs">M3 2.5 H10.8 L13 4.7 V13.5 H3 Z M5.5 2.5 V6 H9.5 V2.5 M5.5 13.5 V9.5 H10.5 V13.5</Geometry>
     <Geometry x:Key="Icon.Export">M8 9.5 V1.8 M5.2 4.6 L8 1.8 L10.8 4.6 M2.6 8.2 V13.8 H13.4 V8.2</Geometry>
     <Geometry x:Key="Icon.Print">M4.5 5.5 V2.5 H11.5 V5.5 M2.5 5.5 H13.5 V11 H11.5 M4.5 11 H2.5 V5.5 M4.5 9 H11.5 V13.5 H4.5 Z</Geometry>
     <Geometry x:Key="Icon.Download">M8 2.2 V9.6 M5.2 6.8 L8 9.6 L10.8 6.8 M2.8 11.6 V13.6 H13.2 V11.6</Geometry>
@@ -45,6 +46,8 @@
 
     <!-- Annotation tools -->
     <Geometry x:Key="Icon.Select">M4.5 2.4 V12.7 L7.1 10.2 L9 14 L10.9 13.1 L9 9.4 L12.7 9.2 Z</Geometry>
+    <!-- Lasso: an open rope loop with its tail curling down. -->
+    <Geometry x:Key="Icon.Lasso">M8 2.6 C11.6 2.6 14.2 4.3 14.2 6.6 C14.2 8.9 11.4 10.6 8 10.6 C4.6 10.6 1.8 8.9 1.8 6.6 C1.8 4.3 4.4 2.6 8 2.6 Z M6.6 10.4 C5.7 11.6 5.6 12.7 6.2 13.4 C6.9 14.1 8.2 13.9 8.5 12.9</Geometry>
     <Geometry x:Key="Icon.TextHighlight">M4.4 11.6 L8 2.9 L11.6 11.6 M5.7 8.8 H10.3 M2.6 14.3 H13.4</Geometry>
     <Geometry x:Key="Icon.MarkerFreehand">M2.4 10.8 C3.7 5.6 6.1 5.4 8 9 C9.9 12.6 12.3 12.4 13.6 7.2</Geometry>
     <Geometry x:Key="Icon.Underline">M4.5 2.5 V7.5 A3.5 3.5 0 0 0 11.5 7.5 V2.5 M3.5 13.5 H12.5</Geometry>

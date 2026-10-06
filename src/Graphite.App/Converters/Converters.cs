@@ -66,6 +66,15 @@ public sealed class EnumToBoolConverter : IValueConverter
         value is true ? Enum.Parse(targetType, (string)parameter) : Binding.DoNothing;
 }
 
+/// <summary>True when the bound string equals the converter parameter (case-insensitive).
+/// One-way: used to tick the swatch matching the current markup colour.</summary>
+public sealed class StringEqualsConverter : IValueConverter
+{
+    public object Convert(object? value, Type t, object? parameter, CultureInfo c) =>
+        string.Equals(value as string, parameter as string, StringComparison.OrdinalIgnoreCase);
+    public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
+}
+
 public sealed class InvertBoolConverter : IValueConverter
 {
     public object Convert(object value, Type t, object p, CultureInfo c) => value is bool b && !b;

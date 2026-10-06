@@ -14,7 +14,7 @@ namespace Graphite.App.ViewModels;
 public enum ToolKind
 {
     Select, Highlight, Underline, StrikeOut, Ink, Eraser, Rect, Ellipse, Note, EditText, PlaceImage,
-    Text, Arrow, Signature
+    Text, Arrow, Signature, Lasso
 }
 
 public enum PageLayout
@@ -240,6 +240,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(PageStatus));
                 PagesReset?.Invoke();
             }
+            ClearLasso();
             Annotations.Clear();
             foreach (var a in annots) Annotations.Add(new AnnotationViewModel(this, a.Clone()));
             SelectedAnnotation = null;
@@ -337,9 +338,18 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     // ------------------------------------------------------------- zoom / nav
 
+    private double _appliedZoom = 1.15;
+
+    /// <summary>Raised after every zoom change with (old, new) so the view can keep the
+    /// content under the cursor / pinch centre / viewport centre where it was.</summary>
+    public event Action<double, double>? ZoomApplied;
+
     partial void OnZoomChanged(double value)
     {
+        double old = _appliedZoom;
+        _appliedZoom = value;
         foreach (var p in Pages) p.OnZoomChanged();
+        ZoomApplied?.Invoke(old, value);
         ZoomChangedEvent?.Invoke();
     }
 
@@ -434,6 +444,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     partial void OnActiveToolChanged(ToolKind value)
     {
+        if (value != ToolKind.Lasso) ClearLasso();
         if (_toolColors.TryGetValue(value, out var color)) ActiveColorHex = color;
         if (_toolWidths.TryGetValue(value, out var width)) ActiveStrokeWidth = width;
         OnPropertyChanged(nameof(IsTextHighlightActive));
@@ -542,6 +553,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
             _bytes = newBytes;
 
+            ClearLasso();
             Annotations.Clear();
             foreach (var a in newAnnots) Annotations.Add(new AnnotationViewModel(this, a));
             SelectedAnnotation = null;
@@ -681,6 +693,83 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         Annotations.Remove(vm);
         if (SelectedAnnotation == vm) SelectedAnnotation = null;
         AnnotationsVisualChanged?.Invoke();
+    }
+
+    // ------------------------------------------------------------- lasso selection
+
+    /// <summary>Markup grabbed with the Lasso tool. A lasso lives on a single page; the
+    /// page's annotation layer draws the selection and drags it around.</summary>
+    public List<AnnotationViewModel> LassoAnnotations { get; } = new();
+    public List<PendingImage> LassoImages { get; } = new();
+    public int LassoPage { get; private set; } = -1;
+
+    public bool HasLassoSelection => LassoAnnotations.Count + LassoImages.Count > 0;
+
+    public void SetLassoSelection(int pageIndex, IEnumerable<AnnotationViewModel> annotations,
+        IEnumerable<PendingImage> images)
+    {
+        LassoAnnotations.Clear();
+        LassoAnnotations.AddRange(annotations);
+        LassoImages.Clear();
+        LassoImages.AddRange(images);
+        LassoPage = HasLassoSelection ? pageIndex : -1;
+        AnnotationsVisualChanged?.Invoke();
+    }
+
+    public void ClearLasso()
+    {
+        if (!HasLassoSelection && LassoPage < 0) return;
+        LassoAnnotations.Clear();
+        LassoImages.Clear();
+        LassoPage = -1;
+        AnnotationsVisualChanged?.Invoke();
+    }
+
+    /// <summary>Union of everything in the lasso selection, in page points.</summary>
+    public RectD? LassoBounds()
+    {
+        RectD? union = null;
+        foreach (var a in LassoAnnotations)
+            union = union is { } u ? u.Union(a.Model.Bounds) : a.Model.Bounds;
+        foreach (var i in LassoImages)
+            union = union is { } u ? u.Union(i.Rect) : i.Rect;
+        return union;
+    }
+
+    public void DeleteLassoSelection()
+    {
+        if (!HasLassoSelection) return;
+        PushUndo();
+        foreach (var a in LassoAnnotations)
+        {
+            Annotations.Remove(a);
+            if (SelectedAnnotation == a) SelectedAnnotation = null;
+        }
+        foreach (var i in LassoImages)
+        {
+            PlacedImages.Remove(i);
+            if (SelectedImage == i) SelectedImage = null;
+        }
+        LassoAnnotations.Clear();
+        LassoImages.Clear();
+        LassoPage = -1;
+        IsDirty = true;
+        AnnotationsVisualChanged?.Invoke();
+    }
+
+    /// <summary>Recolour everything in the lasso selection (the toolbar colour menu while the
+    /// Lasso tool is active). Returns false when there was nothing to recolour.</summary>
+    public bool RecolorLassoSelection(string hex)
+    {
+        if (LassoAnnotations.Count == 0) return false;
+        PushUndo();
+        foreach (var a in LassoAnnotations)
+        {
+            a.Model.ColorHex = hex;
+            a.Model.Modified = DateTime.Now;
+        }
+        NotifyAnnotationChanged();
+        return true;
     }
 
     // ------------------------------------------------------------- search

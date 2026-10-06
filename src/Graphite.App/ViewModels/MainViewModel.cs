@@ -216,7 +216,13 @@ public partial class MainViewModel : ObservableObject
                 if (doc.IsDirty) return;
             }
         }
+        // Closing the active tab should land on its neighbour (what a browser does), not
+        // on an empty view — the tab strip is a plain ListBox, so that is on us.
+        int index = Documents.IndexOf(doc);
+        bool wasSelected = ReferenceEquals(SelectedDocument, doc);
         Documents.Remove(doc);
+        if (wasSelected || SelectedDocument == null || ReferenceEquals(SelectedDocument, doc))
+            SelectedDocument = Documents.Count > 0 ? Documents[Math.Clamp(index, 0, Documents.Count - 1)] : null;
         doc.Dispose();
     }
 
@@ -480,7 +486,11 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void SetToolColor(string hex)
     {
-        if (SelectedDocument is { } d) d.ActiveColorHex = hex;
+        if (SelectedDocument is not { } d) return;
+        // With the Lasso tool and something grabbed, the colour menu recolours the selection.
+        if (d.ActiveTool == ToolKind.Lasso && d.HasLassoSelection && d.RecolorLassoSelection(hex))
+            return;
+        d.ActiveColorHex = hex;
     }
 
     [RelayCommand]

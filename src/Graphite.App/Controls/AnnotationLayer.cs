@@ -36,6 +36,12 @@ public sealed class AnnotationLayer : FrameworkElement
     private AnnotationViewModel? _movingAnnotation;
     private AnnotationViewModel? _resizingAnnotation;
 
+    // lasso tool: draw a loop around markup to grab it, then drag it or recolour/delete it
+    private readonly List<PointD> _lassoPoints = new();
+    private bool _lassoDrawing;
+    private bool _lassoMoving;
+    private const double ChipRadius = 10;   // the × delete chip on a lasso selection
+
     // The undo snapshot for a drag gesture (erase / move / resize) is pushed lazily on
     // the first actual change — a click that starts a gesture but never modifies
     // anything must not leave a no-op entry on the undo stack.
@@ -79,8 +85,15 @@ public sealed class AnnotationLayer : FrameworkElement
     private void UpdateLiveInk()
     {
         using var dc = _liveInkVisual.RenderOpen();
-        if (!_dragging || _doc == null || _inkPoints.Count < 2) return;
+        if (_doc == null) return;
         double s = Scale;
+
+        if (_lassoDrawing)
+        {
+            if (_lassoPoints.Count >= 2) DrawLassoLoop(dc, s);
+            return;
+        }
+        if (!_dragging || _inkPoints.Count < 2) return;
 
         if (_doc.ActiveTool == ToolKind.Ink)
         {
@@ -122,6 +135,9 @@ public sealed class AnnotationLayer : FrameworkElement
     private void Detach()
     {
         if (_page != null) _page.PropertyChanged -= OnPagePropertyChanged;
+        _lassoDrawing = false;
+        _lassoMoving = false;
+        _lassoPoints.Clear();
         if (_doc != null)
         {
             _doc.AnnotationsVisualChanged -= InvalidateVisualSafe;
@@ -144,6 +160,12 @@ public sealed class AnnotationLayer : FrameworkElement
             Cursor = _doc?.ActiveTool == ToolKind.Select ? Cursors.Arrow : Cursors.Cross;
             // Switching away from (or to) the eraser invalidates any stale size-preview circle.
             _eraserHoverPage = null;
+            if (_lassoDrawing)
+            {
+                _lassoDrawing = false;
+                _lassoPoints.Clear();
+                ClearLiveInk();
+            }
             InvalidateVisualSafe();
         }
     }
@@ -168,11 +190,45 @@ public sealed class AnnotationLayer : FrameworkElement
 
     // -------------------------------------------------------------- input
 
+    /// <summary>The capture was taken away mid-gesture — a second finger started a pinch, a
+    /// dialog opened, the window lost focus. Abandon whatever was in progress instead of
+    /// leaving a half-drawn stroke or a drag that never ends. (Normal gestures clear their
+    /// flags before releasing the capture, so they never land here.)</summary>
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        bool any = _lassoDrawing || _lassoMoving || _dragging || _erasing ||
+                   _resizingImage != null || _movingImage != null ||
+                   _movingAnnotation != null || _resizingAnnotation != null;
+        if (!any) return;
+
+        _lassoDrawing = false;
+        _lassoMoving = false;
+        _lassoPoints.Clear();
+        _dragging = false;
+        _erasing = false;
+        _resizingImage = null;
+        _movingImage = null;
+        _movingAnnotation = null;
+        _resizingAnnotation = null;
+        _pendingCorner = -1;
+        _inkPoints.Clear();
+        _liveWordRects = Array.Empty<RectD>();
+        ClearLiveInk();
+        InvalidateVisual();
+    }
+
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         if (_page == null || _doc == null) return;
         _start = _current = ToPage(e.GetPosition(this));
         var tool = _doc.ActiveTool;
+
+        if (tool == ToolKind.Lasso)
+        {
+            BeginLasso(e);
+            return;
+        }
 
         if (tool == ToolKind.Note)
         {
@@ -315,6 +371,12 @@ public sealed class AnnotationLayer : FrameworkElement
     {
         if (_page == null || _doc == null) return;
 
+        if (_doc.ActiveTool == ToolKind.Lasso)
+        {
+            OnLassoMove(e);
+            return;
+        }
+
         if (_doc.ActiveTool == ToolKind.Eraser)
         {
             var p = ToPage(e.GetPosition(this));
@@ -409,6 +471,21 @@ public sealed class AnnotationLayer : FrameworkElement
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
+        if (_lassoMoving)
+        {
+            _lassoMoving = false;
+            ReleaseMouseCapture();
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+        if (_lassoDrawing)
+        {
+            FinishLasso();
+            ReleaseMouseCapture();
+            e.Handled = true;
+            return;
+        }
         if (_erasing)
         {
             _erasing = false;
@@ -752,6 +829,248 @@ public sealed class AnnotationLayer : FrameworkElement
         });
     }
 
+    // -------------------------------------------------------------- lasso
+
+    private enum LassoHit { None, Body, Delete }
+
+    private void BeginLasso(MouseButtonEventArgs e)
+    {
+        var posPx = e.GetPosition(this);
+        switch (HitLasso(posPx))
+        {
+            case LassoHit.Delete:
+                _doc!.DeleteLassoSelection();
+                e.Handled = true;
+                return;
+
+            case LassoHit.Body:
+                // Grab the whole selection: it follows the pointer, keeping the grab offset.
+                var b = _doc!.LassoBounds()!.Value;
+                _moveGrab = new Point(_start.X - b.X, _start.Y - b.Y);
+                _gestureUndoPushed = false;
+                _lassoMoving = true;
+                CaptureMouse();
+                e.Handled = true;
+                return;
+        }
+
+        // Anywhere else starts a fresh loop and drops the old selection.
+        _doc!.ClearLasso();
+        _lassoPoints.Clear();
+        _lassoPoints.Add(new PointD(_start.X, _start.Y));
+        _lassoDrawing = true;
+        CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnLassoMove(MouseEventArgs e)
+    {
+        var posPx = e.GetPosition(this);
+        var p = ToPage(posPx);
+
+        if (_lassoDrawing)
+        {
+            var last = _lassoPoints[^1];
+            double dx = p.X - last.X, dy = p.Y - last.Y;
+            if (dx * dx + dy * dy >= 0.7 * 0.7)
+            {
+                _lassoPoints.Add(new PointD(p.X, p.Y));
+                UpdateLiveInk();
+            }
+            return;
+        }
+
+        if (_lassoMoving)
+        {
+            if (_doc!.LassoBounds() is not { } b) return;
+            double dx = p.X - _moveGrab.X - b.X;
+            double dy = p.Y - _moveGrab.Y - b.Y;
+
+            // Keep the selection on the page.
+            double minDx = -b.Left, maxDx = _page!.WidthPt - b.Right;
+            double minDy = -b.Top, maxDy = _page.HeightPt - b.Bottom;
+            if (minDx <= maxDx) dx = Math.Clamp(dx, minDx, maxDx);
+            if (minDy <= maxDy) dy = Math.Clamp(dy, minDy, maxDy);
+
+            if (Math.Abs(dx) < 1e-6 && Math.Abs(dy) < 1e-6) return;
+            EnsureGestureUndo();
+            MoveLasso(dx, dy);
+            _doc.NotifyAnnotationChanged();
+            return;
+        }
+
+        Cursor = HitLasso(posPx) switch
+        {
+            LassoHit.Delete => Cursors.Hand,
+            LassoHit.Body => Cursors.SizeAll,
+            _ => Cursors.Cross,
+        };
+    }
+
+    private void MoveLasso(double dx, double dy)
+    {
+        foreach (var vm in _doc!.LassoAnnotations)
+        {
+            var m = vm.Model;
+            m.Bounds = new RectD(m.Bounds.X + dx, m.Bounds.Y + dy, m.Bounds.Width, m.Bounds.Height);
+            if (m.Quads.Count > 0)
+                m.Quads = m.Quads.Select(q => new RectD(q.X + dx, q.Y + dy, q.Width, q.Height)).ToList();
+            if (m.Strokes.Count > 0)
+                m.Strokes = m.Strokes
+                    .Select(st => st.Select(pt => new PointD(pt.X + dx, pt.Y + dy)).ToList())
+                    .ToList();
+            if (m.Kind == AnnotationKind.Line)
+            {
+                m.LineStart = new PointD(m.LineStart.X + dx, m.LineStart.Y + dy);
+                m.LineEnd = new PointD(m.LineEnd.X + dx, m.LineEnd.Y + dy);
+            }
+            m.Modified = DateTime.Now;
+        }
+        foreach (var im in _doc.LassoImages)
+            im.Rect = new RectD(im.Rect.X + dx, im.Rect.Y + dy, im.Rect.Width, im.Rect.Height);
+    }
+
+    private LassoHit HitLasso(Point posPx)
+    {
+        if (_doc is not { HasLassoSelection: true } || _page == null || _doc.LassoPage != _page.Index ||
+            _doc.LassoBounds() is not { } b)
+            return LassoHit.None;
+        var r = ToRect(b.Inflate(4), Scale);
+        if ((posPx - ChipCentre(r)).Length <= ChipRadius + 2) return LassoHit.Delete;
+        return r.Contains(posPx) ? LassoHit.Body : LassoHit.None;
+    }
+
+    private Point ChipCentre(Rect r) => new(
+        Math.Clamp(r.Right, ChipRadius, Math.Max(ChipRadius, ActualWidth - ChipRadius)),
+        Math.Clamp(r.Top, ChipRadius, Math.Max(ChipRadius, ActualHeight - ChipRadius)));
+
+    /// <summary>The loop is closed: everything whose outline lies mostly (≥ 50 % of its sample
+    /// points) inside it becomes the selection. A stray click or tiny scribble selects nothing.</summary>
+    private void FinishLasso()
+    {
+        _lassoDrawing = false;
+        ClearLiveInk();
+        var poly = _lassoPoints.ToList();
+        _lassoPoints.Clear();
+        if (_doc == null || _page == null) return;
+
+        if (poly.Count < 3)
+        {
+            InvalidateVisual();
+            return;
+        }
+        double minX = poly.Min(p => p.X), maxX = poly.Max(p => p.X);
+        double minY = poly.Min(p => p.Y), maxY = poly.Max(p => p.Y);
+        if (maxX - minX < 4 && maxY - minY < 4)
+        {
+            InvalidateVisual();
+            return;
+        }
+
+        bool Captured(List<PointD> samples)
+        {
+            if (samples.Count == 0) return false;
+            int inside = 0;
+            foreach (var pt in samples)
+                if (pt.X >= minX && pt.X <= maxX && pt.Y >= minY && pt.Y <= maxY && InPolygon(poly, pt.X, pt.Y))
+                    inside++;
+            return inside * 2 >= samples.Count;
+        }
+
+        var annotations = _doc.Annotations
+            .Where(a => a.PageIndex == _page.Index && Captured(LassoSamples(a.Model)))
+            .ToList();
+        var images = _doc.PlacedImages
+            .Where(i => i.PageIndex == _page.Index && Captured(RectSamples(i.Rect)))
+            .ToList();
+        _doc.SetLassoSelection(_page.Index, annotations, images);
+        InvalidateVisual();
+    }
+
+    /// <summary>Points that stand for an annotation when testing it against the lasso loop.</summary>
+    private static List<PointD> LassoSamples(Annotation a)
+    {
+        var pts = new List<PointD>();
+        switch (a.Kind)
+        {
+            case AnnotationKind.Ink:
+            case AnnotationKind.Highlight when a.IsFreehand:
+                foreach (var stroke in a.Strokes)
+                {
+                    int step = Math.Max(1, stroke.Count / 60);
+                    for (int i = 0; i < stroke.Count; i += step) pts.Add(stroke[i]);
+                }
+                if (pts.Count > 0) return pts;
+                break;
+
+            case AnnotationKind.Highlight or AnnotationKind.Underline or AnnotationKind.StrikeOut
+                when a.Quads.Count > 0:
+                foreach (var q in a.Quads)
+                    pts.Add(new PointD(q.X + q.Width / 2, q.Y + q.Height / 2));
+                return pts;
+
+            case AnnotationKind.Line:
+                pts.Add(a.LineStart);
+                pts.Add(a.LineEnd);
+                pts.Add(new PointD((a.LineStart.X + a.LineEnd.X) / 2, (a.LineStart.Y + a.LineEnd.Y) / 2));
+                return pts;
+        }
+        return RectSamples(a.Bounds);
+    }
+
+    private static List<PointD> RectSamples(RectD r) => new()
+    {
+        new PointD(r.Left, r.Top), new PointD(r.Right, r.Top),
+        new PointD(r.Right, r.Bottom), new PointD(r.Left, r.Bottom),
+        new PointD(r.X + r.Width / 2, r.Y + r.Height / 2),
+    };
+
+    /// <summary>Even-odd point-in-polygon (the loop may cross itself).</summary>
+    private static bool InPolygon(List<PointD> poly, double x, double y)
+    {
+        bool inside = false;
+        for (int i = 0, j = poly.Count - 1; i < poly.Count; j = i++)
+        {
+            PointD a = poly[i], b = poly[j];
+            if ((a.Y > y) != (b.Y > y) && x < (b.X - a.X) * (y - a.Y) / (b.Y - a.Y) + a.X)
+                inside = !inside;
+        }
+        return inside;
+    }
+
+    private void DrawLassoLoop(DrawingContext dc, double s)
+    {
+        var g = new StreamGeometry();
+        using (var ctx = g.Open())
+        {
+            ctx.BeginFigure(new Point(_lassoPoints[0].X * s, _lassoPoints[0].Y * s), true, true);
+            var rest = new List<Point>(_lassoPoints.Count - 1);
+            for (int i = 1; i < _lassoPoints.Count; i++)
+                rest.Add(new Point(_lassoPoints[i].X * s, _lassoPoints[i].Y * s));
+            ctx.PolyLineTo(rest, true, true);
+        }
+        dc.DrawGeometry(LassoLoopFill, LassoLoopPen, g);
+    }
+
+    /// <summary>Dashed box around the selection plus a small × chip to delete it.</summary>
+    private void DrawLassoSelection(DrawingContext dc, double s)
+    {
+        if (_doc is not { HasLassoSelection: true } || _page == null || _doc.LassoPage != _page.Index) return;
+        // Markup removed by other means (sidebar, undo) must not linger in the selection.
+        _doc.LassoAnnotations.RemoveAll(a => !_doc.Annotations.Contains(a));
+        _doc.LassoImages.RemoveAll(i => !_doc.PlacedImages.Contains(i));
+        if (_doc.LassoBounds() is not { } b) return;
+
+        var r = ToRect(b.Inflate(4), s);
+        dc.DrawRoundedRectangle(LassoSelectionFill, ImageDashPen, r, 3, 3);
+
+        var c = ChipCentre(r);
+        dc.DrawEllipse(ChipFill, null, c, ChipRadius, ChipRadius);
+        const double k = 3.4;
+        dc.DrawLine(ChipXPen, new Point(c.X - k, c.Y - k), new Point(c.X + k, c.Y + k));
+        dc.DrawLine(ChipXPen, new Point(c.X - k, c.Y + k), new Point(c.X + k, c.Y - k));
+    }
+
     // -------------------------------------------------------------- painting
 
     protected override void OnRender(DrawingContext dc)
@@ -798,6 +1117,7 @@ public sealed class AnnotationLayer : FrameworkElement
 
         DrawInProgress(dc, s);
         DrawImages(dc, s);
+        DrawLassoSelection(dc, s);
         DrawEraserCursor(dc, s);
     }
 
@@ -1028,6 +1348,16 @@ public sealed class AnnotationLayer : FrameworkElement
 
     private static readonly Pen ImageDashPen = FrozenPen(
         new Pen(Frozen(Color.FromArgb(220, 90, 122, 153)), 1.4) { DashStyle = DashStyles.Dash });
+
+    private static readonly Pen LassoLoopPen = FrozenPen(
+        new Pen(Frozen(Color.FromArgb(235, 90, 122, 153)), 1.3)
+        { DashStyle = DashStyles.Dash, LineJoin = PenLineJoin.Round });
+
+    private static readonly SolidColorBrush LassoLoopFill = Frozen(Color.FromArgb(38, 90, 122, 153));
+    private static readonly SolidColorBrush LassoSelectionFill = Frozen(Color.FromArgb(20, 90, 122, 153));
+    private static readonly SolidColorBrush ChipFill = Frozen(Color.FromArgb(235, 52, 56, 64));
+    private static readonly Pen ChipXPen = FrozenPen(
+        new Pen(Brushes.White, 1.6) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
 
     private static readonly Pen HandlePen = FrozenPen(
         new Pen(Frozen(Color.FromArgb(255, 90, 122, 153)), 1.2));
