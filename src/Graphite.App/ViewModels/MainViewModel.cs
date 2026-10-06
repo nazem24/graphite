@@ -226,6 +226,17 @@ public partial class MainViewModel : ObservableObject
         doc.Dispose();
     }
 
+    /// <summary>Ctrl+Tab / Ctrl+Shift+Tab: move to the next / previous tab, wrapping around.</summary>
+    public void CycleDocument(int delta)
+    {
+        if (Documents.Count < 2) return;
+        int current = SelectedDocument == null ? -1 : Documents.IndexOf(SelectedDocument);
+        int next = current < 0
+            ? 0
+            : ((current + delta) % Documents.Count + Documents.Count) % Documents.Count;
+        SelectedDocument = Documents[next];
+    }
+
     // ------------------------------------------------------------- save
 
     [RelayCommand]
@@ -740,6 +751,8 @@ public partial class MainViewModel : ObservableObject
                 new("Export to PowerPoint (.pptx)…", null, () => _ = ExportPowerPoint()),
                 new("Export pages as images…", null, () => _ = ExportImages()),
                 new("Paste image from clipboard", "Ctrl+V", () => PasteImageRequested?.Invoke()),
+                new("Next tab", "Ctrl+Tab", () => CycleDocument(+1)),
+                new("Previous tab", "Ctrl+Shift+Tab", () => CycleDocument(-1)),
                 new("Close document", "Ctrl+W", () => _ = CloseDocument(doc)),
             });
         }

@@ -1016,14 +1016,25 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>Middle-click closes a tab, like a browser.</summary>
+    /// <summary>Left-click selects a tab, middle-click closes it, like a browser.
+    /// Selection is done by hand: the tab items are deliberately not focusable (so a click
+    /// doesn't steal keyboard focus from the document), and a ListBoxItem that can't take
+    /// focus never selects itself on click — which is why tabs couldn't be switched.</summary>
     private void TabStrip_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton != MouseButton.Middle) return;
-        if (e.OriginalSource is DependencyObject src &&
-            FindAncestor<ListBoxItem>(src) is { DataContext: DocumentViewModel doc })
+        if (e.OriginalSource is not DependencyObject src ||
+            FindAncestor<ListBoxItem>(src) is not { DataContext: DocumentViewModel doc })
+            return;
+
+        if (e.ChangedButton == MouseButton.Middle)
         {
             ViewModel.CloseDocumentCommand.Execute(doc);
+            e.Handled = true;
+        }
+        else if (e.ChangedButton == MouseButton.Left &&
+                 FindAncestor<System.Windows.Controls.Button>(src) == null) // the ✕ keeps its own click
+        {
+            ViewModel.SelectedDocument = doc;
             e.Handled = true;
         }
     }
@@ -1339,6 +1350,15 @@ public partial class MainWindow : Window
         if (ViewModel.IsPaletteOpen)
         {
             if (e.Key == Key.Escape) { ViewModel.ClosePalette(); e.Handled = true; }
+            return;
+        }
+
+        // Switch tabs: Ctrl+Tab → next, Ctrl+Shift+Tab → previous (wraps around).
+        if (e.Key == Key.Tab && (Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
+            (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
+        {
+            ViewModel.CycleDocument((Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? -1 : +1);
+            e.Handled = true;
             return;
         }
 
