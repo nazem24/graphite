@@ -424,11 +424,20 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     /// <summary>Pages that are actually shown right now: the on-screen range in continuous
     /// layout, the displayed page(s) otherwise.</summary>
-    private bool IsShownPage(int index)
+    public bool IsShownPage(int index)
     {
         if (IsContinuous && _viewFirst >= 0) return index >= _viewFirst && index <= _viewLast;
         if (IsContinuous) return index >= CurrentPageIndex && index <= CurrentPageIndex + 1;
         return VisiblePages.Any(p => p.Index == index);
+    }
+
+    /// <summary>How many pages a page is from the ones being shown (0 = on screen). Used to
+    /// decide which bitmaps to give up first when over the memory budget.</summary>
+    public int DistanceFromShown(int index)
+    {
+        if (IsContinuous && _viewFirst >= 0)
+            return index < _viewFirst ? _viewFirst - index : index > _viewLast ? index - _viewLast : 0;
+        return IsShownPage(index) ? 0 : Math.Abs(index - CurrentPageIndex);
     }
 
     /// <summary>Called while this tab is in the background to give memory back. Level 1 drops

@@ -240,6 +240,7 @@ public partial class MainWindow : Window
     private bool _restoring;          // a tab switch / far jump is still settling
     private int _restoreGen;          // supersedes older settle loops
     private Point? _zoomAnchor;       // viewport point to keep fixed during the next zoom change
+    private Point? _zoomTarget;       // where that point should end up (default: where it was)
 
     private void PagesHost_Loaded(object sender, RoutedEventArgs e)
     {
@@ -651,6 +652,7 @@ public partial class MainWindow : Window
         double vw = sv.ViewportWidth, vh = sv.ViewportHeight;
         var a = _zoomAnchor ?? new Point(vw / 2, vh / 2);
         a = new Point(Math.Clamp(a.X, 0, vw), Math.Clamp(a.Y, 0, vh));
+        var b = _zoomTarget ?? a; // a pinch that also dragged lands the anchored content at b
         double ratio = newZoom / oldZoom;
 
         // Where the anchor sits horizontally, relative to the centre line pages are centred on.
@@ -684,18 +686,18 @@ public partial class MainWindow : Window
         try
         {
             double newV = anchorPage >= 0
-                ? OffsetOfPage(doc, anchorPage, newZoom) + PageGap / 2 + innerPt * newZoom - a.Y
-                : yOld * ratio - a.Y;
+                ? OffsetOfPage(doc, anchorPage, newZoom) + PageGap / 2 + innerPt * newZoom - b.Y
+                : yOld * ratio - b.Y;
 
             lb.UpdateLayout(); // pages now have their new sizes
             sv.ScrollToVerticalOffset(Math.Max(0, newV));
             double wNew = Math.Max(sv.ExtentWidth, vw);
-            sv.ScrollToHorizontalOffset(Math.Max(0, wNew / 2 + xRel * ratio - a.X));
+            sv.ScrollToHorizontalOffset(Math.Max(0, wNew / 2 + xRel * ratio - b.X));
             lb.UpdateLayout();
 
             // One more correction against the real container pins the anchored point exactly
             // (realizing the page first if the estimate left it off screen).
-            if (anchorPage >= 0) PinAnchor(lb, sv, anchorPage, innerPt, newZoom, a.Y);
+            if (anchorPage >= 0) PinAnchor(lb, sv, anchorPage, innerPt, newZoom, b.Y);
         }
         finally { _trackingSuspended--; }
         SyncFromViewport(lb, doc);

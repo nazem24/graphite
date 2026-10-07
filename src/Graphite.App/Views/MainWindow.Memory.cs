@@ -12,9 +12,19 @@ namespace Graphite.App.Views;
 ///   2. only the <see cref="HotTabs"/> most recently used tabs keep even those; older tabs
 ///      drop all their bitmaps and re-render the visible pages when they are shown again
 ///      (still far quicker than the old full rebuild — the viewer and scroll position stay).
+///
+/// On top of that, <see cref="BitmapBudget"/> caps the total memory of all page bitmaps across
+/// every tab, so one huge zoom (or many big tabs) can't run away. When the cap is exceeded the
+/// least valuable bitmaps go first: background tabs' off-screen pages, then the active tab's
+/// off-screen pages (farthest first), then background tabs' on-screen pages (oldest tab first).
+/// The pages you are looking at in the active tab are never touched.
 /// </summary>
 public partial class MainWindow
 {
+    /// <summary>Upper bound for all rendered page bitmaps together (~4 bytes per pixel).</summary>
+    private const long BitmapBudget = 400L * 1024 * 1024;
+    private bool _budgetCheckQueued;
+
     /// <summary>How many tabs (including the active one) stay fully warm.</summary>
     private const int HotTabs = 3;
     private static readonly TimeSpan TrimDelay = TimeSpan.FromSeconds(15);
@@ -38,10 +48,62 @@ public partial class MainWindow
 
         if (_trimTimer == null)
         {
+            PageViewModel.BitmapReady += OnBitmapReady;
             _trimTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(5) };
             _trimTimer.Tick += (_, _) => TrimBackgroundTabs();
             _trimTimer.Start();
         }
+    }
+
+    private void OnBitmapReady()
+    {
+        // Renders finish in bursts; check once after the burst rather than per page.
+        if (_budgetCheckQueued) return;
+        _budgetCheckQueued = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            _budgetCheckQueued = false;
+            EnforceBitmapBudget();
+        });
+    }
+
+    private void EnforceBitmapBudget()
+    {
+        long total = 0;
+        var evictable = new List<(PageViewModel Page, int Tier, int TabAge, int Distance, long Bytes)>();
+
+        foreach (var doc in ViewModel.Documents)
+        {
+            bool active = ReferenceEquals(doc, ViewModel.SelectedDocument);
+            int age = _recentTabs.IndexOf(doc);
+            if (age < 0) age = int.MaxValue / 2;
+
+            foreach (var page in doc.Pages)
+            {
+                long bytes = page.BitmapBytes;
+                if (bytes == 0) continue;
+                total += bytes;
+
+                bool shown = doc.IsShownPage(page.Index);
+                if (active && shown) continue; // what you are looking at is never evicted
+
+                int tier = !active && !shown ? 0 : active ? 1 : 2;
+                evictable.Add((page, tier, age, doc.DistanceFromShown(page.Index), bytes));
+            }
+        }
+
+        if (total <= BitmapBudget) return;
+
+        foreach (var candidate in evictable
+                     .OrderBy(c => c.Tier)
+                     .ThenByDescending(c => c.TabAge)     // oldest background tab first
+                     .ThenByDescending(c => c.Distance))  // farthest from what is shown first
+        {
+            candidate.Page.EvictFullImage();
+            total -= candidate.Bytes;
+            if (total <= BitmapBudget) break;
+        }
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized, blocking: false);
     }
 
     private void ForgetTab(DocumentViewModel doc)
@@ -53,6 +115,7 @@ public partial class MainWindow
 
     private void TrimBackgroundTabs()
     {
+        EnforceBitmapBudget(); // safety net alongside the after-render check
         if (ViewModel.Documents.Count < 2) return;
 
         bool trimmed = false;

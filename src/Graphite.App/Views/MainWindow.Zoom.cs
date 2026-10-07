@@ -38,6 +38,12 @@ public partial class MainWindow
         /// <summary>Wheel zoom eases toward its target; a pinch follows the fingers directly.</summary>
         public required bool Eased { get; init; }
 
+        // Geometry at the start of the gesture, used to keep the preview inside the document
+        // exactly the way the real layout will (so releasing doesn't make the page jump).
+        public double StartV, StartH, StartExtentW, ViewW, ViewH, MaxPageWidthPt, TotalPageHeightPt;
+        public int PageCount;
+        public bool Continuous;
+
         public double Factor = 1;        // what is on screen
         public double TargetFactor = 1;  // where the wheel wants it
         public Vector Shift;             // two-finger drag since the gesture began (viewport DIPs)
@@ -69,20 +75,55 @@ public partial class MainWindow
         group.Children.Add(pan);
         surface.RenderTransform = group;
 
+        bool continuous = doc.IsContinuous && doc.Pages.Count > 0;
+        double maxWidth = 0, totalHeight = 0;
+        if (continuous)
+            foreach (var p in doc.Pages)
+            {
+                maxWidth = Math.Max(maxWidth, p.WidthPt);
+                totalHeight += p.HeightPt;
+            }
+
         return _zp = new ZoomPreview
         {
             List = lb, Scroller = sv, Doc = doc, Surface = surface, Scale = scale, Pan = pan,
             Anchor = anchor, StartZoom = doc.Zoom, Eased = eased,
+            StartV = sv.VerticalOffset, StartH = sv.HorizontalOffset,
+            StartExtentW = Math.Max(sv.ExtentWidth, sv.ViewportWidth),
+            ViewW = sv.ViewportWidth, ViewH = sv.ViewportHeight,
+            MaxPageWidthPt = maxWidth, TotalPageHeightPt = totalHeight,
+            PageCount = doc.Pages.Count, Continuous = continuous,
         };
     }
 
     private static void ApplyZoomPreview(ZoomPreview zp)
     {
         double f = Math.Clamp(zp.Factor, MinZoom / zp.StartZoom, MaxZoom / zp.StartZoom);
+        Vector shift = zp.Shift;
+
+        if (zp.Continuous)
+        {
+            // The real zoom can't scroll past the ends of the document (offsets clamp, and a
+            // document smaller than the window is pinned to the top and centred). Hold the
+            // preview to the same limits, otherwise pinching out slides the page down into
+            // empty space and then snaps back when the gesture is released.
+            double z1 = zp.StartZoom * f;
+
+            double height = zp.TotalPageHeightPt * z1 + zp.PageCount * PageGap;
+            double top = zp.Anchor.Y + f * (-zp.StartV - zp.Anchor.Y) + shift.Y; // document top, in the viewport
+            double wantedTop = height <= zp.ViewH ? 0 : Math.Clamp(top, zp.ViewH - height, 0);
+            shift.Y += wantedTop - top;
+
+            double width = Math.Max(zp.MaxPageWidthPt * z1 + PageGap, zp.ViewW);
+            double centre = zp.Anchor.X + f * (-zp.StartH + zp.StartExtentW / 2 - zp.Anchor.X) + shift.X;
+            double wantedCentre = width <= zp.ViewW ? zp.ViewW / 2 : Math.Clamp(centre, zp.ViewW - width / 2, width / 2);
+            shift.X += wantedCentre - centre;
+        }
+
         zp.Scale.ScaleX = f;
         zp.Scale.ScaleY = f;
-        zp.Pan.X = zp.Shift.X;
-        zp.Pan.Y = zp.Shift.Y;
+        zp.Pan.X = shift.X;
+        zp.Pan.Y = shift.Y;
     }
 
     private void StopZoomPreviewTimers()
@@ -125,14 +166,20 @@ public partial class MainWindow
         double newZoom = Math.Clamp(zp.StartZoom * factor, MinZoom, MaxZoom);
         if (Math.Abs(newZoom - doc.Zoom) > 1e-4)
         {
-            _zoomAnchor = zp.Anchor; // content under the gesture centre stays put…
+            // The content that was under the gesture centre ends up where the fingers ended
+            // up — zoom and drag resolved in one step, with a single clamp at the document ends.
+            _zoomAnchor = zp.Anchor;
+            _zoomTarget = zp.Anchor + zp.Shift;
             try { doc.Zoom = newZoom; }
-            finally { _zoomAnchor = null; }
+            finally
+            {
+                _zoomAnchor = null;
+                _zoomTarget = null;
+            }
         }
-
-        if (zp.Shift.LengthSquared > 0.25)
+        else if (zp.Shift.LengthSquared > 0.25)
         {
-            // …then the two-finger drag carries it to where the fingers ended up.
+            // Pure two-finger drag, no zoom change.
             _trackingSuspended++;
             try
             {
@@ -260,7 +307,8 @@ public partial class MainWindow
     private static void PinAnchor(ListBox lb, ScrollViewer sv, int page, double innerPt, double zoom, double viewportY)
     {
         double desired = viewportY - PageGap / 2 - innerPt * zoom;
-        for (int attempt = 0; attempt < 6; attempt++)
+        int stalls = 0;
+        for (int attempt = 0; attempt < 8; attempt++)
         {
             var item = lb.ItemContainerGenerator.ContainerFromIndex(page) as FrameworkElement;
             if (item is not { ActualHeight: > 0 })
@@ -282,7 +330,10 @@ public partial class MainWindow
             double before = sv.VerticalOffset;
             sv.ScrollToVerticalOffset(Math.Max(0, before + delta));
             lb.UpdateLayout();
-            if (Math.Abs(sv.VerticalOffset - before) < 0.5) return; // hit the end of the document
+            // Stuck twice in a row (even after a fresh layout) means the target lies beyond the
+            // end of the document — that is as close as it gets. One stall can just be the
+            // panel's extent catching up with the new page sizes.
+            if (Math.Abs(sv.VerticalOffset - before) < 0.5 && ++stalls >= 2) return;
         }
     }
 }

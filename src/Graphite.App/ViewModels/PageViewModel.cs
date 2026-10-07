@@ -32,6 +32,17 @@ public partial class PageViewModel : ObservableObject
     private const double MaxPagePixels = 24_000_000;
 
     private double _renderedScale;
+
+    /// <summary>Approximate memory held by the full-size bitmap (premultiplied BGRA, 4 bytes
+    /// per pixel); 0 when the page has none. UI thread only.</summary>
+    public long BitmapBytes => Image == null
+        ? 0
+        : (long)(Math.Max(1, WidthPt * _renderedScale) * Math.Max(1, HeightPt * _renderedScale) * 4);
+
+    /// <summary>Raised on the UI thread whenever a page finished rendering a new bitmap, so
+    /// the window can keep the total under its memory budget.</summary>
+    public static event Action? BitmapReady;
+
     private int _rendering;
     private bool _renderQueued;
     private int _thumbRendering;
@@ -99,6 +110,7 @@ public partial class PageViewModel : ObservableObject
                 if (bmp == null || Volatile.Read(ref _generation) != gen) continue;
                 Image = bmp;
                 _renderedScale = t;
+                BitmapReady?.Invoke();
             } while (_renderQueued && (Image == null || Math.Abs(TargetScale() - _renderedScale) >= 0.01));
         }
         catch (Exception ex) { App.LogError($"Page {Index} render failed", ex); }
