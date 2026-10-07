@@ -184,6 +184,7 @@ public partial class MainWindow : Window
                 _viewers.Remove(doc);
                 _searchBoxes.Remove(doc);
                 _searchRadios.Remove(doc);
+                ForgetTab(doc);
                 _scrollOffsets.Remove(doc);
                 _pins.Remove(doc);
                 _lastShownPage.Remove(doc);
@@ -878,11 +879,13 @@ public partial class MainWindow : Window
             _viewers.TryGetValue(prev, out var prevList) && FindScrollViewer(prevList) is { } prevScroller)
             _scrollOffsets[prev] = prevScroller.VerticalOffset;
 
+        NoteTabSwitch(prev, next);
         if (next == null) return;
         AnimateDocSwitch(prev, next);
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
         {
             EnsureScrollRestored(next);
+            next.RenderShownPages();
             // Fullscreen: the new tab's floating page bar follows the shown/hidden state.
             if (ViewModel.IsFullscreen) ShowPageBar(_pageBarShown, animate: false, force: true);
         });

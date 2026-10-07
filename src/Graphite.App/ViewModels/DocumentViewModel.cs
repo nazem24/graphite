@@ -422,6 +422,32 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public bool IsPageOnScreen(int index) =>
         !IsContinuous || _viewFirst < 0 || (index >= _viewFirst && index <= _viewLast);
 
+    /// <summary>Pages that are actually shown right now: the on-screen range in continuous
+    /// layout, the displayed page(s) otherwise.</summary>
+    private bool IsShownPage(int index)
+    {
+        if (IsContinuous && _viewFirst >= 0) return index >= _viewFirst && index <= _viewLast;
+        if (IsContinuous) return index >= CurrentPageIndex && index <= CurrentPageIndex + 1;
+        return VisiblePages.Any(p => p.Index == index);
+    }
+
+    /// <summary>Called while this tab is in the background to give memory back. Level 1 drops
+    /// the bitmaps of every page except the ones on screen (coming back is still instant);
+    /// level 2 drops all of them (the pages re-render when the tab is shown again).</summary>
+    public void TrimHidden(bool everything)
+    {
+        foreach (var p in Pages)
+            if (everything || !IsShownPage(p.Index)) p.EvictFullImage();
+    }
+
+    /// <summary>The tab was just shown again: re-render any on-screen page whose bitmap was
+    /// trimmed while it was in the background.</summary>
+    public void RenderShownPages()
+    {
+        foreach (var p in Pages)
+            if (p.Image == null && IsShownPage(p.Index)) _ = p.EnsureRenderedAsync();
+    }
+
     private (int Lo, int Hi) KeepRange(int centerIndex)
     {
         if (IsContinuous && _viewFirst >= 0)
