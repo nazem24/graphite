@@ -33,8 +33,18 @@ public sealed class ShimmerBorder : Border
         Background = brush;
 
         IsVisibleChanged += (_, _) => UpdateSweep();
-        Loaded += (_, _) => UpdateSweep();
-        Unloaded += (_, _) => _sweep.BeginAnimation(TranslateTransform.XProperty, null);
+        Loaded += (_, _) =>
+        {
+            // (Re-)subscribe: the sweep stops while the window is dragged and resumes after.
+            Motion.InteractingChanged -= UpdateSweep;
+            Motion.InteractingChanged += UpdateSweep;
+            UpdateSweep();
+        };
+        Unloaded += (_, _) =>
+        {
+            Motion.InteractingChanged -= UpdateSweep;
+            _sweep.BeginAnimation(TranslateTransform.XProperty, null);
+        };
     }
 
     private void UpdateSweep()

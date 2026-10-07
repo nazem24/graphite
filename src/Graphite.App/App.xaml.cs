@@ -1,6 +1,7 @@
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using Graphite.App.Services;
 using Graphite.App.Views;
 
@@ -42,6 +43,10 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             LogError("Fatal unhandled exception", args.ExceptionObject as Exception);
 
+        // Start loading PDFium / the PDF readers now, in the background, so the first document
+        // the user opens doesn't pay for it.
+        Warmup.Start();
+
         CleanupStalePasteFiles();
         ThemeService.Initialize();
         IconMotion.Register();
@@ -54,6 +59,23 @@ public partial class App : Application
         var pdfArgs = e.Args.Where(File.Exists).ToArray();
         if (pdfArgs.Length > 0)
             _ = window.ViewModel.OpenFilesAsync(pdfArgs);
+        else
+            // Build the document view once while the app is idle (and discard it), so the
+            // first Open doesn't also pay for loading its whole XAML template.
+            window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => PrewarmDocumentTemplate(window)));
+    }
+
+    private static void PrewarmDocumentTemplate(MainWindow window)
+    {
+        try
+        {
+            if (window.ViewModel.Documents.Count == 0 && window.TryFindResource("DocTemplate") is DataTemplate template)
+                template.LoadContent();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Template warm-up skipped: {ex.Message}");
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

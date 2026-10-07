@@ -18,8 +18,24 @@ public static class Motion
     /// <summary>The user's own choice (persisted by <see cref="ThemeService"/>).</summary>
     public static bool UserReduced { get; set; }
 
-    /// <summary>True when movement / scale / shimmer effects may play.</summary>
-    public static bool Enabled => !UserReduced && SystemParameters.ClientAreaAnimation;
+    /// <summary>True when movement / scale / shimmer effects may play. Also false while the
+    /// window is being dragged or resized, so decoration never competes with the move.</summary>
+    public static bool Enabled => !UserReduced && !Interacting && SystemParameters.ClientAreaAnimation;
+
+    /// <summary>True while the window is being moved or resized by the user. Windows runs that
+    /// as a modal loop on the UI thread, so anything that animates or redraws every frame in the
+    /// meantime (ambient glows, skeleton shimmers) makes the drag stutter.</summary>
+    public static bool Interacting { get; private set; }
+
+    /// <summary>Raised when <see cref="Interacting"/> changes, so running loops can pause / resume.</summary>
+    public static event Action? InteractingChanged;
+
+    public static void SetInteracting(bool on)
+    {
+        if (Interacting == on) return;
+        Interacting = on;
+        InteractingChanged?.Invoke();
+    }
 
     public static readonly IEasingFunction EaseOut = Freeze(new CubicEase { EasingMode = EasingMode.EaseOut });
     public static readonly IEasingFunction EaseInOut = Freeze(new CubicEase { EasingMode = EasingMode.EaseInOut });

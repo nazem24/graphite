@@ -33,6 +33,12 @@ public partial class PageViewModel : ObservableObject
 
     private double _renderedScale;
 
+    /// <summary>PDFium renders one page at a time (its lock serialises everything). Waiting for
+    /// that lock used to park one thread-pool thread per queued page and thumbnail — a dozen at
+    /// document open, enough to exhaust the pool and stall anything else that needed a worker
+    /// (the next file loading, the update check) until it grew. Waiting here costs no thread.</summary>
+    private static readonly SemaphoreSlim RenderGate = new(1, 1);
+
     private int _rendering;
     private bool _renderQueued;
     private int _thumbRendering;
@@ -75,6 +81,9 @@ public partial class PageViewModel : ObservableObject
             _renderQueued = true;
             return;
         }
+        // Tell the document an on-screen page is waiting for PDFium (thumbnails let it go first).
+        bool counted = Doc.IsPageOnScreen(Index);
+        if (counted) Doc.PageRenderStarted();
         try
         {
             do
@@ -93,17 +102,27 @@ public partial class PageViewModel : ObservableObject
                 double t = TargetScale();
                 var renderer = Doc.Renderer;
                 int index = Index;
-                var bmp = await Task.Run(() =>
-                    Volatile.Read(ref _generation) != gen
-                        ? null // evicted while waiting — skip the work entirely
-                        : renderer.Render<BitmapSource>(index, t, false, ToBitmap));
+                BitmapSource? bmp;
+                await RenderGate.WaitAsync();
+                try
+                {
+                    bmp = await Task.Run(() =>
+                        Volatile.Read(ref _generation) != gen
+                            ? null // evicted while waiting — skip the work entirely
+                            : renderer.Render<BitmapSource>(index, t, false, ToBitmap));
+                }
+                finally { RenderGate.Release(); }
                 if (bmp == null || Volatile.Read(ref _generation) != gen) continue;
                 Image = bmp;
                 _renderedScale = t;
             } while (_renderQueued && (Image == null || Math.Abs(TargetScale() - _renderedScale) >= 0.01));
         }
         catch (Exception ex) { App.LogError($"Page {Index} render failed", ex); }
-        finally { Interlocked.Exchange(ref _rendering, 0); }
+        finally
+        {
+            if (counted) Doc.PageRenderFinished();
+            Interlocked.Exchange(ref _rendering, 0);
+        }
     }
 
     // ------------------------------------------------------------- thumbnail
@@ -131,10 +150,19 @@ public partial class PageViewModel : ObservableObject
         try
         {
             _thumbStale = false;
+            // The pages being read get PDFium first; thumbnails fill in right behind them. The
+            // wait is bounded (1.5 s) so a thumbnail always shows up eventually.
+            for (int wait = 0; wait < 30 && Doc.IsRenderingPages; wait++)
+                await Task.Delay(50);
             double scale = 140.0 / Math.Max(WidthPt, 1) * Math.Max(1.0, DeviceScale);
             var renderer = Doc.Renderer;
             int index = Index;
-            Thumbnail = await Task.Run(() => renderer.Render<BitmapSource>(index, scale, false, ToBitmap));
+            await RenderGate.WaitAsync();
+            try
+            {
+                Thumbnail = await Task.Run(() => renderer.Render<BitmapSource>(index, scale, false, ToBitmap));
+            }
+            finally { RenderGate.Release(); }
         }
         catch (Exception ex)
         {

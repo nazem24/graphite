@@ -28,9 +28,11 @@ public sealed class PdfRenderer
     {
         lock (PdfiumLock)
         {
-            PageCount = Conversion.GetPageCount(pdfBytes);
-            var sizes = Conversion.GetPageSizes(pdfBytes);
-            PageSizes = sizes.Select(s => ((double)s.Width, (double)s.Height)).ToList();
+            // One pass over the file: the size list is also the page count. This used to ask
+            // PDFium for the count and then for the sizes, parsing the whole document twice.
+            var sizes = Conversion.GetPageSizes(pdfBytes).Select(s => ((double)s.Width, (double)s.Height)).ToList();
+            PageSizes = sizes;
+            PageCount = sizes.Count;
         }
         return pdfBytes;
     }

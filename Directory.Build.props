@@ -3,9 +3,16 @@
     <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.4.7</Version>
+    <Version>1.4.8</Version>
     <Product>Graphite</Product>
     <Company>Graphite</Company>
     <Copyright>© 2026 Graphite</Copyright>
+  </PropertyGroup>
+  <!-- Debug is what gets run day to day. Without this the compiler marks the assemblies
+       "disable optimizations" and the JIT then leaves all of Graphite's own code unoptimized
+       even with no debugger attached: page bitmaps, dark-mode inversion, scrolling and
+       annotation drawing all run several times slower than in a release build. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <Optimize>true</Optimize>
   </PropertyGroup>
 </Project>

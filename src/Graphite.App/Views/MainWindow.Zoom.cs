@@ -47,7 +47,14 @@ public partial class MainWindow
         public double Factor = 1;        // what is on screen
         public double TargetFactor = 1;  // where the wheel wants it
         public Vector Shift;             // two-finger drag since the gesture began (viewport DIPs)
+
+        // Page containers on screen when the gesture began, each with a little translate of its
+        // own (see CapturePageGaps), and the page the gesture is anchored on.
+        public readonly List<GapFix> Gaps = new();
+        public int AnchorPage = -1;
     }
+
+    private sealed record GapFix(FrameworkElement Container, int Index, Transform Original, TranslateTransform Fix);
 
     private ZoomPreview? _zp;
     private DispatcherTimer? _zpTimer;
@@ -84,7 +91,7 @@ public partial class MainWindow
                 totalHeight += p.HeightPt;
             }
 
-        return _zp = new ZoomPreview
+        var zp = new ZoomPreview
         {
             List = lb, Scroller = sv, Doc = doc, Surface = surface, Scale = scale, Pan = pan,
             Anchor = anchor, StartZoom = doc.Zoom, Eased = eased,
@@ -94,6 +101,42 @@ public partial class MainWindow
             MaxPageWidthPt = maxWidth, TotalPageHeightPt = totalHeight,
             PageCount = doc.Pages.Count, Continuous = continuous,
         };
+        if (continuous) CapturePageGaps(lb, sv, doc, zp);
+        return _zp = zp;
+    }
+
+    /// <summary>The live preview scales the whole page list, so the 12 px gaps between pages
+    /// grow and shrink with the pinch — but in the real layout they never do. Every page below
+    /// (or above) the anchored one therefore ended up (page distance × 12 px × zoom change)
+    /// away from where the preview showed it, and the pages jumped when the fingers lifted;
+    /// the more pages were on screen (zoomed out), the bigger the jump. Each page container
+    /// gets a small translate that cancels exactly that difference, so the preview matches
+    /// the layout that follows.</summary>
+    private static void CapturePageGaps(ListBox lb, ScrollViewer sv, DocumentViewModel doc, ZoomPreview zp)
+    {
+        if (!TryAnchorFromContainers(lb, sv, zp.Anchor.Y, doc.Zoom, out int anchorPage, out _)) return;
+        if (FindDescendant<VirtualizingPanel>(sv) is not { } panel) return;
+
+        zp.AnchorPage = anchorPage;
+        int count = VisualTreeHelper.GetChildrenCount(panel);
+        for (int c = 0; c < count; c++)
+        {
+            if (VisualTreeHelper.GetChild(panel, c) is not FrameworkElement fe) continue;
+            int index = lb.ItemContainerGenerator.IndexFromContainer(fe);
+            if (index < 0 || index == anchorPage) continue;
+            // A container that is part-way through an animation of its own is left alone.
+            if (!fe.RenderTransform.Value.IsIdentity) continue;
+
+            var fix = new TranslateTransform();
+            zp.Gaps.Add(new GapFix(fe, index, fe.RenderTransform, fix));
+            fe.RenderTransform = fix;
+        }
+    }
+
+    private static void RestorePageGaps(ZoomPreview zp)
+    {
+        foreach (var gap in zp.Gaps) gap.Container.RenderTransform = gap.Original;
+        zp.Gaps.Clear();
     }
 
     private static void ApplyZoomPreview(ZoomPreview zp)
@@ -124,6 +167,11 @@ public partial class MainWindow
         zp.Scale.ScaleY = f;
         zp.Pan.X = shift.X;
         zp.Pan.Y = shift.Y;
+
+        // A page k places away from the anchored one sits k × (1 − f) × gap off in the scaled
+        // list; the list scales that by f again, so divide it out.
+        foreach (var gap in zp.Gaps)
+            gap.Fix.Y = (gap.Index - zp.AnchorPage) * PageGap * (1 - f) / f;
     }
 
     private void StopZoomPreviewTimers()
@@ -144,6 +192,7 @@ public partial class MainWindow
         if (zp == null) return;
         _zp = null;
         StopZoomPreviewTimers();
+        RestorePageGaps(zp);
         zp.Surface.RenderTransform = Transform.Identity;
     }
 
@@ -156,6 +205,7 @@ public partial class MainWindow
         StopZoomPreviewTimers();
 
         double factor = zp.Eased ? zp.TargetFactor : zp.Factor;
+        RestorePageGaps(zp);
         zp.Surface.RenderTransform = Transform.Identity;
 
         var doc = zp.Doc;

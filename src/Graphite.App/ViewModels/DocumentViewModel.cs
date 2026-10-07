@@ -350,17 +350,40 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         return await FromBytesAsync(bytes, path);
     }
 
-    public static Task<DocumentViewModel> FromBytesAsync(byte[] bytes, string? path)
+    public static async Task<DocumentViewModel> FromBytesAsync(byte[] bytes, string? path)
     {
-        return Task.Run(() =>
+        // PDFium (rendering), PdfPig (text) and PdfSharp (annotations) each parse the file on
+        // their own and share nothing, so they read it side by side instead of one after the
+        // other: opening takes as long as the slowest of them, not the sum of all three.
+        var rendererTask = Task.Run(() => new PdfRenderer(bytes));
+        var indexTask = Task.Run(() => new TextIndex(bytes));
+        var annotationsTask = Task.Run(() => AnnotationCodec.Read(bytes));
+        try
         {
-            var renderer = new PdfRenderer(bytes);
-            var index = new TextIndex(bytes);
-            var annotations = AnnotationCodec.Read(bytes);
-            var outline = index.GetOutline();
-            return new DocumentViewModel(bytes, path, renderer, index, annotations, outline);
-        });
+            await Task.WhenAll(rendererTask, indexTask, annotationsTask).ConfigureAwait(false);
+        }
+        catch
+        {
+            // WhenAll only throws once every reader has finished, so this is safe to inspect.
+            if (indexTask.IsCompletedSuccessfully) indexTask.Result.Dispose();
+            throw;
+        }
+
+        var index = indexTask.Result;
+        var outline = index.GetOutline();
+        return new DocumentViewModel(bytes, path, rendererTask.Result, index, annotationsTask.Result, outline);
     }
+
+    // ------------------------------------------------------------- render priority
+
+    private int _pageRendersInFlight;
+
+    /// <summary>True while pages that are on screen are still waiting for / running through
+    /// PDFium. Sidebar thumbnails hold back meanwhile so the pages you are reading come first.</summary>
+    public bool IsRenderingPages => Volatile.Read(ref _pageRendersInFlight) > 0;
+
+    internal void PageRenderStarted() => Interlocked.Increment(ref _pageRendersInFlight);
+    internal void PageRenderFinished() => Interlocked.Decrement(ref _pageRendersInFlight);
 
     // ------------------------------------------------------------- zoom / nav
 

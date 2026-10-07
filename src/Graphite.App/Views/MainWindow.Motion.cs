@@ -562,6 +562,9 @@ public partial class MainWindow
 
     private void Window_PreviewMouseMove(object sender, MouseEventArgs e)
     {
+        // The pointer is moving over the window's own content, so no drag is in progress.
+        if (Motion.Interacting) Motion.SetInteracting(false);
+
         if (!ViewModel.IsFullscreen) return;
         var pos = e.GetPosition(this);
 

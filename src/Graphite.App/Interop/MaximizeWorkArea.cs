@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using Graphite.App.Services;
 
 namespace Graphite.App.Interop;
 
@@ -16,6 +17,8 @@ namespace Graphite.App.Interop;
 public static class MaximizeWorkArea
 {
     private const int WM_GETMINMAXINFO = 0x0024;
+    private const int WM_ENTERSIZEMOVE = 0x0231;
+    private const int WM_EXITSIZEMOVE = 0x0232;
     private const int MONITOR_DEFAULTTONEAREST = 2;
 
     /// <summary>Set by fullscreen mode; when true the taskbar may be covered.</summary>
@@ -30,6 +33,11 @@ public static class MaximizeWorkArea
 
     private static IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // Dragging or resizing the window is a modal loop on this thread: keep the app's own
+        // animation quiet for its duration (never marked handled — Windows still needs these).
+        if (msg == WM_ENTERSIZEMOVE) Motion.SetInteracting(true);
+        else if (msg == WM_EXITSIZEMOVE) Motion.SetInteracting(false);
+
         if (msg != WM_GETMINMAXINFO || AllowCoverTaskbar)
             return IntPtr.Zero;
 
