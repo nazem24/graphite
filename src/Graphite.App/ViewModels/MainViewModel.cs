@@ -39,6 +39,12 @@ public partial class MainViewModel : ObservableObject
 
     private static Window? Owner => Application.Current.MainWindow;
 
+    partial void OnSelectedDocumentChanged(DocumentViewModel? oldValue, DocumentViewModel? newValue)
+    {
+        if (oldValue != null) oldValue.IsActive = false;
+        if (newValue != null) newValue.IsActive = true;
+    }
+
     private static void Error(Exception ex)
     {
         App.LogError("Operation failed", ex);

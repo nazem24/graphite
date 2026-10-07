@@ -533,11 +533,14 @@ public partial class MainWindow
         }
     }
 
-    private void ShowPageBar(bool show, bool animate = true)
+    private void ShowPageBar(bool show, bool animate = true, bool force = false)
     {
-        if (show == _pageBarShown) return;
+        if (show == _pageBarShown && !force) return;
+        // Every open document has its own page bar; only the visible tab's is ours to move.
         var found = new List<FrameworkElement>();
-        FindAllByTag(DocHost, "PageBar", found);
+        if (ViewModel.SelectedDocument is { } active &&
+            DocHost.ItemContainerGenerator.ContainerFromItem(active) is DependencyObject host)
+            FindAllByTag(host, "PageBar", found);
         if (found.Count == 0 || Motion.RigOf(found[0]) is not { } rig) return;
         var bar = found[0];
 

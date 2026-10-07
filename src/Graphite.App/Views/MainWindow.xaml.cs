@@ -25,8 +25,9 @@ public partial class MainWindow : Window
     private readonly Dictionary<ListBox, SmoothScroller> _scrollers = new();
     private readonly HashSet<DocumentViewModel> _wired = new();
     private readonly DispatcherTimer _zoomTimer;
-    private TextBox? _searchBox;
-    private RadioButton? _searchRadio;
+    // Each open document has its own inspector, so these are tracked per document.
+    private readonly Dictionary<DocumentViewModel, TextBox> _searchBoxes = new();
+    private readonly Dictionary<DocumentViewModel, RadioButton> _searchRadios = new();
     private bool _syncingThumbs;
 
     public MainWindow()
@@ -112,8 +113,8 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainViewModel.IsFullscreen))
             ApplyFullscreen(ViewModel.IsFullscreen);
-        else if (e.PropertyName == nameof(MainViewModel.SelectedDocument) && ViewModel.SelectedDocument != null)
-            AnimateDocSwitch();
+        else if (e.PropertyName == nameof(MainViewModel.SelectedDocument))
+            OnSelectedDocumentSwitched();
         else if (e.PropertyName == nameof(MainViewModel.ShowSidebar))
             AnimatePanels(true);
         else if (e.PropertyName == nameof(MainViewModel.ShowInspector))
@@ -178,8 +179,11 @@ public partial class MainWindow : Window
         if (e.OldItems != null)
             foreach (DocumentViewModel doc in e.OldItems)
             {
+                if (_zp != null && ReferenceEquals(_zp.Doc, doc)) CancelZoomPreview();
                 _wired.Remove(doc);
                 _viewers.Remove(doc);
+                _searchBoxes.Remove(doc);
+                _searchRadios.Remove(doc);
                 _scrollOffsets.Remove(doc);
                 _pins.Remove(doc);
                 _lastShownPage.Remove(doc);
@@ -244,33 +248,22 @@ public partial class MainWindow : Window
 
     private void PagesHost_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        // DocHost reuses one ContentPresenter across tabs, so re-register on switch.
+        // Every document owns its viewer, so this runs once per tab, when the tab is created.
         if (sender is not ListBox lb) return;
         StopScroller(lb);
+        if (e.NewValue is not DocumentViewModel doc) return;
 
-        // Remember where the outgoing document was scrolled to — switching tabs resets
-        // the shared ScrollViewer to 0, and without this the document reopens at the
-        // wrong spot (the "tab switch loses my place" bug). A restore that never finished
-        // would record a bogus offset, so it keeps the earlier one.
-        if (e.OldValue is DocumentViewModel oldDoc && !_restoring &&
-            ViewModel.Documents.Contains(oldDoc) && FindScrollViewer(lb) is { } oldSv)
-            _scrollOffsets[oldDoc] = oldSv.VerticalOffset;
+        _viewers[doc] = lb;
+        // A tab created in the background has nothing to restore yet; its position is
+        // re-checked when it is first shown (OnSelectedDocumentSwitched).
+        if (!ReferenceEquals(doc, ViewModel.SelectedDocument)) return;
 
-        if (e.NewValue is DocumentViewModel doc)
-        {
-            _viewers[doc] = lb;
-            double target = _scrollOffsets.TryGetValue(doc, out var saved)
-                ? saved
-                : OffsetOfPage(doc, doc.CurrentPageIndex);
-            _restoreGen++;
-            _restoring = true;
-            RestoreScrollWhenReady(lb, doc, target, 0, _restoreGen);
-        }
-        else
-        {
-            _restoreGen++;
-            _restoring = false;
-        }
+        double target = _scrollOffsets.TryGetValue(doc, out var saved)
+            ? saved
+            : OffsetOfPage(doc, doc.CurrentPageIndex);
+        _restoreGen++;
+        _restoring = true;
+        RestoreScrollWhenReady(lb, doc, target, 0, _restoreGen);
     }
 
     private async void RecentList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -599,21 +592,21 @@ public partial class MainWindow : Window
 
     private void PagesHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (ViewModel.SelectedDocument is not { } doc || sender is not ListBox lb) return;
+        if (sender is not ListBox { DataContext: DocumentViewModel doc } lb) return;
         var sv = FindScrollViewer(lb);
         if (sv == null) return;
 
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             // Proportional + anchored: a precision-touchpad pinch arrives as Ctrl+wheel with
-            // tiny deltas, so zoom follows the gesture smoothly, centred on the pointer.
-            StopScroller(lb);
-            _zoomAnchor = e.GetPosition(sv);
-            try { doc.Zoom = Math.Clamp(doc.Zoom * Math.Pow(1.0011, e.Delta), 0.25, 6); }
-            finally { _zoomAnchor = null; }
+            // tiny deltas, so zoom follows the gesture smoothly, centred on the pointer. The
+            // pages are scaled live and the real zoom is applied once the gesture settles.
+            WheelZoomStep(lb, doc, e.GetPosition(sv), Math.Pow(1.0011, e.Delta));
             e.Handled = true;
             return;
         }
+
+        if (_zp != null) CommitZoomPreview(); // wheel scrolling right after a zoom: settle it first
 
         if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
         {
@@ -646,6 +639,7 @@ public partial class MainWindow : Window
     private void OnZoomApplied(DocumentViewModel doc, double oldZoom, double newZoom)
     {
         if (oldZoom <= 0 || Math.Abs(newZoom - oldZoom) < 1e-9 || _restoring) return;
+        if (_zp != null) CancelZoomPreview(); // zoom changed some other way (keys, buttons)
         if (!_viewers.TryGetValue(doc, out var lb) || !ReferenceEquals(lb.DataContext, doc)) return;
         var sv = FindScrollViewer(lb);
         if (sv == null || sv.ViewportHeight <= 0 || sv.ViewportWidth <= 0) return;
@@ -664,9 +658,12 @@ public partial class MainWindow : Window
         double yOld = sv.VerticalOffset + a.Y;
 
         // Vertically: which page is under the anchor, and how far into it (in page points).
+        // Read from the real containers first — the panel's own offsets are only estimates
+        // for pages it hasn't built, so deriving the page from them could pick the wrong one.
         int anchorPage = -1;
         double innerPt = 0;
-        if (doc.IsContinuous && doc.Pages.Count > 0)
+        if (doc.IsContinuous && doc.Pages.Count > 0 &&
+            !TryAnchorFromContainers(lb, sv, a.Y, oldZoom, out anchorPage, out innerPt))
         {
             double off = 0;
             for (int i = 0; i < doc.Pages.Count; i++)
@@ -695,24 +692,9 @@ public partial class MainWindow : Window
             sv.ScrollToHorizontalOffset(Math.Max(0, wNew / 2 + xRel * ratio - a.X));
             lb.UpdateLayout();
 
-            // The panel's offsets are estimates for pages it hasn't built; one correction
-            // against the real container pins the anchored point exactly.
-            if (anchorPage >= 0 &&
-                lb.ItemContainerGenerator.ContainerFromIndex(anchorPage) is FrameworkElement { ActualHeight: > 0 } c)
-            {
-                try
-                {
-                    double itemTop = c.TransformToAncestor(sv).Transform(new Point(0, 0)).Y;
-                    double desired = a.Y - PageGap / 2 - innerPt * newZoom;
-                    double delta = itemTop - desired;
-                    if (Math.Abs(delta) > 0.75)
-                    {
-                        sv.ScrollToVerticalOffset(Math.Max(0, sv.VerticalOffset + delta));
-                        lb.UpdateLayout();
-                    }
-                }
-                catch (InvalidOperationException) { }
-            }
+            // One more correction against the real container pins the anchored point exactly
+            // (realizing the page first if the estimate left it off screen).
+            if (anchorPage >= 0) PinAnchor(lb, sv, anchorPage, innerPt, newZoom, a.Y);
         }
         finally { _trackingSuspended--; }
         SyncFromViewport(lb, doc);
@@ -727,7 +709,7 @@ public partial class MainWindow : Window
 
     private void PagesHost_PreviewTouchDown(object sender, TouchEventArgs e)
     {
-        if (sender is not ListBox lb || ViewModel.SelectedDocument is not { } doc) return;
+        if (sender is not ListBox { DataContext: DocumentViewModel doc } lb) return;
         var sv = FindScrollViewer(lb);
         if (sv == null) return;
 
@@ -745,6 +727,7 @@ public partial class MainWindow : Window
 
     private void BeginPinch(ListBox lb, ScrollViewer sv, DocumentViewModel doc, TouchDevice a, TouchDevice b)
     {
+        if (_zp != null) CommitZoomPreview(); // settle a wheel zoom still in flight before reading the zoom
         Point pa = a.GetTouchPoint(sv).Position, pb = b.GetTouchPoint(sv).Position;
         _pinchIdA = a.Id;
         _pinchIdB = b.Id;
@@ -754,6 +737,8 @@ public partial class MainWindow : Window
 
         StopScroller(lb);
         _pins.Remove(doc);
+        // The pages are scaled live under the fingers; the real zoom is applied on release.
+        BeginZoomPreview(lb, doc, _pinchCentre, eased: false);
         // The first finger already started a promoted mouse gesture (an ink stroke, a drag…).
         // Dropping the mouse capture makes the annotation layer cancel it.
         Mouse.Capture(null);
@@ -772,7 +757,7 @@ public partial class MainWindow : Window
 
     private void UpdatePinch(ListBox lb)
     {
-        if (ViewModel.SelectedDocument is not { } doc || FindScrollViewer(lb) is not { } sv ||
+        if (lb.DataContext is not DocumentViewModel doc || FindScrollViewer(lb) is not { } sv ||
             !_touchDevices.TryGetValue(_pinchIdA, out var a) || !_touchDevices.TryGetValue(_pinchIdB, out var b))
         {
             EndPinch(lb);
@@ -782,7 +767,19 @@ public partial class MainWindow : Window
         Point pa = a.GetTouchPoint(sv).Position, pb = b.GetTouchPoint(sv).Position;
         var centre = new Point((pa.X + pb.X) / 2, (pa.Y + pb.Y) / 2);
         double dist = Math.Max(1, (pa - pb).Length);
-        double zoom = Math.Clamp(_pinchStartZoom * dist / _pinchStartDist, 0.25, 6);
+
+        if (_zp is { Eased: false } zp && ReferenceEquals(zp.List, lb))
+        {
+            // Live preview: no layout, just a GPU scale + pan of the pages already on screen.
+            zp.Factor = dist / _pinchStartDist;
+            zp.Shift = centre - zp.Anchor;
+            ApplyZoomPreview(zp);
+            _pinchCentre = centre;
+            return;
+        }
+
+        // Fallback (no preview surface): zoom the document directly, as before.
+        double zoom = Math.Clamp(_pinchStartZoom * dist / _pinchStartDist, MinZoom, MaxZoom);
 
         if (Math.Abs(zoom - doc.Zoom) > 0.0005)
         {
@@ -830,6 +827,7 @@ public partial class MainWindow : Window
         if (_pinchIdA < 0) return;
         int a = _pinchIdA, b = _pinchIdB;
         _pinchIdA = _pinchIdB = -1;
+        CommitZoomPreview(); // apply the pinched zoom for real, once, on release
         if (lb == null) return;
         if (_touchDevices.TryGetValue(a, out var da)) lb.ReleaseTouchCapture(da);
         if (_touchDevices.TryGetValue(b, out var db)) lb.ReleaseTouchCapture(db);
@@ -860,19 +858,73 @@ public partial class MainWindow : Window
         lb.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1, span) { FillBehavior = FillBehavior.Stop });
     }
 
-    /// <summary>Tab switch: the incoming document zooms in a touch and fades up.</summary>
-    private void AnimateDocSwitch()
+    // ------------------------------------------------------------- tab switching
+
+    private DocumentViewModel? _shownDoc;
+
+    /// <summary>The selected tab changed. Every document keeps its own viewer, so this is a
+    /// visibility flip: remember where the outgoing tab was, play the entrance for the
+    /// incoming one, and make sure it is still at the same spot.</summary>
+    private void OnSelectedDocumentSwitched()
+    {
+        var prev = _shownDoc;
+        var next = ViewModel.SelectedDocument;
+        if (ReferenceEquals(prev, next)) return;
+        _shownDoc = next;
+
+        CancelZoomPreview(); // a gesture belongs to the tab it started on
+
+        if (prev != null && ViewModel.Documents.Contains(prev) && !_restoring &&
+            _viewers.TryGetValue(prev, out var prevList) && FindScrollViewer(prevList) is { } prevScroller)
+            _scrollOffsets[prev] = prevScroller.VerticalOffset;
+
+        if (next == null) return;
+        AnimateDocSwitch(prev, next);
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            EnsureScrollRestored(next);
+            // Fullscreen: the new tab's floating page bar follows the shown/hidden state.
+            if (ViewModel.IsFullscreen) ShowPageBar(_pageBarShown, animate: false, force: true);
+        });
+    }
+
+    /// <summary>Hidden viewers keep their scroll position, so this normally has nothing to do;
+    /// it is the safety net that puts a tab back where the user left it if it ever moved.</summary>
+    private void EnsureScrollRestored(DocumentViewModel doc)
+    {
+        if (!ReferenceEquals(ViewModel.SelectedDocument, doc) || !doc.IsContinuous) return;
+        if (!_viewers.TryGetValue(doc, out var lb) || !ReferenceEquals(lb.DataContext, doc) || !lb.IsVisible) return;
+        if (FindScrollViewer(lb) is not { } sv) return;
+
+        if (_scrollOffsets.TryGetValue(doc, out double saved) && Math.Abs(sv.VerticalOffset - saved) > 2)
+        {
+            _restoreGen++;
+            _restoring = true;
+            RestoreScrollWhenReady(lb, doc, saved, 0, _restoreGen);
+            return;
+        }
+        SyncFromViewport(lb, doc); // make sure the visible pages have their bitmaps
+    }
+
+    /// <summary>Tab switch: the incoming document slides in from the side its tab is on
+    /// (left when going back towards the first tab, right when moving forward) and fades up.
+    /// A brand-new tab plays its own rise-in instead.</summary>
+    private void AnimateDocSwitch(DocumentViewModel? prev, DocumentViewModel next)
     {
         if (!Motion.Enabled) return;
-        if (DocHost.RenderTransform is not ScaleTransform st) return;
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        var span = TimeSpan.FromMilliseconds(260);
-        st.BeginAnimation(ScaleTransform.ScaleXProperty,
-            new DoubleAnimation(0.96, 1, span) { EasingFunction = ease, FillBehavior = FillBehavior.Stop });
-        st.BeginAnimation(ScaleTransform.ScaleYProperty,
-            new DoubleAnimation(0.96, 1, span) { EasingFunction = ease, FillBehavior = FillBehavior.Stop });
-        DocHost.BeginAnimation(OpacityProperty,
-            new DoubleAnimation(0.15, 1, TimeSpan.FromMilliseconds(220)) { FillBehavior = FillBehavior.Stop });
+        if (DocHost.ItemContainerGenerator.ContainerFromItem(next) is not FrameworkElement { IsLoaded: true } host ||
+            Motion.RigOf(host) is not { } rig)
+            return;
+
+        int from = prev == null ? -1 : ViewModel.Documents.IndexOf(prev);
+        int to = ViewModel.Documents.IndexOf(next);
+        double direction = from < 0 || from == to ? 0 : to > from ? 1 : -1;
+
+        Motion.Tween(host, OpacityProperty, 0, 1, 240);
+        Motion.Tween(rig.Scale, ScaleTransform.ScaleXProperty, 0.97, 1, 300);
+        Motion.Tween(rig.Scale, ScaleTransform.ScaleYProperty, 0.97, 1, 300);
+        if (direction != 0)
+            Motion.Tween(rig.Move, TranslateTransform.XProperty, direction * 44, 0, 320);
     }
 
     /// <summary>Time-based exponential glide toward a (possibly moving) target offset,
@@ -1107,8 +1159,15 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------- search
 
-    private void SearchBox_Loaded(object sender, RoutedEventArgs e) => _searchBox = sender as TextBox;
-    private void SearchRadio_Loaded(object sender, RoutedEventArgs e) => _searchRadio = sender as RadioButton;
+    private void SearchBox_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox { DataContext: DocumentViewModel doc } box) _searchBoxes[doc] = box;
+    }
+
+    private void SearchRadio_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { DataContext: DocumentViewModel doc } radio) _searchRadios[doc] = radio;
+    }
 
     private async void SearchBox_KeyDown(object sender, KeyEventArgs e)
     {
@@ -1458,8 +1517,14 @@ public partial class MainWindow : Window
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
             ViewModel.ShowInspector = true;
-            if (_searchRadio != null) _searchRadio.IsChecked = true;
-            Dispatcher.BeginInvoke(() => _searchBox?.Focus(), DispatcherPriority.Input);
+            if (doc != null)
+            {
+                if (_searchRadios.TryGetValue(doc, out var radio)) radio.IsChecked = true;
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (_searchBoxes.TryGetValue(doc, out var box)) box.Focus();
+                }, DispatcherPriority.Input);
+            }
             e.Handled = true;
         }
         else if (e.Key == Key.F3 && doc != null)

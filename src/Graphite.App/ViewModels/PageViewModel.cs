@@ -79,8 +79,17 @@ public partial class PageViewModel : ObservableObject
             do
             {
                 _renderQueued = false;
-                double t = TargetScale();
                 int gen = Volatile.Read(ref _generation);
+
+                // A page that is only realized as scroll cache (not on screen yet) waits a
+                // beat, so the pages the user is actually looking at get PDFium first. It
+                // starts straight away the moment it scrolls into view.
+                for (int wait = 0; wait < 6 && !Doc.IsPageOnScreen(Index) &&
+                                   Volatile.Read(ref _generation) == gen; wait++)
+                    await Task.Delay(40);
+                if (Volatile.Read(ref _generation) != gen) continue;
+
+                double t = TargetScale();
                 var renderer = Doc.Renderer;
                 int index = Index;
                 var bmp = await Task.Run(() =>
@@ -90,7 +99,7 @@ public partial class PageViewModel : ObservableObject
                 if (bmp == null || Volatile.Read(ref _generation) != gen) continue;
                 Image = bmp;
                 _renderedScale = t;
-            } while (_renderQueued);
+            } while (_renderQueued && (Image == null || Math.Abs(TargetScale() - _renderedScale) >= 0.01));
         }
         catch (Exception ex) { App.LogError($"Page {Index} render failed", ex); }
         finally { Interlocked.Exchange(ref _rendering, 0); }

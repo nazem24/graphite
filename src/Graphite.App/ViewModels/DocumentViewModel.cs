@@ -76,6 +76,12 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int currentPageIndex;
     [ObservableProperty] private ToolKind activeTool = ToolKind.Select;
     [ObservableProperty] private bool isDirty;
+
+    /// <summary>True for the tab that is currently shown. Every open document keeps its own
+    /// viewer alive (collapsed while inactive) so switching tabs is a visibility flip rather
+    /// than a rebuild of the whole page list; the window binds visibility to this.</summary>
+    [ObservableProperty] private bool isActive;
+
     [ObservableProperty] private bool isBusy;
     [ObservableProperty] private string busyText = "";
     [ObservableProperty] private AnnotationViewModel? selectedAnnotation;
@@ -409,6 +415,12 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             if (Pages[i].Image == null) _ = Pages[i].EnsureRenderedAsync();
         EvictFarPages(CurrentPageIndex);
     }
+
+    /// <summary>Whether a page is inside the range the viewer currently shows (or the range
+    /// isn't known yet). Pages that are only realized as scroll cache use this to let the
+    /// on-screen pages take the PDFium lock first.</summary>
+    public bool IsPageOnScreen(int index) =>
+        !IsContinuous || _viewFirst < 0 || (index >= _viewFirst && index <= _viewLast);
 
     private (int Lo, int Hi) KeepRange(int centerIndex)
     {
