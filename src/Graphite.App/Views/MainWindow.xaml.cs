@@ -184,7 +184,6 @@ public partial class MainWindow : Window
                 _viewers.Remove(doc);
                 _searchBoxes.Remove(doc);
                 _searchRadios.Remove(doc);
-                ForgetTab(doc);
                 _scrollOffsets.Remove(doc);
                 _pins.Remove(doc);
                 _lastShownPage.Remove(doc);
@@ -241,6 +240,7 @@ public partial class MainWindow : Window
     private int _restoreGen;          // supersedes older settle loops
     private Point? _zoomAnchor;       // viewport point to keep fixed during the next zoom change
     private Point? _zoomTarget;       // where that point should end up (default: where it was)
+    private int _pinSettleGen;        // bumped by any manual scroll / jump / tab switch; cancels late anchor corrections
 
     private void PagesHost_Loaded(object sender, RoutedEventArgs e)
     {
@@ -363,6 +363,7 @@ public partial class MainWindow : Window
 
         _pins[doc] = pageIndex;
         _lastShownPage[doc] = pageIndex;
+        _pinSettleGen++;
 
         double modelTarget = OffsetOfPage(doc, pageIndex);
         bool near = !instant && !_restoring && sv.ViewportHeight > 0 && sv.ExtentHeight > 0 &&
@@ -598,6 +599,8 @@ public partial class MainWindow : Window
         var sv = FindScrollViewer(lb);
         if (sv == null) return;
 
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) _pinSettleGen++; // the user is scrolling: stop correcting
+
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             // Proportional + anchored: a precision-touchpad pinch arrives as Ctrl+wheel with
@@ -633,6 +636,7 @@ public partial class MainWindow : Window
         {
             StopScroller(lb);
             _pins.Remove(doc);
+            _pinSettleGen++;
         }
     }
 
@@ -701,6 +705,7 @@ public partial class MainWindow : Window
         }
         finally { _trackingSuspended--; }
         SyncFromViewport(lb, doc);
+        if (anchorPage >= 0) SettleAnchor(lb, doc, sv, anchorPage, innerPt, newZoom, b.Y);
     }
 
     // ---- touch: two-finger pinch zoom + pan
@@ -716,6 +721,7 @@ public partial class MainWindow : Window
         var sv = FindScrollViewer(lb);
         if (sv == null) return;
 
+        _pinSettleGen++;
         foreach (var stale in _touchDevices.Where(kv => !kv.Value.IsActive).Select(kv => kv.Key).ToList())
             _touchDevices.Remove(stale);
         _touchDevices[e.TouchDevice.Id] = e.TouchDevice;
@@ -881,7 +887,11 @@ public partial class MainWindow : Window
             _viewers.TryGetValue(prev, out var prevList) && FindScrollViewer(prevList) is { } prevScroller)
             _scrollOffsets[prev] = prevScroller.VerticalOffset;
 
-        NoteTabSwitch(prev, next);
+        _pinSettleGen++;
+        // Hidden tabs keep their viewer and scroll position but not their rendered page
+        // bitmaps: those are the big allocation, and they come back in a moment when the tab
+        // is shown again (the cheap thumbnail stands in meanwhile).
+        if (prev != null && ViewModel.Documents.Contains(prev)) prev.ReleaseBitmaps();
         if (next == null) return;
         AnimateDocSwitch(prev, next);
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>

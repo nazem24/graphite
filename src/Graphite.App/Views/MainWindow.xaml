@@ -242,6 +242,10 @@
                                             <Grid>
                                                 <!-- skeleton while the page bitmap is still being rendered -->
                                                 <ctrl:ShimmerBorder Visibility="{Binding Image, Converter={StaticResource NullToVisInv}}"/>
+                                                <!-- the cheap thumbnail stands in (blurry) until the sharp bitmap is
+                                                     ready — e.g. right after switching back to a tab -->
+                                                <ctrl:FadeImage Source="{Binding Thumbnail}" Stretch="Fill"
+                                                                Visibility="{Binding Image, Converter={StaticResource NullToVisInv}}"/>
                                                 <ctrl:FadeImage Source="{Binding Image}" Stretch="Fill"/>
                                                 <ctrl:AnnotationLayer/>
                                                 <!-- Inline text editing host: the Text tool drops an empty

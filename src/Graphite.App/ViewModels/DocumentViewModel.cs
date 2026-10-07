@@ -424,29 +424,19 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     /// <summary>Pages that are actually shown right now: the on-screen range in continuous
     /// layout, the displayed page(s) otherwise.</summary>
-    public bool IsShownPage(int index)
+    private bool IsShownPage(int index)
     {
         if (IsContinuous && _viewFirst >= 0) return index >= _viewFirst && index <= _viewLast;
         if (IsContinuous) return index >= CurrentPageIndex && index <= CurrentPageIndex + 1;
         return VisiblePages.Any(p => p.Index == index);
     }
 
-    /// <summary>How many pages a page is from the ones being shown (0 = on screen). Used to
-    /// decide which bitmaps to give up first when over the memory budget.</summary>
-    public int DistanceFromShown(int index)
+    /// <summary>The tab went to the background: drop every full-size page bitmap (thumbnails
+    /// stay). The shown range is remembered so <see cref="RenderShownPages"/> can bring the
+    /// visible pages straight back when the tab is shown again.</summary>
+    public void ReleaseBitmaps()
     {
-        if (IsContinuous && _viewFirst >= 0)
-            return index < _viewFirst ? _viewFirst - index : index > _viewLast ? index - _viewLast : 0;
-        return IsShownPage(index) ? 0 : Math.Abs(index - CurrentPageIndex);
-    }
-
-    /// <summary>Called while this tab is in the background to give memory back. Level 1 drops
-    /// the bitmaps of every page except the ones on screen (coming back is still instant);
-    /// level 2 drops all of them (the pages re-render when the tab is shown again).</summary>
-    public void TrimHidden(bool everything)
-    {
-        foreach (var p in Pages)
-            if (everything || !IsShownPage(p.Index)) p.EvictFullImage();
+        foreach (var p in Pages) p.EvictFullImage();
     }
 
     /// <summary>The tab was just shown again: re-render any on-screen page whose bitmap was

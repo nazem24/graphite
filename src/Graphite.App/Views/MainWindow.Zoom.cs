@@ -264,6 +264,35 @@ public partial class MainWindow
 
     // ------------------------------------------------------------- anchoring
 
+    /// <summary>The panel keeps adjusting its extent for a moment after a zoom (pages it had
+    /// not measured yet, a scrollbar appearing, estimates being replaced by real sizes), which
+    /// can slide the anchored content away after the first correction. Re-check the anchor a
+    /// few times over the next third of a second and nudge it back — unless the user has
+    /// started scrolling or switched tabs in the meantime.</summary>
+    private async void SettleAnchor(ListBox lb, DocumentViewModel doc, ScrollViewer sv,
+        int page, double innerPt, double zoom, double viewportY)
+    {
+        int gen = ++_pinSettleGen;
+        foreach (int delay in new[] { 0, 60, 140, 300 })
+        {
+            if (delay == 0) await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
+            else await Task.Delay(delay);
+
+            if (gen != _pinSettleGen || !ReferenceEquals(lb.DataContext, doc) || !lb.IsVisible ||
+                _zp != null || Math.Abs(doc.Zoom - zoom) > 1e-9)
+                return;
+
+            _trackingSuspended++;
+            try
+            {
+                lb.UpdateLayout();
+                PinAnchor(lb, sv, page, innerPt, zoom, viewportY);
+            }
+            finally { _trackingSuspended--; }
+            SyncFromViewport(lb, doc);
+        }
+    }
+
     /// <summary>Which page is under a viewport row, and how far into it (in page points),
     /// read from the real page containers rather than the panel's size estimates.</summary>
     private static bool TryAnchorFromContainers(ListBox lb, ScrollViewer sv, double y, double zoom,
