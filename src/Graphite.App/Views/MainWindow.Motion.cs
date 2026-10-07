@@ -75,7 +75,14 @@ public partial class MainWindow
         _idleTimer.Tick += (_, _) =>
         {
             _idleTimer.Stop();
+            // The page bar fades away when the pointer is idle (fullscreen and windowed alike) so
+            // the page gets the full height — except while the pointer is resting on the bar.
             if (ViewModel.IsFullscreen) ShowPageBar(false);
+            else if (ViewModel.SelectedDocument != null)
+            {
+                if (PageBarHovered()) _idleTimer.Start();
+                else ShowPageBar(false);
+            }
         };
 
         _dragWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
@@ -84,8 +91,16 @@ public partial class MainWindow
             if (Environment.TickCount64 - _lastDragSignal > 500) HideDropOverlay();
         };
 
-        Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => UpdateToolPill(false));
-        SizeChanged += (_, _) => UpdateToolPill(false);
+        Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            UpdateBarFold();
+            UpdateToolPill(false);
+        });
+        SizeChanged += (_, _) =>
+        {
+            UpdateBarFold();
+            UpdateToolPill(false);
+        };
     }
 
     /// <summary>Per-document hooks (called when a document is added).</summary>
@@ -533,14 +548,55 @@ public partial class MainWindow
         }
     }
 
-    private void ShowPageBar(bool show, bool animate = true, bool force = false)
+    /// <summary>Every open document has its own page bar; only the visible tab's is ours to move.</summary>
+    private FrameworkElement? ActivePageBar()
     {
-        if (show == _pageBarShown && !force) return;
-        // Every open document has its own page bar; only the visible tab's is ours to move.
         var found = new List<FrameworkElement>();
         if (ViewModel.SelectedDocument is { } active &&
             DocHost.ItemContainerGenerator.ContainerFromItem(active) is DependencyObject host)
             FindAllByTag(host, "PageBar", found);
+        return found.Count > 0 ? found[0] : null;
+    }
+
+    private bool PageBarHovered() => ActivePageBar() is { IsMouseOver: true };
+
+    /// <summary>Mouse movement or scrolling brings the page bar back; it fades again after a moment.</summary>
+    private void NotePageBarActivity()
+    {
+        if (ViewModel.SelectedDocument == null) return;
+        ShowPageBar(true);
+        _idleTimer.Stop();
+        _idleTimer.Start();
+    }
+
+    // ------------------------------------------------------------- narrow windows
+
+    private int _barFoldLevel;
+
+    /// <summary>In narrow windows the far-right groups (panel toggles, theme) fold into a "…"
+    /// menu and the Ctrl K field shrinks to its icon, so the tools keep their room.</summary>
+    private void UpdateBarFold()
+    {
+        if (BarFarRight == null || BarOverflow == null || BarSearch == null) return;
+        double w = ActualWidth;
+        int level = w < 1130 ? 2 : w < 1290 ? 1 : 0;
+        if (level == _barFoldLevel) return;
+        _barFoldLevel = level;
+
+        bool folded = level >= 1;
+        BarFarRight.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
+        BarOverflow.Visibility = folded ? Visibility.Visible : Visibility.Collapsed;
+        BarSearchLabel.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
+        BarSearchKey.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
+        BarSearch.Width = folded ? 34 : 136;
+        BarSearch.Visibility = level >= 2 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ShowPageBar(bool show, bool animate = true, bool force = false)
+    {
+        if (show == _pageBarShown && !force) return;
+        var found = new List<FrameworkElement>();
+        if (ActivePageBar() is { } activeBar) found.Add(activeBar);
         if (found.Count == 0 || Motion.RigOf(found[0]) is not { } rig) return;
         var bar = found[0];
 
@@ -565,7 +621,11 @@ public partial class MainWindow
         // The pointer is moving over the window's own content, so no drag is in progress.
         if (Motion.Interacting) Motion.SetInteracting(false);
 
-        if (!ViewModel.IsFullscreen) return;
+        if (!ViewModel.IsFullscreen)
+        {
+            NotePageBarActivity();
+            return;
+        }
         var pos = e.GetPosition(this);
 
         if (!_barShown && pos.Y <= 6)
@@ -585,9 +645,9 @@ public partial class MainWindow
 
     private void ShowUpdateToast(string version, Func<Task> install)
     {
-        ToastTitle.Text = $"Graphite {version} is available";
-        ToastText.Text = $"You're running {ViewModel.AppVersion}. Updating restarts Graphite.";
-        ToastAction.Content = "Update now";
+        ToastTitle.Text = "Update available";
+        ToastText.Text = $"Graphite {version} is ready to install (you're on {ViewModel.AppVersion}). Updating restarts Graphite.";
+        ToastAction.Content = "Restart now";
         _toastAction = install;
 
         Toast.Visibility = Visibility.Visible;

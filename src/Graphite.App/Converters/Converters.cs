@@ -75,6 +75,39 @@ public sealed class StringEqualsConverter : IValueConverter
     public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
 }
 
+/// <summary>True when the bound number equals the converter parameter (invariant culture,
+/// tolerance 1e-6). One-way: ticks the thickness row matching the current stroke width.</summary>
+public sealed class NumberEqualsConverter : IValueConverter
+{
+    public object Convert(object? value, Type t, object? parameter, CultureInfo c)
+    {
+        if (value is not double d ||
+            !double.TryParse(parameter as string, NumberStyles.Float, CultureInfo.InvariantCulture, out double p))
+            return false;
+        return Math.Abs(d - p) < 1e-6;
+    }
+    public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
+}
+
+/// <summary>Splits a "Name|Key|Hint" tooltip string. Parameter "0"/"1"/"2" returns that part
+/// as text; "v1"/"v2" returns Visible when that part is non-empty (Collapsed otherwise), so
+/// the tooltip template hides the key cap and hint line when they are not given.</summary>
+public sealed class TipPartConverter : IValueConverter
+{
+    public object Convert(object? value, Type t, object? parameter, CultureInfo c)
+    {
+        string raw = value as string ?? value?.ToString() ?? "";
+        var parts = raw.Split('|');
+        string key = parameter as string ?? "0";
+        bool asVisibility = key.StartsWith('v');
+        int index = int.TryParse(asVisibility ? key[1..] : key, out int i) ? i : 0;
+        string part = index < parts.Length ? parts[index].Trim() : "";
+        if (asVisibility) return part.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        return part;
+    }
+    public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
+}
+
 public sealed class InvertBoolConverter : IValueConverter
 {
     public object Convert(object value, Type t, object p, CultureInfo c) => value is bool b && !b;

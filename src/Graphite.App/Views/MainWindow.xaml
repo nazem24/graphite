@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Graphite.App.ViewModels"
         xmlns:ctrl="clr-namespace:Graphite.App.Controls"
+        xmlns:views="clr-namespace:Graphite.App.Views"
         xmlns:conv="clr-namespace:Graphite.App.Converters"
         xmlns:core="clr-namespace:Graphite.Core;assembly=Graphite.Core"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -80,16 +81,31 @@
                              window-wide, and every open document has its own copy of this panel, so a
                              named group would let one tab's choice uncheck another tab's. Unnamed
                              radios group by parent, which is exactly the scope wanted. -->
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,10">
-                            <RadioButton x:Name="SideThumbs" Style="{StaticResource ToolToggle}" IsChecked="True"
-                                         ToolTip="Thumbnails">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Thumbs}"/>
-                            </RadioButton>
-                            <RadioButton x:Name="SideOutline" Style="{StaticResource ToolToggle}" Margin="4,0,0,0"
-                                         ToolTip="Outline">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Outline}"/>
-                            </RadioButton>
-                        </StackPanel>
+                        <!-- Panel header: title, page count, and a thumbnails / outline switch. -->
+                        <Grid DockPanel.Dock="Top" Margin="14,12,10,8">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Pages" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center"/>
+                                <Border Margin="8,0,0,0" Padding="7,1" CornerRadius="9" VerticalAlignment="Center"
+                                        Background="{DynamicResource App.HoverBrush}">
+                                    <TextBlock Text="{Binding Pages.Count}" Style="{StaticResource Caption}"/>
+                                </Border>
+                            </StackPanel>
+                            <Border HorizontalAlignment="Right" CornerRadius="10" Padding="2"
+                                    Background="{DynamicResource App.HoverBrush}">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton x:Name="SideThumbs" Style="{StaticResource ToolToggle}" IsChecked="True"
+                                                 Padding="6" ToolTip="Thumbnails">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Thumbs}"
+                                              Width="14" Height="14" Stretch="Uniform"/>
+                                    </RadioButton>
+                                    <RadioButton x:Name="SideOutline" Style="{StaticResource ToolToggle}" Margin="2,0,0,0"
+                                                 Padding="6" ToolTip="Outline">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Outline}"
+                                              Width="14" Height="14" Stretch="Uniform"/>
+                                    </RadioButton>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
 
                         <Grid>
                             <!-- thumbnails -->
@@ -378,6 +394,23 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Reading progress: a thin line along the bottom edge that stays put while
+                             the page bar above it fades away when idle. -->
+                        <ProgressBar VerticalAlignment="Bottom" Height="2" Margin="16,0,16,0"
+                                     IsHitTestVisible="False" Focusable="False"
+                                     Minimum="0" Maximum="{Binding Pages.Count, Mode=OneWay}"
+                                     Value="{Binding CurrentPageIndex, Mode=OneWay, Converter={StaticResource PlusOne}}">
+                            <ProgressBar.Template>
+                                <ControlTemplate TargetType="ProgressBar">
+                                    <Grid>
+                                        <Border x:Name="PART_Track" CornerRadius="1" Background="Transparent"/>
+                                        <Border x:Name="PART_Indicator" CornerRadius="1" HorizontalAlignment="Left"
+                                                Background="{DynamicResource App.AccentSystemBrush}"/>
+                                    </Grid>
+                                </ControlTemplate>
+                            </ProgressBar.Template>
+                        </ProgressBar>
+
                         <!-- busy overlay -->
                         <Border Background="#66000000" CornerRadius="16"
                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
@@ -423,111 +456,251 @@
                 <Border Grid.Column="2" Width="292" Margin="0,4,12,12" ClipToBounds="True"
                         Style="{StaticResource GlassCard}" Tag="InspectorPanel" Loaded="Panel_Loaded">
                     <DockPanel Width="290" HorizontalAlignment="Left">
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,10">
-                            <RadioButton x:Name="TabComments" Style="{StaticResource ToolToggle}" IsChecked="True"
-                                         ToolTip="Annotations">
-                                <StackPanel Orientation="Horizontal">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Note}"/>
-                                    <TextBlock Text="Markup" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </RadioButton>
-                            <RadioButton x:Name="TabSearch" Style="{StaticResource ToolToggle}" Margin="4,0,0,0"
-                                         Loaded="SearchRadio_Loaded" ToolTip="Search (Ctrl+F)">
-                                <StackPanel Orientation="Horizontal">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}"/>
-                                    <TextBlock Text="Search" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </RadioButton>
-                        </StackPanel>
+                        <!-- Segmented switch: Markup (with its count) / Search. -->
+                        <Border DockPanel.Dock="Top" Margin="12,10,12,8" Padding="3" CornerRadius="12"
+                                Background="{DynamicResource App.HoverBrush}">
+                            <UniformGrid Columns="2">
+                                <RadioButton x:Name="TabComments" Style="{StaticResource ToolToggle}" IsChecked="True"
+                                             Padding="8,7" ToolTip="Markup|Highlights, notes and drawings in this document">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Note}"/>
+                                        <TextBlock Text="Markup" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                        <Border Margin="7,0,0,0" Padding="6,0" CornerRadius="8" VerticalAlignment="Center"
+                                                Background="{DynamicResource App.AccentSoftBrush}"
+                                                Visibility="{Binding MarkupCountAll, Converter={StaticResource NonZeroToVis}}">
+                                            <TextBlock Text="{Binding MarkupCountAll}" FontSize="11"
+                                                       Foreground="{DynamicResource App.AccentSystemBrush}"/>
+                                        </Border>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton x:Name="TabSearch" Style="{StaticResource ToolToggle}"
+                                             Padding="8,7" Loaded="SearchRadio_Loaded" ToolTip="Search|Ctrl+F|Find text in this document">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}"/>
+                                        <TextBlock Text="Search" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </UniformGrid>
+                        </Border>
 
                         <Grid>
-                            <!-- markup summary -->
-                            <DockPanel Visibility="{Binding IsChecked, ElementName=TabComments, Converter={StaticResource BoolToVis}}">
-                                <TextBlock DockPanel.Dock="Top" Margin="14,2,14,8" Style="{StaticResource Caption}"
-                                           Text="{Binding Annotations.Count, StringFormat={}Annotations: {0}}"/>
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <ItemsControl ItemsSource="{Binding Annotations}" Margin="10,0">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Background="{DynamicResource App.CardBrush}"
-                                                        Tag="{Binding PulseCount, Mode=OneWay, NotifyOnTargetUpdated=True}"
-                                                        BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,8"
-                                                        RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <TranslateTransform/>
-                                                    </Border.RenderTransform>
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="BorderBrush" Value="{DynamicResource App.StrokeSoftBrush}"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource App.AccentSystemBrush}"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <!-- Fires when the card first appears and on every click of it. -->
-                                                    <Border.Triggers>
-                                                        <EventTrigger RoutedEvent="Binding.TargetUpdated">
-                                                            <BeginStoryboard Storyboard="{StaticResource ValuePulse}"/>
-                                                        </EventTrigger>
-                                                    </Border.Triggers>
-                                                    <Border.InputBindings>
-                                                        <MouseBinding MouseAction="LeftClick" Command="{Binding GoToCommand}"/>
-                                                    </Border.InputBindings>
-                                                    <StackPanel>
-                                                        <DockPanel>
-                                                            <Rectangle Width="10" Height="10" RadiusX="3" RadiusY="3"
-                                                                       Fill="{Binding Swatch}" VerticalAlignment="Center"/>
-                                                            <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
-                                                                    Click="DeleteCard_Click" Padding="3" ToolTip="Delete annotation">
-                                                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Close}"
-                                                                      Width="10" Height="10" Stretch="Uniform"/>
-                                                            </Button>
-                                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" Style="{StaticResource Body}">
-                                                                <Run Text="{Binding KindLabel, Mode=OneWay}" FontWeight="SemiBold"/>
-                                                                <Run Text="{Binding PageLabel, Mode=OneWay}" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
-                                                            </TextBlock>
-                                                        </DockPanel>
-                                                        <TextBlock Style="{StaticResource Caption}" Margin="0,3,0,0">
-                                                            <Run Text="{Binding Author, Mode=OneWay}"/> · <Run Text="{Binding When, Mode=OneWay}"/>
-                                                        </TextBlock>
-                                                        <TextBox Text="{Binding Contents, UpdateSourceTrigger=LostFocus}"
-                                                                 Margin="0,7,0,0" TextWrapping="Wrap" AcceptsReturn="True"
-                                                                 MinHeight="26" FontSize="12"
-                                                                 ToolTip="Comment"/>
-                                                        <ItemsControl ItemsSource="{Binding Replies}" Margin="10,6,0,0">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate>
-                                                                    <Border BorderBrush="{DynamicResource App.StrokeSoftBrush}"
-                                                                            BorderThickness="1,0,0,0" Padding="8,2,0,4">
+                            <!-- markup: filter chips, cards grouped by page, quoted text -->
+                            <Grid Visibility="{Binding IsChecked, ElementName=TabComments, Converter={StaticResource BoolToVis}}">
+
+                                <!-- the list -->
+                                <DockPanel Visibility="{Binding MarkupCountAll, Converter={StaticResource NonZeroToVis}}">
+                                    <WrapPanel DockPanel.Dock="Top" Margin="14,0,8,0">
+                                        <RadioButton Style="{StaticResource FilterChip}"
+                                                     IsChecked="{Binding MarkupFilter, Converter={StaticResource EnumToBool}, ConverterParameter=All}">
+                                            <TextBlock><Run Text="All"/> <Run Text="{Binding MarkupCountAll, Mode=OneWay}"/></TextBlock>
+                                        </RadioButton>
+                                        <RadioButton Style="{StaticResource FilterChip}"
+                                                     IsChecked="{Binding MarkupFilter, Converter={StaticResource EnumToBool}, ConverterParameter=Highlights}">
+                                            <TextBlock><Run Text="Highlights"/> <Run Text="{Binding MarkupCountHighlights, Mode=OneWay}"/></TextBlock>
+                                        </RadioButton>
+                                        <RadioButton Style="{StaticResource FilterChip}"
+                                                     IsChecked="{Binding MarkupFilter, Converter={StaticResource EnumToBool}, ConverterParameter=Notes}">
+                                            <TextBlock><Run Text="Notes"/> <Run Text="{Binding MarkupCountNotes, Mode=OneWay}"/></TextBlock>
+                                        </RadioButton>
+                                        <RadioButton Style="{StaticResource FilterChip}"
+                                                     IsChecked="{Binding MarkupFilter, Converter={StaticResource EnumToBool}, ConverterParameter=Ink}">
+                                            <TextBlock><Run Text="Ink"/> <Run Text="{Binding MarkupCountInk, Mode=OneWay}"/></TextBlock>
+                                        </RadioButton>
+                                    </WrapPanel>
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding MarkupView}" Margin="10,0,10,10">
+                                            <ItemsControl.GroupStyle>
+                                                <GroupStyle>
+                                                    <GroupStyle.ContainerStyle>
+                                                        <Style TargetType="GroupItem">
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="GroupItem">
                                                                         <StackPanel>
-                                                                            <TextBlock Style="{StaticResource Caption}">
-                                                                                <Run Text="{Binding Author, Mode=OneWay}" FontWeight="SemiBold"/>
-                                                                            </TextBlock>
-                                                                            <TextBlock Text="{Binding Text}" Style="{StaticResource Body}"
-                                                                                       TextWrapping="Wrap" FontSize="12"/>
+                                                                            <TextBlock Text="{Binding Name}" Style="{StaticResource SectionLabel}"
+                                                                                       Margin="4,10,0,6"/>
+                                                                            <ItemsPresenter/>
                                                                         </StackPanel>
-                                                                    </Border>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                        <DockPanel Margin="10,6,0,0">
-                                                            <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
-                                                                    Command="{Binding AddReplyCommand}" Margin="4,0,0,0" ToolTip="Reply">
-                                                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Reply}"
-                                                                      Width="13" Height="13" Stretch="Uniform"/>
-                                                            </Button>
-                                                            <TextBox Text="{Binding ReplyDraft, UpdateSourceTrigger=PropertyChanged}"
-                                                                     FontSize="12" ToolTip="Reply…"/>
-                                                        </DockPanel>
-                                                    </StackPanel>
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </Style>
+                                                    </GroupStyle.ContainerStyle>
+                                                </GroupStyle>
+                                            </ItemsControl.GroupStyle>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource App.CardBrush}"
+                                                            Tag="{Binding PulseCount, Mode=OneWay, NotifyOnTargetUpdated=True}"
+                                                            BorderThickness="1" CornerRadius="12" Padding="12,10" Margin="0,0,0,8"
+                                                            RenderTransformOrigin="0.5,0.5">
+                                                        <Border.RenderTransform>
+                                                            <TranslateTransform/>
+                                                        </Border.RenderTransform>
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource App.StrokeSoftBrush}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource App.AccentSystemBrush}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <!-- Fires when the card first appears and on every click of it. -->
+                                                        <Border.Triggers>
+                                                            <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                                                                <BeginStoryboard Storyboard="{StaticResource ValuePulse}"/>
+                                                            </EventTrigger>
+                                                        </Border.Triggers>
+                                                        <Border.InputBindings>
+                                                            <MouseBinding MouseAction="LeftClick" Command="{Binding GoToCommand}"/>
+                                                        </Border.InputBindings>
+                                                        <StackPanel>
+                                                            <DockPanel>
+                                                                <Ellipse Width="9" Height="9" Fill="{Binding Swatch}" VerticalAlignment="Center"/>
+                                                                <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                                                                        Click="DeleteCard_Click" Padding="3" ToolTip="Delete annotation">
+                                                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Close}"
+                                                                          Width="10" Height="10" Stretch="Uniform"/>
+                                                                </Button>
+                                                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Style="{StaticResource Body}">
+                                                                    <Run Text="{Binding KindLabel, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                                    <Run Text=" · " Foreground="{DynamicResource App.TextSecondaryBrush}"/><Run Text="{Binding PageShort, Mode=OneWay}" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                                                                </TextBlock>
+                                                            </DockPanel>
+
+                                                            <!-- the marked text, quoted -->
+                                                            <Border Margin="0,9,0,0" Padding="10,8" CornerRadius="8"
+                                                                    Background="{Binding SwatchSoft}"
+                                                                    Visibility="{Binding HasQuote, Converter={StaticResource BoolToVis}}">
+                                                                <TextBlock Text="{Binding Quote, Mode=OneWay}" TextWrapping="Wrap"
+                                                                           FontSize="12.5" Foreground="{DynamicResource App.TextBrush}"/>
+                                                            </Border>
+
+                                                            <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0">
+                                                                <Run Text="{Binding Author, Mode=OneWay}"/> · <Run Text="{Binding When, Mode=OneWay}"/>
+                                                            </TextBlock>
+
+                                                            <Grid Margin="0,7,0,0">
+                                                                <TextBox x:Name="CommentBox" Text="{Binding Contents, UpdateSourceTrigger=LostFocus}"
+                                                                         TextWrapping="Wrap" AcceptsReturn="True"
+                                                                         MinHeight="30" FontSize="12" ToolTip="Comment"/>
+                                                                <TextBlock Text="Add a comment…" IsHitTestVisible="False" FontSize="12"
+                                                                           Margin="11,7,0,0" VerticalAlignment="Top"
+                                                                           Foreground="{DynamicResource App.TextSecondaryBrush}">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Text, ElementName=CommentBox}" Value="">
+                                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Grid>
+
+                                                            <ItemsControl ItemsSource="{Binding Replies}" Margin="10,6,0,0">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Border BorderBrush="{DynamicResource App.StrokeSoftBrush}"
+                                                                                BorderThickness="1,0,0,0" Padding="8,2,0,4">
+                                                                            <StackPanel>
+                                                                                <TextBlock Style="{StaticResource Caption}">
+                                                                                    <Run Text="{Binding Author, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                                                </TextBlock>
+                                                                                <TextBlock Text="{Binding Text}" Style="{StaticResource Body}"
+                                                                                           TextWrapping="Wrap" FontSize="12"/>
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+
+                                                            <!-- Reply row: shown once there is a comment or a reply to answer. -->
+                                                            <DockPanel Margin="10,6,0,0">
+                                                                <DockPanel.Style>
+                                                                    <Style TargetType="DockPanel">
+                                                                        <Style.Triggers>
+                                                                            <MultiDataTrigger>
+                                                                                <MultiDataTrigger.Conditions>
+                                                                                    <Condition Binding="{Binding Contents}" Value=""/>
+                                                                                    <Condition Binding="{Binding HasReplies}" Value="False"/>
+                                                                                </MultiDataTrigger.Conditions>
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </MultiDataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </DockPanel.Style>
+                                                                <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                                                                        Command="{Binding AddReplyCommand}" Margin="4,0,0,0" ToolTip="Reply">
+                                                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Reply}"
+                                                                          Width="13" Height="13" Stretch="Uniform"/>
+                                                                </Button>
+                                                                <Grid>
+                                                                    <TextBox x:Name="ReplyBox" Text="{Binding ReplyDraft, UpdateSourceTrigger=PropertyChanged}"
+                                                                             FontSize="12" ToolTip="Reply"/>
+                                                                    <TextBlock Text="Reply…" IsHitTestVisible="False" FontSize="12"
+                                                                               Margin="11,0,0,0" VerticalAlignment="Center"
+                                                                               Foreground="{DynamicResource App.TextSecondaryBrush}">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Text, ElementName=ReplyBox}" Value="">
+                                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+                                                                </Grid>
+                                                            </DockPanel>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </DockPanel>
+
+                                <!-- empty state: say what to do next, offer the first action, point to Ctrl K -->
+                                <Grid Visibility="{Binding MarkupCountAll, Converter={StaticResource ZeroToVis}}">
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24,0,24,40">
+                                        <Border Width="56" Height="56" CornerRadius="16" HorizontalAlignment="Center"
+                                                Background="{DynamicResource App.HoverBrush}">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextHighlight}"
+                                                  Width="22" Height="22" Stretch="Uniform"/>
+                                        </Border>
+                                        <TextBlock Text="No markup yet" FontSize="15" FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center" Margin="0,16,0,0"/>
+                                        <TextBlock Text="Pick Highlight, Pen or Text box from the toolbar. Comments and replies will collect here."
+                                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0"
+                                                   Foreground="{DynamicResource App.TextSecondaryBrush}" FontSize="12.5"/>
+                                        <Button Style="{StaticResource AccentButton}" HorizontalAlignment="Center" Margin="0,18,0,0"
+                                                Command="{Binding DataContext.SetHighlightModeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="text">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Start with Highlight" VerticalAlignment="Center"/>
+                                                <Border Margin="8,0,0,0" Padding="5,1" CornerRadius="5" BorderThickness="1"
+                                                        Background="#14000000" BorderBrush="#33000000" VerticalAlignment="Center">
+                                                    <TextBlock Text="H" FontSize="11" Foreground="{DynamicResource App.AccentContrastBrush}"/>
                                                 </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
-                            </DockPanel>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                                Margin="0,0,0,18">
+                                        <TextBlock Text="Tip: press" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                        <Border Style="{StaticResource KeyCap}" Margin="6,0" VerticalAlignment="Center">
+                                            <TextBlock Text="Ctrl K" FontSize="11" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                                        </Border>
+                                        <TextBlock Text="to search every command" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
 
                             <!-- search -->
                             <DockPanel Visibility="{Binding IsChecked, ElementName=TabSearch, Converter={StaticResource BoolToVis}}">
@@ -587,6 +760,7 @@
         <KeyBinding Modifiers="Ctrl" Key="W" Command="{Binding CloseDocumentCommand}"
                     CommandParameter="{Binding SelectedDocument}"/>
         <KeyBinding Modifiers="Ctrl" Key="G" Command="{Binding GoToPageDialogCommand}"/>
+        <KeyBinding Modifiers="Alt" Key="Return" Command="{Binding ShowPropertiesCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="OemPlus" Command="{Binding ZoomInCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="OemMinus" Command="{Binding ZoomOutCommand}"/>
     </Window.InputBindings>
@@ -604,10 +778,15 @@
              still drags the window. Right margin leaves room for the caption buttons. -->
         <Grid Grid.Row="0" Height="40" Margin="12,0,122,0"
               Visibility="{Binding IsFullscreen, Converter={StaticResource InvBoolToVis}}">
+          <DockPanel>
+            <!-- The start screen's tab: always first, selected while no document is. Open
+                 documents stay open behind it. -->
+            <RadioButton DockPanel.Dock="Left" Style="{StaticResource HomeTab}" VerticalAlignment="Center"
+                         IsChecked="{Binding IsHomeSelected, Mode=OneWay}"
+                         Command="{Binding GoHomeCommand}" ToolTip="Home: your library"/>
             <ListBox x:Name="TabStrip" Style="{StaticResource DocTabStrip}"
                      ItemContainerStyle="{StaticResource DocTabItem}"
                      HorizontalAlignment="Left" VerticalAlignment="Center"
-                     Visibility="{Binding Documents.Count, Converter={StaticResource NonZeroToVis}}"
                      ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}"
                      SelectionChanged="TabStrip_SelectionChanged"
                      PreviewMouseWheel="TabStrip_PreviewMouseWheel"
@@ -631,9 +810,12 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+          </DockPanel>
         </Grid>
 
         <!-- ======================= floating glass command bar ======================= -->
+        <!-- 32 px buttons (36 px hit area), 2 px gaps, 1 px x 20 px dividers, 9 px radius; the bar is
+             about 10 px slimmer than before and nothing is added above the page. -->
         <Border x:Name="CommandBar" Grid.Row="1" Style="{StaticResource GlassCard}" CornerRadius="14" Margin="12,0,12,6"
                 RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform>
@@ -647,67 +829,113 @@
             <Border.Effect>
                 <DropShadowEffect BlurRadius="20" ShadowDepth="3" Direction="270" Opacity="0.18"/>
             </Border.Effect>
-            <DockPanel Margin="10,6">
-                <!-- brand -->
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,12,0">
-                    <Grid Width="16" Height="16">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Outer}"
-                              Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.7"/>
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Inner}"
-                              Stroke="{DynamicResource App.BrandBlueBrush}" StrokeThickness="1.7"/>
-                    </Grid>
-                    <TextBlock Text="Graphite" FontWeight="SemiBold" FontSize="14" Margin="8,0,0,0"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
+            <DockPanel Margin="8,3">
+                <!-- brand mark -->
+                <Grid DockPanel.Dock="Left" Width="16" Height="16" VerticalAlignment="Center" Margin="8,0,10,0"
+                      ToolTip="Graphite">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Outer}"
+                          Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.7"/>
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Inner}"
+                          Stroke="{DynamicResource App.BrandBlueBrush}" StrokeThickness="1.7"/>
+                </Grid>
 
-                <!-- right side -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Style="{StaticResource IconButton}" Command="{Binding OpenPaletteCommand}"
-                            ToolTip="Command palette (Ctrl+K)">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Command}"/>
+                <!-- right side: command search, then the far-right groups (which fold into "…" when narrow) -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BarSearch" Style="{StaticResource BarField}" Command="{Binding OpenPaletteCommand}"
+                            Width="136" Height="30" ToolTip="Search commands|Ctrl K|Run any command from the keyboard">
+                        <DockPanel>
+                            <Border x:Name="BarSearchKey" DockPanel.Dock="Right" Style="{StaticResource KeyCap}" VerticalAlignment="Center">
+                                <TextBlock Text="Ctrl K" FontSize="11" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                            </Border>
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}"
+                                  Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="BarSearchLabel" Text="Search" Margin="8,0,0,0" FontSize="12"
+                                       VerticalAlignment="Center"/>
+                        </DockPanel>
                     </Button>
-                    <ToggleButton Style="{StaticResource IconButton}" IsChecked="{Binding ShowSidebar}" ToolTip="Sidebar">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Sidebar}"/>
-                    </ToggleButton>
-                    <ToggleButton Style="{StaticResource IconButton}" IsChecked="{Binding ShowInspector}" ToolTip="Markup panel">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Inspector}"/>
-                    </ToggleButton>
-                    <Button Style="{StaticResource IconButton}" Command="{Binding ToggleThemeCommand}" ToolTip="Theme">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}"
-                              RenderTransformOrigin="0.5,0.5">
-                            <Path.RenderTransform>
-                                <RotateTransform/>
-                            </Path.RenderTransform>
-                            <Path.Triggers>
-                                <EventTrigger RoutedEvent="Mouse.PreviewMouseDown">
-                                    <BeginStoryboard>
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                             By="150" Duration="0:0:0.28" EasingFunction="{StaticResource EaseOutSoft}"/>
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </EventTrigger>
-                            </Path.Triggers>
-                        </Path>
+                    <StackPanel x:Name="BarFarRight" Orientation="Horizontal" Margin="6,0,0,0" VerticalAlignment="Center">
+                        <ToggleButton Style="{StaticResource BarButton}" IsChecked="{Binding ShowSidebar}"
+                                      ToolTip="Pages panel||Show or hide thumbnails and outline">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Sidebar}"/>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource BarButton}" IsChecked="{Binding ShowInspector}"
+                                      ToolTip="Markup panel||Show or hide markup and search">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Inspector}"/>
+                        </ToggleButton>
+                        <Button Style="{StaticResource BarButton}" Command="{Binding ToggleThemeCommand}"
+                                ToolTip="Theme||Switch between light and dark">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Theme}"
+                                  RenderTransformOrigin="0.5,0.5">
+                                <Path.RenderTransform>
+                                    <RotateTransform/>
+                                </Path.RenderTransform>
+                                <Path.Triggers>
+                                    <EventTrigger RoutedEvent="Mouse.PreviewMouseDown">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                 By="150" Duration="0:0:0.28" EasingFunction="{StaticResource EaseOutSoft}"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Path.Triggers>
+                            </Path>
+                        </Button>
+                    </StackPanel>
+                    <!-- narrow windows: the far-right groups live here instead -->
+                    <Button x:Name="BarOverflow" Style="{StaticResource BarButton}" Visibility="Collapsed"
+                            Click="OrganizeMenu_Click" ToolTip="More||Panels and theme">
+                        <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.More}"/>
+                        <Button.ContextMenu>
+                            <ContextMenu MinWidth="200">
+                                <MenuItem Header="Pages panel" IsCheckable="True" IsChecked="{Binding ShowSidebar, Mode=TwoWay}"/>
+                                <MenuItem Header="Markup panel" IsCheckable="True" IsChecked="{Binding ShowInspector, Mode=TwoWay}"/>
+                                <Separator/>
+                                <MenuItem Header="Switch theme" Command="{Binding ToggleThemeCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </Button.ContextMenu>
                     </Button>
                 </StackPanel>
 
                 <!-- center: file + tools -->
-                <StackPanel Orientation="Horizontal">
-                    <!-- File: open/save/print/security/properties, collapsed into one menu -->
-                    <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="File">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- File: grouped by task — open, save, print/properties, about -->
+                    <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
+                            ToolTip="File|Ctrl+O|Open, save, print and document properties">
                         <StackPanel Orientation="Horizontal">
-                            <Path x:Name="FileIcon" Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}"/>
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
-                                  Width="10" Height="10" Stretch="Uniform" Margin="3,0,0,0"/>
+                            <Path x:Name="FileIcon" Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Open}"/>
+                            <TextBlock Text="File" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
+                                  Width="10" Height="10" Stretch="Uniform" Margin="5,0,0,0"/>
                         </StackPanel>
                         <Button.ContextMenu>
-                            <ContextMenu>
+                            <ContextMenu MinWidth="270">
                                 <MenuItem Header="Open…" InputGestureText="Ctrl+O" Command="{Binding OpenCommand}">
                                     <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="14" Height="14"/></MenuItem.Icon>
                                 </MenuItem>
                                 <MenuItem Header="Open from OneDrive" Command="{Binding OpenOneDriveCommand}">
                                     <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Cloud}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Open recent" ItemsSource="{Binding RecentFiles}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Clock}" Width="14" Height="14"/></MenuItem.Icon>
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                            <Style.Triggers>
+                                                <Trigger Property="HasItems" Value="False">
+                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                    <MenuItem.ItemContainerStyle>
+                                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                            <Setter Property="Header" Value="{Binding Converter={StaticResource FileName}}"/>
+                                            <Setter Property="ToolTip" Value="{Binding}"/>
+                                            <EventSetter Event="Click" Handler="RecentFile_Click"/>
+                                        </Style>
+                                    </MenuItem.ItemContainerStyle>
                                 </MenuItem>
                                 <Separator/>
                                 <MenuItem Header="Save" InputGestureText="Ctrl+S" Command="{Binding SaveCommand}">
@@ -723,12 +951,12 @@
                                 <MenuItem Header="Print…" InputGestureText="Ctrl+P" Command="{Binding PrintCommand}">
                                     <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Print}" Width="14" Height="14"/></MenuItem.Icon>
                                 </MenuItem>
-                                <Separator/>
-                                <MenuItem Header="Document properties" Command="{Binding ShowPropertiesCommand}">
-                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Info}" Width="14" Height="14"/></MenuItem.Icon>
+                                <MenuItem Header="Document properties" InputGestureText="Alt+Enter" Command="{Binding ShowPropertiesCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Doc}" Width="14" Height="14"/></MenuItem.Icon>
                                 </MenuItem>
-                                <MenuItem Header="Check for updates…" Command="{Binding CheckForUpdatesCommand}">
-                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Download}" Width="14" Height="14"/></MenuItem.Icon>
+                                <Separator/>
+                                <MenuItem Header="About and updates…" Command="{Binding CheckForUpdatesCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Info}" Width="14" Height="14"/></MenuItem.Icon>
                                 </MenuItem>
                             </ContextMenu>
                         </Button.ContextMenu>
@@ -736,23 +964,24 @@
 
                     <Grid>
                     <!-- Selection pill: one shared highlight that glides to whichever tool is active
-                         (MainWindow.UpdateToolPill); the buttons' own selected fill is switched off
-                         through Tag="Glide". -->
+                         (MainWindow.UpdateToolPill): accent 22 % fill and a 1 px accent ring. -->
                     <Border x:Name="ToolPill" Width="32" Height="32" CornerRadius="9" Opacity="0"
                             HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
-                            Background="{DynamicResource App.AccentSoftBrush}">
+                            Background="{DynamicResource App.AccentSoftBrush}"
+                            BorderBrush="{DynamicResource App.AccentSystemBrush}" BorderThickness="1">
                         <Border.RenderTransform>
                             <TranslateTransform/>
                         </Border.RenderTransform>
                     </Border>
-                    <StackPanel x:Name="ToolsPanel" Orientation="Horizontal"
+                    <!-- Hidden on the start screen (nothing to mark up yet). -->
+                    <StackPanel x:Name="ToolsPanel" Orientation="Horizontal" VerticalAlignment="Center"
                                 ToggleButton.Checked="Tools_CheckedChanged" ToggleButton.Unchecked="Tools_CheckedChanged">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
-                                <Setter Property="IsEnabled" Value="True"/>
+                                <Setter Property="Visibility" Value="Visible"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding SelectedDocument}" Value="{x:Null}">
-                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -760,20 +989,20 @@
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
-                        <Button Style="{StaticResource IconButton}" Command="{Binding UndoCommand}" ToolTip="Undo (Ctrl+Z)">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Undo}"/>
+                        <Button Style="{StaticResource BarButton}" Command="{Binding UndoCommand}" ToolTip="Undo|Ctrl+Z|">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Undo}"/>
                         </Button>
-                        <Button Style="{StaticResource IconButton}" Command="{Binding RedoCommand}" ToolTip="Redo (Ctrl+Y)">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Redo}"/>
+                        <Button Style="{StaticResource BarButton}" Command="{Binding RedoCommand}" ToolTip="Redo|Ctrl+Y|">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Redo}"/>
                         </Button>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- organize menu -->
-                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="Pages">
+                        <Button Style="{StaticResource BarButton}" Click="OrganizeMenu_Click" ToolTip="Pages||Merge, split, insert, delete, extract and rotate">
                             <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.InsertPage}"/>
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.InsertPage}"/>
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
                                       Width="10" Height="10" Stretch="Uniform" Margin="3,0,0,0"/>
                             </StackPanel>
                             <Button.ContextMenu>
@@ -809,10 +1038,10 @@
                         </Button>
 
                         <!-- export / convert menu (OCR lives here too) -->
-                        <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click" ToolTip="Export">
+                        <Button Style="{StaticResource BarButton}" Click="OrganizeMenu_Click" ToolTip="Export||Word, Excel, PowerPoint, images and text recognition">
                             <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Export}"/>
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Export}"/>
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
                                       Width="10" Height="10" Stretch="Uniform" Margin="3,0,0,0"/>
                             </StackPanel>
                             <Button.ContextMenu>
@@ -840,82 +1069,83 @@
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- select + text markup -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Select"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Select"
+                                     ToolTip="Select|V|Click markup to select it, drag to move it."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Select}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Select}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Select}"/>
                         </RadioButton>
-                        <!-- Highlight (text mode): drag over words to snap-highlight them.
-                             The freehand marker variant lives with the pen and eraser below. -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Highlight — drag over text to snap-highlight words"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Highlight"
+                                     ToolTip="Highlight|H|Drag over text to snap-highlight whole words."
                                      IsChecked="{Binding SelectedDocument.IsTextHighlightActive}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextHighlight}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.TextHighlight}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Underline"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Underline"
+                                     ToolTip="Underline|U|Drag over text to underline it."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Underline}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Underline}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Underline}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Strikethrough"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Strikethrough"
+                                     ToolTip="Strikethrough|S|Drag over text to strike it out."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=StrikeOut}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Strike}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Strike}"/>
                         </RadioButton>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
-                        <!-- pen + freehand marker + eraser -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Pen"
+                        <!-- pen + freehand marker + lasso + eraser -->
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Pen"
+                                     ToolTip="Pen|P|Draw freehand ink."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Ink}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ink}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Ink}"/>
                         </RadioButton>
-                        <!-- Freehand marker: translucent highlighter stroke drawn anywhere on
-                             the page (the text-snapping variant lives with underline/strike). -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Marker — draw a translucent freehand highlight"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Marker"
+                                     ToolTip="Marker|M|Draw a translucent freehand highlight."
                                      IsChecked="{Binding SelectedDocument.IsFreehandMarkerActive}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.MarkerFreehand}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.MarkerFreehand}"/>
                         </RadioButton>
-                        <!-- Lasso: draw a loop around ink, shapes and text boxes to grab them, then
-                             drag to move, press Delete (or the × chip) to remove, or pick a colour. -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Lasso — draw a loop to select markup, then move or delete it"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Lasso"
+                                     ToolTip="Lasso|L|Draw a loop to select markup, then move or delete it."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Lasso}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Lasso}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Lasso}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Eraser"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Eraser"
+                                     ToolTip="Eraser|E|Rub out ink and marker strokes."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Eraser}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Eraser}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Eraser}"/>
                         </RadioButton>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
-                        <!-- shapes + text -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Text box"
+                        <!-- text + shapes -->
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Text box"
+                                     ToolTip="Text box|T|Click the page to type."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Text}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.TextTool}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.TextTool}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Arrow"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Arrow"
+                                     ToolTip="Arrow|A|Drag to draw an arrow."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Arrow}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Arrow}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Arrow}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Rectangle"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Rectangle"
+                                     ToolTip="Rectangle|R|Drag to draw a rectangle."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Rect}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Rect}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Rect}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide" ToolTip="Ellipse"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Ellipse"
+                                     ToolTip="Ellipse|O|Drag to draw an ellipse."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Ellipse}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Ellipse}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Ellipse}"/>
                         </RadioButton>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- signature + content -->
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Signature — click again to edit"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Signature"
+                                     ToolTip="Signature||Stamp your saved signature. Click again to edit it."
                                      PreviewMouseLeftButtonDown="SignatureTool_PreviewMouseDown"
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=Signature}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Signature}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Signature}"/>
                             <RadioButton.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="Edit signature…" Command="{Binding EditSignatureCommand}">
@@ -924,39 +1154,42 @@
                                 </ContextMenu>
                             </RadioButton.ContextMenu>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Insert image"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Insert image"
+                                     ToolTip="Insert image||Drag a box on the page to place an image."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=PlaceImage}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Image}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Image}"/>
                         </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" GroupName="Tools" Tag="Glide"
-                                     ToolTip="Edit page text"
+                        <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Edit page text"
+                                     ToolTip="Edit page text||Drag over text to edit it."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=EditText}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.EditText}"/>
+                            <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.EditText}"/>
                         </RadioButton>
 
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
-                        <!-- markup colour + thickness, grouped as one quiet chip -->
-                        <Border CornerRadius="11" BorderThickness="1" Padding="1" Margin="2,0,0,0"
+                        <!-- Options for the active tool, in one popover. The chip shows the current colour. -->
+                        <Border CornerRadius="11" BorderThickness="1" Margin="3,0,0,0"
                                 BorderBrush="{DynamicResource App.StrokeBrush}" VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal">
-
-                                <!-- markup colour: a swatch palette instead of a text list -->
-                                <ToggleButton x:Name="ColorToggle" Style="{StaticResource IconButton}"
-                                              ToolTip="Markup color"
+                                <ToggleButton x:Name="ColorToggle" Style="{StaticResource BarButton}" Margin="0"
+                                              MinHeight="30" Padding="9,0"
+                                              ToolTip="Tool options||Color, thickness and opacity for the active tool"
                                               IsHitTestVisible="{Binding IsOpen, ElementName=ColorPopup, Converter={StaticResource InvertBool}}">
-                                    <Border Width="16" Height="16" CornerRadius="8"
-                                            BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"
-                                            Background="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource HexToBrush}}"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="16" Height="16" CornerRadius="8"
+                                                BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1"
+                                                Background="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource HexToBrush}}"/>
+                                        <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
+                                              Width="10" Height="10" Stretch="Uniform" Margin="7,0,0,0"/>
+                                    </StackPanel>
                                 </ToggleButton>
                                 <Popup x:Name="ColorPopup" PlacementTarget="{Binding ElementName=ColorToggle}"
                                        Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
                                        PopupAnimation="None"
                                        IsOpen="{Binding IsChecked, ElementName=ColorToggle, Mode=TwoWay}"
                                        Opened="ColorPopup_Opened">
-                                    <Border x:Name="ColorCard" Margin="12,4,12,18" Padding="10"
-                                            CornerRadius="14" BorderThickness="1"
+                                    <Border x:Name="ColorCard" Margin="12,4,12,18" Padding="14,12" Width="300"
+                                            CornerRadius="16" BorderThickness="1"
                                             Background="{DynamicResource App.GlassSolidBrush}"
                                             BorderBrush="{DynamicResource App.GlassBorderBrush}"
                                             RenderTransformOrigin="0.5,0">
@@ -967,71 +1200,175 @@
                                             <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32"/>
                                         </Border.Effect>
                                         <StackPanel>
-                                            <TextBlock Text="Markup colour" Style="{StaticResource Caption}" Margin="4,0,0,6"/>
-                                            <UniformGrid Columns="5">
+                                            <!-- header: tool name and its key -->
+                                            <DockPanel>
+                                                <Border DockPanel.Dock="Right" Style="{StaticResource KeyCap}" VerticalAlignment="Center"
+                                                        Visibility="{Binding SelectedDocument.ToolKey, Converter={StaticResource TipPart}, ConverterParameter=v0}">
+                                                    <TextBlock Text="{Binding SelectedDocument.ToolKey}" FontSize="11"
+                                                               Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding SelectedDocument.ToolTitle}" FontWeight="SemiBold" FontSize="14"
+                                                           VerticalAlignment="Center"/>
+                                            </DockPanel>
+
+                                            <TextBlock Text="This tool has no options." Style="{StaticResource Caption}" Margin="0,10,0,2"
+                                                       Visibility="{Binding SelectedDocument.HasToolOptions, Converter={StaticResource InvBoolToVis}}"/>
+
+                                            <!-- colour: every swatch visible at once -->
+                                            <StackPanel Visibility="{Binding SelectedDocument.ShowsColor, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="Color" Style="{StaticResource Caption}" Margin="0,12,0,6"/>
+                                                <UniformGrid Columns="5">
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#F2C744" ToolTip="Yellow"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#F2C744, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#F2C744" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#F2C744"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#E8853C" ToolTip="Orange"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#E8853C, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#E8853C" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#E8853C"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#C24444" ToolTip="Red"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#C24444, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#C24444" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#C24444"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#C75E9A" ToolTip="Pink"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#C75E9A, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#C75E9A" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#C75E9A"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#3E6DB5" ToolTip="Blue"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#3E6DB5, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#3E6DB5" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#3E6DB5"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#2E8C83" ToolTip="Teal"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#2E8C83, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#2E8C83" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#2E8C83"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#4E9C51" ToolTip="Green"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#4E9C51, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#4E9C51" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#4E9C51"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#7B5EC7" ToolTip="Purple"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#7B5EC7, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#7B5EC7" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#7B5EC7"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#3B3B38" ToolTip="Graphite"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#3B3B38, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#3B3B38" Click="ColorSwatch_Click"/>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#3B3B38"/>
                                                 <RadioButton Style="{StaticResource SwatchButton}" Background="#111111" ToolTip="Black"
                                                              IsChecked="{Binding SelectedDocument.ActiveColorHex, Converter={StaticResource StrEquals}, ConverterParameter=#111111, Mode=OneWay}"
-                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#111111" Click="ColorSwatch_Click"/>
-                                            </UniformGrid>
+                                                             Command="{Binding SetToolColorCommand}" CommandParameter="#111111"/>
+                                                </UniformGrid>
+                                            </StackPanel>
+
+                                            <!-- thickness: shown as a real stroke -->
+                                            <StackPanel Visibility="{Binding SelectedDocument.ShowsThickness, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="Thickness" Style="{StaticResource Caption}" Margin="0,12,0,4"/>
+                                                <RadioButton Style="{StaticResource OptionRow}"
+                                                             IsChecked="{Binding SelectedDocument.ActiveStrokeWidth, Converter={StaticResource NumEquals}, ConverterParameter=1, Mode=OneWay}"
+                                                             Command="{Binding SetToolWidthCommand}" CommandParameter="1">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="78"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="Hairline" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Height="1" CornerRadius="0.5" Margin="8,0,12,0"
+                                                                VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/>
+                                                        <TextBlock Grid.Column="2" Text="1 pt" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </RadioButton>
+                                                <RadioButton Style="{StaticResource OptionRow}"
+                                                             IsChecked="{Binding SelectedDocument.ActiveStrokeWidth, Converter={StaticResource NumEquals}, ConverterParameter=1.5, Mode=OneWay}"
+                                                             Command="{Binding SetToolWidthCommand}" CommandParameter="1.5">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="78"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="Fine" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Height="1.5" CornerRadius="0.75" Margin="8,0,12,0"
+                                                                VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/>
+                                                        <TextBlock Grid.Column="2" Text="1.5 pt" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </RadioButton>
+                                                <RadioButton Style="{StaticResource OptionRow}"
+                                                             IsChecked="{Binding SelectedDocument.ActiveStrokeWidth, Converter={StaticResource NumEquals}, ConverterParameter=2, Mode=OneWay}"
+                                                             Command="{Binding SetToolWidthCommand}" CommandParameter="2">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="78"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="Regular" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Height="2" CornerRadius="1.0" Margin="8,0,12,0"
+                                                                VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/>
+                                                        <TextBlock Grid.Column="2" Text="2 pt" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </RadioButton>
+                                                <RadioButton Style="{StaticResource OptionRow}"
+                                                             IsChecked="{Binding SelectedDocument.ActiveStrokeWidth, Converter={StaticResource NumEquals}, ConverterParameter=3, Mode=OneWay}"
+                                                             Command="{Binding SetToolWidthCommand}" CommandParameter="3">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="78"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="Bold" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Height="3" CornerRadius="1.5" Margin="8,0,12,0"
+                                                                VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/>
+                                                        <TextBlock Grid.Column="2" Text="3 pt" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </RadioButton>
+                                                <RadioButton Style="{StaticResource OptionRow}"
+                                                             IsChecked="{Binding SelectedDocument.ActiveStrokeWidth, Converter={StaticResource NumEquals}, ConverterParameter=4.5, Mode=OneWay}"
+                                                             Command="{Binding SetToolWidthCommand}" CommandParameter="4.5">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="78"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="Heavy" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Height="4.5" CornerRadius="2.25" Margin="8,0,12,0"
+                                                                VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/>
+                                                        <TextBlock Grid.Column="2" Text="4.5 pt" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </RadioButton>
+                                                <RadioButton Style="{StaticResource OptionRow}"
+                                                             IsChecked="{Binding SelectedDocument.ActiveStrokeWidth, Converter={StaticResource NumEquals}, ConverterParameter=6, Mode=OneWay}"
+                                                             Command="{Binding SetToolWidthCommand}" CommandParameter="6">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="78"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="Marker" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Height="6" CornerRadius="3.0" Margin="8,0,12,0"
+                                                                VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/>
+                                                        <TextBlock Grid.Column="2" Text="6 pt" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </RadioButton>
+                                            </StackPanel>
+
+                                            <!-- opacity -->
+                                            <StackPanel Visibility="{Binding SelectedDocument.ShowsOpacity, Converter={StaticResource BoolToVis}}">
+                                                <DockPanel Margin="0,14,0,0">
+                                                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource Caption}"
+                                                               Text="{Binding SelectedDocument.ActiveOpacityPercent}"/>
+                                                    <TextBlock Text="Opacity" Style="{StaticResource Caption}"/>
+                                                </DockPanel>
+                                                <Slider Style="{StaticResource OpacitySlider}" Margin="0,6,0,0"
+                                                        Minimum="0.2" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                                        SmallChange="0.05" LargeChange="0.1"
+                                                        Value="{Binding SelectedDocument.ActiveOpacity, Mode=TwoWay}"/>
+                                            </StackPanel>
+
+                                            <!-- highlight only: snap the drag to whole words -->
+                                            <DockPanel Margin="0,14,0,0"
+                                                       Visibility="{Binding SelectedDocument.ShowsSnap, Converter={StaticResource BoolToVis}}">
+                                                <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}"
+                                                              IsChecked="{Binding SelectedDocument.HighlightFreehand, Converter={StaticResource InvertBool}}"/>
+                                                <TextBlock Text="Snap to words" VerticalAlignment="Center"/>
+                                            </DockPanel>
                                         </StackPanel>
                                     </Border>
                                 </Popup>
-
-                                <!-- stroke thickness -->
-                                <Button Style="{StaticResource IconButton}" Click="OrganizeMenu_Click"
-                                        ToolTip="Stroke thickness">
-                                    <TextBlock Text="{Binding SelectedDocument.ActiveStrokeWidth, StringFormat={}{0} pt}"
-                                               FontSize="11" VerticalAlignment="Center"/>
-                                    <Button.ContextMenu>
-                                        <ContextMenu MinWidth="190">
-                                            <MenuItem Header="Hairline" InputGestureText="1 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="1">
-                                                <MenuItem.Icon><Border Width="16" Height="1" CornerRadius="1" VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/></MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="Fine" InputGestureText="1.5 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="1.5">
-                                                <MenuItem.Icon><Border Width="16" Height="1.5" CornerRadius="1" VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/></MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="Regular" InputGestureText="2 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="2">
-                                                <MenuItem.Icon><Border Width="16" Height="2" CornerRadius="1" VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/></MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="Bold" InputGestureText="3 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="3">
-                                                <MenuItem.Icon><Border Width="16" Height="3" CornerRadius="1.5" VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/></MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="Heavy" InputGestureText="4.5 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="4.5">
-                                                <MenuItem.Icon><Border Width="16" Height="4.5" CornerRadius="2" VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/></MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="Marker" InputGestureText="6 pt" Command="{Binding SetToolWidthCommand}" CommandParameter="6">
-                                                <MenuItem.Icon><Border Width="16" Height="6" CornerRadius="3" VerticalAlignment="Center" Background="{DynamicResource App.TextBrush}"/></MenuItem.Icon>
-                                            </MenuItem>
-                                        </ContextMenu>
-                                    </Button.ContextMenu>
-                                </Button>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -1093,73 +1430,12 @@
             </ItemsControl.ItemContainerStyle>
         </ItemsControl>
 
-        <!-- ======================= start page ======================= -->
-        <Grid Grid.Row="2" Visibility="{Binding Documents.Count, Converter={StaticResource ZeroToVis}}">
+        <!-- ======================= start screen (Home tab) ======================= -->
+        <!-- The library: pick a folder once (OneDrive, say) and browse its subfolders and PDFs
+             here. Shown whenever no document tab is selected. -->
+        <Grid Grid.Row="2" Visibility="{Binding SelectedDocument, Converter={StaticResource NullToVisInv}}">
             <ctrl:AmbientBackdrop/>
-            <Border Style="{StaticResource GlassCard}" Width="480" HorizontalAlignment="Center"
-                    VerticalAlignment="Center" Padding="36,40" RenderTransformOrigin="0.5,0.5">
-                <Border.RenderTransform>
-                    <TranslateTransform/>
-                </Border.RenderTransform>
-                <Border.Triggers>
-                    <EventTrigger RoutedEvent="Loaded">
-                        <BeginStoryboard Storyboard="{StaticResource RiseIn}"/>
-                    </EventTrigger>
-                </Border.Triggers>
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="32" ShadowDepth="6" Direction="270" Opacity="0.18"/>
-                </Border.Effect>
-                <StackPanel>
-                    <Grid Width="16" Height="16" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                        <Grid.RenderTransform>
-                            <ScaleTransform ScaleX="3.4" ScaleY="3.4"/>
-                        </Grid.RenderTransform>
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Outer}"
-                              Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.5"/>
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Inner}"
-                              Stroke="{DynamicResource App.BrandBlueBrush}" StrokeThickness="1.5"/>
-                    </Grid>
-                    <TextBlock Text="Graphite" Style="{StaticResource H1}" HorizontalAlignment="Center" Margin="0,34,0,2"/>
-                    <TextBlock Text="Read, mark up, and edit PDFs." Style="{StaticResource Caption}" FontSize="13" HorizontalAlignment="Center"/>
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,26,0,0">
-                        <Button Style="{StaticResource AccentButton}" Command="{Binding OpenCommand}" Content="Open document…"/>
-                        <Button Style="{StaticResource GhostButton}" Command="{Binding OpenOneDriveCommand}"
-                                Content="Open from OneDrive" Margin="10,0,0,0"/>
-                    </StackPanel>
-                    <TextBlock Text="or drag a PDF or Office file into this window"
-                               Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,12,0,0"/>
-
-                    <TextBlock Text="Recent files" Style="{StaticResource Caption}" Margin="6,30,0,6" FontSize="10"
-                               Visibility="{Binding RecentFiles.Count, Converter={StaticResource NonZeroToVis}}"/>
-                    <ListBox Style="{StaticResource GList}" ItemsSource="{Binding RecentFiles}" MaxHeight="220"
-                             SelectionChanged="RecentList_SelectionChanged">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="2,1">
-                                    <TextBlock Text="{Binding Converter={StaticResource FileName}}"
-                                               Style="{StaticResource Body}" FontSize="12.5"/>
-                                    <TextBlock Text="{Binding Converter={StaticResource FileDir}}"
-                                               Style="{StaticResource Caption}" Margin="0,1,0,0"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-
-                    <DockPanel Margin="4,22,0,0">
-                        <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Padding="4,2"
-                                Command="{Binding CheckForUpdatesCommand}" ToolTip="Check for updates">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Download}"
-                                      Width="11" Height="11" Stretch="Uniform" VerticalAlignment="Center"/>
-                                <TextBlock Text="Check for updates" Style="{StaticResource Caption}" Margin="5,0,0,0"/>
-                            </StackPanel>
-                        </Button>
-                        <TextBlock Text="{Binding AppVersion, StringFormat={}Version {0}}"
-                                   Style="{StaticResource Caption}" VerticalAlignment="Center"/>
-                    </DockPanel>
-                </StackPanel>
-            </Border>
+            <views:LibraryHome x:Name="HomeView" DataContext="{Binding Library}"/>
         </Grid>
 
         <!-- ======================= drop target ======================= -->
@@ -1182,12 +1458,18 @@
                 <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.28"/>
             </Border.Effect>
             <StackPanel>
-                <TextBlock x:Name="ToastTitle" FontWeight="SemiBold" FontSize="13"/>
-                <TextBlock x:Name="ToastText" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,3,0,0"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                    <Button Style="{StaticResource GhostButton}" Content="Later" Click="ToastDismiss_Click"/>
-                    <Button x:Name="ToastAction" Style="{StaticResource AccentButton}" Margin="8,0,0,0"
-                            Click="ToastAction_Click"/>
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Refresh}"
+                          Stroke="#5FCB7E" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ToastTitle" FontWeight="SemiBold" FontSize="13.5" Margin="9,0,0,0"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock x:Name="ToastText" Style="{StaticResource Caption}" FontSize="12" TextWrapping="Wrap"
+                           Margin="0,8,0,0"/>
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <Button x:Name="ToastAction" Style="{StaticResource AccentButton}" Click="ToastAction_Click"/>
+                    <Button Style="{StaticResource GhostButton}" Margin="6,0,0,0" BorderThickness="0"
+                            Background="Transparent" Content="Later" Click="ToastDismiss_Click"/>
                 </StackPanel>
             </StackPanel>
         </Border>

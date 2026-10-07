@@ -27,6 +27,8 @@ continuous / single-page / two-page spread layouts, page thumbnails, outline
 navigation, full-text search with per-page highlights, and multi-tab support —
 each tab remembers its scroll position.
 
+**Library start screen** — the Home tab is a mirror of one main folder (OneDrive by default): browse its subfolders like a file manager, search across them (Ctrl+F), pin files, and pick up where you stopped with a *Continue reading* card and per-file progress. Files that are online-only in OneDrive are marked with a cloud and never downloaded just to be listed. Choose the folder once from *Choose your main folder*; open documents stay open in their tabs behind Home.
+
 **Reading** — fullscreen mode (F11, Esc to leave), dark pages (inverted page colors
 for night reading, moon button in the page bar), and reading history: Alt+Left /
 Alt+Right walks back and forward through your jumps.

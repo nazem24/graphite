@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
+using System.Windows.Data;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Graphite.Core;
@@ -20,6 +22,12 @@ public enum ToolKind
 public enum PageLayout
 {
     Continuous, Single, Spread
+}
+
+/// <summary>Filter chips above the Markup panel's cards.</summary>
+public enum MarkupFilter
+{
+    All, Highlights, Notes, Ink
 }
 
 public enum PageOpKind { None, Rotate, Delete, Insert, Move }
@@ -90,9 +98,129 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string selectedText = "";
     [ObservableProperty] private PendingImage? selectedImage;
 
-    // Per-tool style (color + stroke width), editable from the toolbar.
+    // Per-tool style (color + stroke width + opacity), editable from the tool options popover.
     [ObservableProperty] private string activeColorHex = "#F2C744";
     [ObservableProperty] private double activeStrokeWidth = 1.5;
+
+    /// <summary>0..1 opacity applied to new markup (stored per tool, like colour and width).</summary>
+    [ObservableProperty] private double activeOpacity = 1.0;
+
+    /// <summary>Remembered opacity per tool. The freehand marker is keyed apart from the
+    /// text highlight because they share <see cref="ToolKind.Highlight"/>.</summary>
+    private readonly Dictionary<string, double> _toolOpacities = new()
+    {
+        ["Marker"] = FreehandHighlightOpacity,
+    };
+
+    private string OpacityKey() =>
+        ActiveTool == ToolKind.Highlight && HighlightFreehand ? "Marker" : ActiveTool.ToString();
+
+    private void LoadToolOpacity() =>
+        ActiveOpacity = _toolOpacities.TryGetValue(OpacityKey(), out var o) ? o : 1.0;
+
+    partial void OnActiveOpacityChanged(double value)
+    {
+        _toolOpacities[OpacityKey()] = value;
+        OnPropertyChanged(nameof(ActiveOpacityPercent));
+    }
+
+    /// <summary>Opacity as a whole percent for the slider read-out.</summary>
+    public string ActiveOpacityPercent => $"{Math.Round(ActiveOpacity * 100)}%";
+
+    // ---- what the tool options popover shows for the active tool ----
+
+    public string ToolTitle => ActiveTool switch
+    {
+        ToolKind.Select => "Select",
+        ToolKind.Highlight => HighlightFreehand ? "Marker" : "Highlight",
+        ToolKind.Underline => "Underline",
+        ToolKind.StrikeOut => "Strikethrough",
+        ToolKind.Ink => "Pen",
+        ToolKind.Eraser => "Eraser",
+        ToolKind.Rect => "Rectangle",
+        ToolKind.Ellipse => "Ellipse",
+        ToolKind.Text => "Text box",
+        ToolKind.Arrow => "Arrow",
+        ToolKind.Signature => "Signature",
+        ToolKind.Lasso => "Lasso",
+        ToolKind.EditText => "Edit page text",
+        ToolKind.PlaceImage => "Insert image",
+        _ => "Markup",
+    };
+
+    /// <summary>Single-letter shortcut shown next to the tool name ("" = none).</summary>
+    public string ToolKey => ActiveTool switch
+    {
+        ToolKind.Select => "V",
+        ToolKind.Highlight => HighlightFreehand ? "M" : "H",
+        ToolKind.Underline => "U",
+        ToolKind.StrikeOut => "S",
+        ToolKind.Ink => "P",
+        ToolKind.Eraser => "E",
+        ToolKind.Rect => "R",
+        ToolKind.Ellipse => "O",
+        ToolKind.Text => "T",
+        ToolKind.Arrow => "A",
+        ToolKind.Lasso => "L",
+        _ => "",
+    };
+
+    public bool ShowsColor => ActiveTool is not (ToolKind.Select or ToolKind.Eraser or ToolKind.EditText
+        or ToolKind.PlaceImage or ToolKind.Note);
+    public bool ShowsThickness => ActiveTool is ToolKind.Underline or ToolKind.StrikeOut or ToolKind.Ink
+        or ToolKind.Eraser or ToolKind.Rect or ToolKind.Ellipse or ToolKind.Arrow;
+    public bool ShowsOpacity => ActiveTool is ToolKind.Highlight or ToolKind.Underline or ToolKind.StrikeOut
+        or ToolKind.Ink or ToolKind.Rect or ToolKind.Ellipse or ToolKind.Arrow;
+    public bool ShowsSnap => ActiveTool == ToolKind.Highlight;
+    public bool HasToolOptions => ShowsColor || ShowsThickness || ShowsOpacity;
+
+    private void NotifyToolOptions()
+    {
+        OnPropertyChanged(nameof(ToolTitle));
+        OnPropertyChanged(nameof(ToolKey));
+        OnPropertyChanged(nameof(ShowsColor));
+        OnPropertyChanged(nameof(ShowsThickness));
+        OnPropertyChanged(nameof(ShowsOpacity));
+        OnPropertyChanged(nameof(ShowsSnap));
+        OnPropertyChanged(nameof(HasToolOptions));
+    }
+
+    // ---- Markup panel: filter chips + cards grouped by page ----
+
+    [ObservableProperty] private MarkupFilter markupFilter = MarkupFilter.All;
+
+    private ICollectionView? _markupView;
+
+    /// <summary>The annotations as the Markup panel lists them: sorted and grouped by page,
+    /// narrowed by <see cref="MarkupFilter"/>.</summary>
+    public ICollectionView MarkupView => _markupView ??= BuildMarkupView();
+
+    private ICollectionView BuildMarkupView()
+    {
+        var view = CollectionViewSource.GetDefaultView(Annotations);
+        view.SortDescriptions.Add(new SortDescription(nameof(AnnotationViewModel.PageIndex), ListSortDirection.Ascending));
+        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(AnnotationViewModel.PageLabel)));
+        view.Filter = o => o is AnnotationViewModel a && MatchesMarkupFilter(a, MarkupFilter);
+        return view;
+    }
+
+    private static bool MatchesMarkupFilter(AnnotationViewModel a, MarkupFilter f) =>
+        f == MarkupFilter.All || a.Category == f;
+
+    partial void OnMarkupFilterChanged(MarkupFilter value) => _markupView?.Refresh();
+
+    public int MarkupCountAll => Annotations.Count;
+    public int MarkupCountHighlights => Annotations.Count(a => a.Category == MarkupFilter.Highlights);
+    public int MarkupCountNotes => Annotations.Count(a => a.Category == MarkupFilter.Notes);
+    public int MarkupCountInk => Annotations.Count(a => a.Category == MarkupFilter.Ink);
+
+    private void RefreshMarkupCounts()
+    {
+        OnPropertyChanged(nameof(MarkupCountAll));
+        OnPropertyChanged(nameof(MarkupCountHighlights));
+        OnPropertyChanged(nameof(MarkupCountNotes));
+        OnPropertyChanged(nameof(MarkupCountInk));
+    }
 
     /// <summary>Highlight tool sub-mode: false = drag over text to snap-highlight words,
     /// true = draw a freehand translucent marker stroke anywhere on the page.</summary>
@@ -309,6 +437,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             Pages.Add(new PageViewModel(this, i));
         foreach (var node in outline) Outline.Add(node);
         foreach (var a in annotations) Annotations.Add(new AnnotationViewModel(this, a));
+        Annotations.CollectionChanged += (_, _) => RefreshMarkupCounts();
         RefreshVisiblePages();
     }
 
@@ -527,14 +656,18 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         if (value != ToolKind.Lasso) ClearLasso();
         if (_toolColors.TryGetValue(value, out var color)) ActiveColorHex = color;
         if (_toolWidths.TryGetValue(value, out var width)) ActiveStrokeWidth = width;
+        LoadToolOpacity();
         OnPropertyChanged(nameof(IsTextHighlightActive));
         OnPropertyChanged(nameof(IsFreehandMarkerActive));
+        NotifyToolOptions();
     }
 
     partial void OnHighlightFreehandChanged(bool value)
     {
+        LoadToolOpacity();
         OnPropertyChanged(nameof(IsTextHighlightActive));
         OnPropertyChanged(nameof(IsFreehandMarkerActive));
+        NotifyToolOptions();
     }
 
     partial void OnActiveColorHexChanged(string value) => _toolColors[ActiveTool] = value;

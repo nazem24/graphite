@@ -31,18 +31,50 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<PaletteCommand> PaletteResults { get; } = new();
     private List<PaletteCommand> _paletteCommands = new();
 
+    /// <summary>The start screen's folder library (Home tab).</summary>
+    public LibraryViewModel Library { get; }
+
     public MainViewModel()
     {
         IsDarkTheme = ThemeService.IsDark;
         foreach (var f in ThemeService.RecentFiles) RecentFiles.Add(f);
+        Library = new LibraryViewModel(this);
+        Library.Initialize();
     }
 
     private static Window? Owner => Application.Current.MainWindow;
 
+    /// <summary>True while the Home tab (start screen) is showing instead of a document.</summary>
+    public bool IsHomeSelected => SelectedDocument == null;
+
+    /// <summary>Switch to the Home tab. Open documents stay open in their own tabs.</summary>
+    [RelayCommand]
+    private void GoHome() => SelectedDocument = null;
+
     partial void OnSelectedDocumentChanged(DocumentViewModel? oldValue, DocumentViewModel? newValue)
     {
-        if (oldValue != null) oldValue.IsActive = false;
+        if (oldValue != null)
+        {
+            oldValue.IsActive = false;
+            SaveReadingPosition(oldValue);
+        }
         if (newValue != null) newValue.IsActive = true;
+        OnPropertyChanged(nameof(IsHomeSelected));
+        if (newValue == null) Library.OnHomeShown();
+    }
+
+    /// <summary>Remember the page this document was left on, so the start screen can offer
+    /// "continue reading" and reopen the file where it stopped.</summary>
+    private static void SaveReadingPosition(DocumentViewModel doc)
+    {
+        if (doc.FilePath is { Length: > 0 } path && doc.Pages.Count > 0)
+            ThemeService.SetReading(path, doc.CurrentPageIndex, doc.Pages.Count);
+    }
+
+    /// <summary>Save where every open document is (the window is closing).</summary>
+    public void SaveAllReadingPositions()
+    {
+        foreach (var doc in Documents) SaveReadingPosition(doc);
     }
 
     private static void Error(Exception ex)
@@ -90,7 +122,10 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private Task OpenRecent(string path) => OpenFilesAsync(new[] { path });
 
-    public async Task OpenFilesAsync(IEnumerable<string> paths)
+    /// <param name="activate">False opens the file in a background tab and leaves the current
+    /// tab (or the start screen) showing — the library's "open in new tab" button.</param>
+    /// <param name="resume">Reopen a PDF on the page the person last left it on.</param>
+    public async Task OpenFilesAsync(IEnumerable<string> paths, bool activate = true, bool resume = false)
     {
         foreach (string path in paths)
         {
@@ -99,12 +134,12 @@ public partial class MainViewModel : ObservableObject
                 // Already open? Just focus it.
                 var existing = Documents.FirstOrDefault(d =>
                     string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
-                if (existing != null) { SelectedDocument = existing; continue; }
+                if (existing != null) { if (activate) SelectedDocument = existing; continue; }
 
                 if (OfficeToPdf.CanConvert(path))
                     await OpenOfficeAsPdfAsync(path);
                 else
-                    await OpenPdfAsync(path);
+                    await OpenPdfAsync(path, activate, resume);
             }
             catch (Exception ex) { Error(ex); }
         }
@@ -157,12 +192,12 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private async Task OpenPdfAsync(string path)
+    private async Task OpenPdfAsync(string path, bool activate = true, bool resume = false)
     {
         // Already open? Just focus it.
         var existing = Documents.FirstOrDefault(d =>
             string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
-        if (existing != null) { SelectedDocument = existing; return; }
+        if (existing != null) { if (activate) SelectedDocument = existing; return; }
 
         byte[] bytes = await File.ReadAllBytesAsync(path);
         DocumentViewModel doc;
@@ -186,8 +221,14 @@ public partial class MainViewModel : ObservableObject
         RecentFiles.Remove(path);
         RecentFiles.Insert(0, path);
 
+        // From the library: pick up where the person stopped. Either way, stamp "last opened"
+        // so the start screen can show it under Recent.
+        if (resume && ThemeService.GetReading(path) is { Page: > 0 } saved && saved.Page < doc.Pages.Count)
+            doc.CurrentPageIndex = saved.Page;
+        SaveReadingPosition(doc);
+
         Documents.Add(doc);
-        SelectedDocument = doc;
+        if (activate) SelectedDocument = doc;
     }
 
     private static (byte[] Bytes, string Password)? PromptAndDecrypt(byte[] bytes, string fileName)
@@ -236,6 +277,7 @@ public partial class MainViewModel : ObservableObject
             try { await TabClosing(doc); }
             catch (Exception ex) { App.LogError("Tab close animation failed", ex); }
         }
+        SaveReadingPosition(doc);
         Documents.Remove(doc);
         if (wasSelected || SelectedDocument == null || ReferenceEquals(SelectedDocument, doc))
             SelectedDocument = Documents.Count > 0 ? Documents[Math.Clamp(index, 0, Documents.Count - 1)] : null;
@@ -763,6 +805,8 @@ public partial class MainViewModel : ObservableObject
         var list = new List<PaletteCommand>
         {
             new("Open document…", "Ctrl+O", () => _ = Open()),
+            new("Go to Home (library)", null, GoHome),
+            new("Choose library folder…", null, () => Library.ChooseFolderCommand.Execute(null)),
             new("Merge PDFs…", null, () => _ = Merge()),
             new("Toggle theme", null, ToggleTheme),
             new("Toggle fullscreen", "F11", ToggleFullscreen),

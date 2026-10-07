@@ -162,13 +162,17 @@ public partial class MainWindow : Window
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         var dirty = ViewModel.Documents.Where(d => d.IsDirty).ToList();
-        if (dirty.Count == 0) return;
-        var answer = MessageDialog.Show(this,
-            dirty.Count == 1
-                ? "1 document has unsaved changes. Close anyway?"
-                : $"{dirty.Count} documents have unsaved changes. Close anyway?",
-            "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
-        if (answer != MessageBoxResult.Yes) e.Cancel = true;
+        if (dirty.Count > 0)
+        {
+            var answer = MessageDialog.Show(this,
+                dirty.Count == 1
+                    ? "1 document has unsaved changes. Close anyway?"
+                    : $"{dirty.Count} documents have unsaved changes. Close anyway?",
+                "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
+            if (answer != MessageBoxResult.Yes) { e.Cancel = true; return; }
+        }
+        // The start screen's "continue reading" needs to know where each open tab stood.
+        ViewModel.SaveAllReadingPositions();
     }
 
     private void Documents_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -266,19 +270,6 @@ public partial class MainWindow : Window
         _restoreGen++;
         _restoring = true;
         RestoreScrollWhenReady(lb, doc, target, 0, _restoreGen);
-    }
-
-    private async void RecentList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (sender is ListBox { SelectedItem: string path } lb)
-        {
-            lb.SelectedItem = null;
-            if (File.Exists(path))
-                await ViewModel.OpenFilesAsync(new[] { path });
-            else
-                MessageDialog.Show(this, "That file no longer exists.", "Graphite",
-                    DialogButtons.OK, DialogIcon.Info);
-        }
     }
 
     private static ScrollViewer? FindScrollViewer(DependencyObject root) => FindDescendant<ScrollViewer>(root);
@@ -485,6 +476,7 @@ public partial class MainWindow : Window
 
     private void PagesHost_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        NotePageBarActivity();
         if (sender is not ListBox lb || lb.DataContext is not DocumentViewModel doc || !doc.IsContinuous)
             return;
 
@@ -1483,6 +1475,15 @@ public partial class MainWindow : Window
             if (e.Key == Key.Delete) { doc.DeleteLassoSelection(); e.Handled = true; return; }
         }
 
+        // Single-letter tool keys (V select, H highlight, P pen …), shown in the tooltips and the
+        // options popover. Only when nothing is being typed and no modifier is held.
+        if (doc != null && Keyboard.Modifiers == ModifierKeys.None && PageKeysAvailable() &&
+            TryToolKey(doc, e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         // Page stepping: Up/Down (and PageUp/PageDown) go to the previous/next page,
         // Home/End to the first/last — unless the focus is somewhere that wants those keys.
         if (doc != null && Keyboard.Modifiers == ModifierKeys.None && PageKeysAvailable())
@@ -1529,6 +1530,11 @@ public partial class MainWindow : Window
             _ = doc.RedoAsync();
             e.Handled = true;
         }
+        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.SelectedDocument == null)
+        {
+            HomeView.FocusSearch();
+            e.Handled = true;
+        }
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
             ViewModel.ShowInspector = true;
@@ -1573,6 +1579,33 @@ public partial class MainWindow : Window
             doc.RequestEditFreeText(selFt);
             e.Handled = true;
         }
+    }
+
+    private static bool TryToolKey(DocumentViewModel doc, Key key)
+    {
+        switch (key)
+        {
+            case Key.V: doc.ActiveTool = ToolKind.Select; return true;
+            case Key.H: doc.IsTextHighlightActive = true; return true;
+            case Key.M: doc.IsFreehandMarkerActive = true; return true;
+            case Key.U: doc.ActiveTool = ToolKind.Underline; return true;
+            case Key.S: doc.ActiveTool = ToolKind.StrikeOut; return true;
+            case Key.P: doc.ActiveTool = ToolKind.Ink; return true;
+            case Key.E: doc.ActiveTool = ToolKind.Eraser; return true;
+            case Key.L: doc.ActiveTool = ToolKind.Lasso; return true;
+            case Key.T: doc.ActiveTool = ToolKind.Text; return true;
+            case Key.A: doc.ActiveTool = ToolKind.Arrow; return true;
+            case Key.R: doc.ActiveTool = ToolKind.Rect; return true;
+            case Key.O: doc.ActiveTool = ToolKind.Ellipse; return true;
+            default: return false;
+        }
+    }
+
+    /// <summary>File ▸ Open recent: a recent file was picked.</summary>
+    private void RecentFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: string path } && !string.IsNullOrWhiteSpace(path))
+            ViewModel.OpenRecentCommand.Execute(path);
     }
 
     /// <summary>False while the keyboard focus sits in something that uses the arrow keys

@@ -1,6 +1,7 @@
 using Graphite.Core;
 using Graphite.Core.Annotations;
 using Graphite.Core.Export;
+using Graphite.Core.Library;
 using Graphite.Core.Pdf;
 using Graphite.Core.Text;
 using PdfSharp.Pdf;
@@ -338,5 +339,119 @@ public class PdfSecurityTests
     {
         // A corrupt file must surface as "broken", not as a password prompt.
         Assert.False(PdfSecurity.IsPasswordProtected(new byte[] { 1, 2, 3, 4, 5 }));
+    }
+}
+
+public sealed class LibraryScannerTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "graphite-lib-" + Guid.NewGuid().ToString("N"));
+
+    public LibraryScannerTests()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "CPE", "Slides"));
+        Directory.CreateDirectory(Path.Combine(_root, ".Hidden"));
+        Directory.CreateDirectory(Path.Combine(_root, "$Recycle"));
+        File.WriteAllText(Path.Combine(_root, "root.pdf"), "x");
+        File.WriteAllText(Path.Combine(_root, "CPE", "Summary module 1.pdf"), "x");
+        File.WriteAllText(Path.Combine(_root, "CPE", "notes.txt"), "x");
+        File.WriteAllText(Path.Combine(_root, "CPE", "Slides", "Lecture week 1.PDF"), "x");
+        File.WriteAllText(Path.Combine(_root, "CPE", "Slides", "deck.pptx"), "x");
+        File.WriteAllText(Path.Combine(_root, "CPE", "~$deck.pptx"), "x");
+        File.WriteAllText(Path.Combine(_root, ".Hidden", "a.pdf"), "x");
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, true); } catch { /* temp folder */ }
+    }
+
+    [Fact]
+    public void ListsSubfoldersWithRecursivePdfCounts()
+    {
+        var subs = LibraryScanner.ScanSubfolders(_root, includeOffice: false);
+        // dot-folders are listed (".Studium" is a real library folder), "$" system folders are not
+        Assert.Equal(new[] { ".Hidden", "CPE" }, subs.Select(s => s.Name).ToArray());
+        Assert.Equal(2, subs.Single(s => s.Name == "CPE").PdfCount);
+        Assert.NotNull(subs.Single(s => s.Name == "CPE").PreviewFile);
+    }
+
+    [Fact]
+    public void AllTypesListsEveryOrdinaryFileButNotLockFiles()
+    {
+        string cpe = Path.Combine(_root, "CPE");
+        Assert.Equal(new[] { "Summary module 1.pdf" },
+            LibraryScanner.ScanFiles(cpe, includeOffice: false).Select(f => f.Name).ToArray());
+        var all = LibraryScanner.ScanFiles(cpe, includeOffice: false, allTypes: true).Select(f => f.Name).OrderBy(n => n).ToArray();
+        Assert.Equal(new[] { "notes.txt", "Summary module 1.pdf" }, all);
+        Assert.Contains(LibraryScanner.Search(cpe, "notes", false, allTypes: true), f => f.Name == "notes.txt");
+        Assert.Empty(LibraryScanner.Search(cpe, "notes", false));
+    }
+
+    [Fact]
+    public void OfficeFilesCountOnlyWhenAskedAndLockFilesNever()
+    {
+        var withOffice = LibraryScanner.ScanSubfolders(_root, includeOffice: true);
+        Assert.Equal(3, withOffice.Single(s => s.Name == "CPE").PdfCount); // 2 PDFs + deck.pptx, not ~$deck.pptx
+        Assert.False(LibraryScanner.IsSupported("~$deck.pptx", true));
+        Assert.True(LibraryScanner.IsSupported("a.DOCX", true));
+        Assert.False(LibraryScanner.IsSupported("a.docx", false));
+    }
+
+    [Fact]
+    public void ScanFilesListsOnlyTheFolderItself()
+    {
+        Assert.Single(LibraryScanner.ScanFiles(_root, false));
+        Assert.Single(LibraryScanner.ScanFiles(Path.Combine(_root, "CPE"), false));
+    }
+
+    [Fact]
+    public void CountTotalsMatchesWhatTheDialogPromises()
+    {
+        var (subfolders, files) = LibraryScanner.CountTotals(_root, false);
+        Assert.Equal(2, subfolders);
+        Assert.Equal(4, files);
+    }
+
+    [Fact]
+    public void SearchMatchesEveryWordBelowTheFolder()
+    {
+        var hits = LibraryScanner.Search(_root, "lecture 1", false);
+        Assert.Equal("Lecture week 1.PDF", Assert.Single(hits).Name);
+        Assert.Empty(LibraryScanner.Search(_root, "nothing-like-this", false));
+    }
+
+    [Fact]
+    public void OnlineOnlyIsRecognizedFromTheCloudAttributes()
+    {
+        Assert.True(LibraryScanner.IsOnlineOnly((FileAttributes)0x400000)); // recall on data access
+        Assert.True(LibraryScanner.IsOnlineOnly((FileAttributes)0x40000));  // recall on open
+        Assert.False(LibraryScanner.IsOnlineOnly(FileAttributes.Normal | FileAttributes.Archive));
+    }
+
+    [Fact]
+    public void PathHelpersDoNotConfuseSiblingsWithChildren()
+    {
+        string cpe = Path.Combine(_root, "CPE");
+        Assert.True(LibraryScanner.IsSameOrChild(_root, cpe));
+        Assert.True(LibraryScanner.IsSameOrChild(_root, _root + Path.DirectorySeparatorChar));
+        Assert.False(LibraryScanner.IsSameOrChild(Path.Combine(_root, "CP"), cpe));
+    }
+
+    [Fact]
+    public void TextHelpersReadNaturally()
+    {
+        var now = new DateTime(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc);
+        Assert.Equal("just now", LibraryScanner.Ago(now.AddSeconds(-20), now));
+        Assert.Equal("5 min ago", LibraryScanner.Ago(now.AddMinutes(-5), now));
+        Assert.Equal("2 h ago", LibraryScanner.Ago(now.AddHours(-2), now));
+        Assert.Equal("yesterday", LibraryScanner.Ago(now.AddDays(-1.5), now));
+        Assert.Equal("5 days ago", LibraryScanner.Ago(now.AddDays(-5), now));
+        Assert.Equal("2 weeks ago", LibraryScanner.Ago(now.AddDays(-15), now));
+        Assert.Equal("2.1 MB", LibraryScanner.FormatSize(2_200_000));
+        Assert.Equal("310 KB", LibraryScanner.FormatSize(310 * 1024));
+        Assert.Equal("95 B", LibraryScanner.FormatSize(95));
+        Assert.Equal("1 folder", LibraryScanner.Plural(1, "folder"));
+        Assert.Equal("7 folders", LibraryScanner.Plural(7, "folder"));
+        Assert.Equal("2 matches", LibraryScanner.Plural(2, "match", "matches"));
     }
 }

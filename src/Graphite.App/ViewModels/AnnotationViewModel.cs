@@ -51,6 +51,59 @@ public partial class AnnotationViewModel : ObservableObject
         }
     }
 
+    /// <summary>Short page tag for the card header ("p. 3").</summary>
+    public string PageShort => $"p. {Model.PageIndex + 1}";
+
+    /// <summary>Which Markup-panel filter chip this annotation belongs to.</summary>
+    public MarkupFilter Category => Model.Kind switch
+    {
+        AnnotationKind.Highlight when !Model.IsFreehand => MarkupFilter.Highlights,
+        AnnotationKind.Underline or AnnotationKind.StrikeOut => MarkupFilter.Highlights,
+        AnnotationKind.Note or AnnotationKind.FreeText => MarkupFilter.Notes,
+        _ => MarkupFilter.Ink,
+    };
+
+    /// <summary>A translucent version of the swatch colour, for the quoted-text block.</summary>
+    public Brush SwatchSoft
+    {
+        get
+        {
+            try
+            {
+                var c = (Color)ColorConverter.ConvertFromString(Model.ColorHex);
+                var b = new SolidColorBrush(Color.FromArgb(0x38, c.R, c.G, c.B));
+                b.Freeze();
+                return b;
+            }
+            catch { return Brushes.Transparent; }
+        }
+    }
+
+    private string? _quote;
+
+    /// <summary>The page text a text-markup annotation covers ("" for everything else), quoted
+    /// inside its card so the list can be scanned without jumping to each page.</summary>
+    public string Quote
+    {
+        get
+        {
+            if (_quote != null) return _quote;
+            if (Category != MarkupFilter.Highlights || Model.Quads.Count == 0) return _quote = "";
+            try
+            {
+                var parts = Model.Quads
+                    .Select(q => Doc.Index.TextInRect(Model.PageIndex, q).Trim())
+                    .Where(t => t.Length > 0);
+                var text = string.Join(" ", parts);
+                if (text.Length > 280) text = text[..280].TrimEnd() + "…";
+                return _quote = text;
+            }
+            catch { return _quote = ""; }
+        }
+    }
+
+    public bool HasQuote => Quote.Length > 0;
+
     public string Contents
     {
         get => Model.Contents;

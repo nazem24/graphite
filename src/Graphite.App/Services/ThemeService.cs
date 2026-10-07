@@ -5,6 +5,15 @@ using Graphite.App.Interop;
 
 namespace Graphite.App.Services;
 
+/// <summary>Where the person stopped in a document (shown as the start screen's progress bar
+/// and used to reopen the file on that page).</summary>
+public sealed class ReadingInfo
+{
+    public int Page { get; set; }
+    public int PageCount { get; set; }
+    public DateTime LastOpenedUtc { get; set; }
+}
+
 public static class ThemeService
 {
     private sealed class Settings
@@ -18,6 +27,19 @@ public static class ThemeService
         /// <summary>Saved signature: strokes of x,y pairs in a normalized 0..1 box
         /// (Y scaled by the aspect ratio so shapes keep their proportions).</summary>
         public List<List<double[]>> Signature { get; set; } = new();
+
+        // ---- start-screen library ----
+        /// <summary>The folders chosen as library roots (the first-run picker adds one).</summary>
+        public List<string> LibraryRoots { get; set; } = new();
+        /// <summary>The root currently shown on the start screen.</summary>
+        public string? ActiveLibraryRoot { get; set; }
+        /// <summary>Also list Word / Excel / PowerPoint files (converted to PDF when opened).</summary>
+        public bool LibraryIncludeOffice { get; set; }
+        public string LibrarySort { get; set; } = "Name";
+        public bool LibraryGrid { get; set; } = true;
+        public List<string> PinnedFiles { get; set; } = new();
+        /// <summary>Where the person stopped reading, per file path.</summary>
+        public Dictionary<string, ReadingInfo> Reading { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     private static Settings _settings = new();
@@ -50,6 +72,12 @@ public static class ThemeService
             System.Diagnostics.Debug.WriteLine($"Settings load failed, using defaults: {ex.Message}");
             _settings = new Settings();
         }
+        // The JSON round-trip drops the dictionary's comparer (and a hand-edited file may carry
+        // nulls): rebuild the library collections so they are always usable.
+        _settings.Reading = new Dictionary<string, ReadingInfo>(
+            _settings.Reading ?? new(), StringComparer.OrdinalIgnoreCase);
+        _settings.LibraryRoots ??= new();
+        _settings.PinnedFiles ??= new();
         Motion.UserReduced = _settings.ReduceMotion;
         ApplyTheme(_settings.DarkTheme);
     }
@@ -157,8 +185,66 @@ public static class ThemeService
     {
         _settings.RecentFiles.Remove(path);
         _settings.RecentFiles.Insert(0, path);
-        if (_settings.RecentFiles.Count > 10)
-            _settings.RecentFiles.RemoveRange(10, _settings.RecentFiles.Count - 10);
+        if (_settings.RecentFiles.Count > 30)
+            _settings.RecentFiles.RemoveRange(30, _settings.RecentFiles.Count - 30);
+        Save();
+    }
+
+    // ------------------------------------------------------------- start-screen library
+
+    public static IReadOnlyList<string> LibraryRoots => _settings.LibraryRoots;
+    public static string? ActiveLibraryRoot => _settings.ActiveLibraryRoot;
+    public static bool LibraryIncludeOffice => _settings.LibraryIncludeOffice;
+    public static string LibrarySort => _settings.LibrarySort;
+    public static bool LibraryGrid => _settings.LibraryGrid;
+    public static IReadOnlyList<string> PinnedFiles => _settings.PinnedFiles;
+
+    public static void SetLibrary(IEnumerable<string> roots, string? active, bool includeOffice)
+    {
+        _settings.LibraryRoots = roots.ToList();
+        _settings.ActiveLibraryRoot = active;
+        _settings.LibraryIncludeOffice = includeOffice;
+        Save();
+    }
+
+    public static void SetLibraryView(string sort, bool grid)
+    {
+        _settings.LibrarySort = sort;
+        _settings.LibraryGrid = grid;
+        Save();
+    }
+
+    public static bool IsPinned(string path) =>
+        _settings.PinnedFiles.Contains(path, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Pin / unpin a file; returns the new state.</summary>
+    public static bool TogglePinned(string path)
+    {
+        int at = _settings.PinnedFiles.FindIndex(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        bool pinned = at < 0;
+        if (pinned) _settings.PinnedFiles.Insert(0, path);
+        else _settings.PinnedFiles.RemoveAt(at);
+        Save();
+        return pinned;
+    }
+
+    public static ReadingInfo? GetReading(string path) =>
+        _settings.Reading.TryGetValue(path, out var info) ? info : null;
+
+    /// <summary>Remember the page a file was left on (also stamps "last opened").</summary>
+    public static void SetReading(string path, int page, int pageCount)
+    {
+        if (string.IsNullOrEmpty(path) || pageCount <= 0) return;
+        _settings.Reading[path] = new ReadingInfo
+        {
+            Page = Math.Clamp(page, 0, pageCount - 1),
+            PageCount = pageCount,
+            LastOpenedUtc = DateTime.UtcNow,
+        };
+        // Keep the map bounded: forget the files opened longest ago.
+        if (_settings.Reading.Count > 400)
+            foreach (var old in _settings.Reading.OrderBy(kv => kv.Value.LastOpenedUtc).Take(_settings.Reading.Count - 300).Select(kv => kv.Key).ToList())
+                _settings.Reading.Remove(old);
         Save();
     }
 

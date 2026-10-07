@@ -41,6 +41,10 @@
     <SolidColorBrush x:Key="App.SelectionBrush" Color="#1FFFFFFF"/>
     <SolidColorBrush x:Key="App.ToolCheckedBrush" Color="#2EFFFFFF"/>
 
+    <!-- keyboard focus: a light ring with a dark gap, readable on any backdrop -->
+    <SolidColorBrush x:Key="App.FocusRingBrush" Color="#F4F4F0"/>
+    <SolidColorBrush x:Key="App.FocusGapBrush" Color="#141416"/>
+
     <Color x:Key="App.SearchHighlightColor">#6E8FB0</Color>
     <Color x:Key="App.SelectionColor">#7FA0C0</Color>
 

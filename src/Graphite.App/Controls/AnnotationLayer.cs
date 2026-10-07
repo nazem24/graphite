@@ -127,14 +127,14 @@ public sealed class AnnotationLayer : FrameworkElement
 
         if (_doc.ActiveTool == ToolKind.Ink)
         {
-            var pen = FrozenPen(new Pen(Brush(_doc.ActiveColorHex), _doc.ActiveStrokeWidth * s)
+            var pen = FrozenPen(new Pen(Brush(_doc.ActiveColorHex, _doc.ActiveOpacity), _doc.ActiveStrokeWidth * s)
             { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round });
             dc.DrawGeometry(null, pen, Polyline(_inkPoints, s));
         }
         else if (IsFreehandHighlight)
         {
             var pen = FrozenPen(new Pen(
-                Brush(_doc.ActiveColorHex, DocumentViewModel.FreehandHighlightOpacity),
+                Brush(_doc.ActiveColorHex, _doc.ActiveOpacity),
                 Math.Max(4.0, DocumentViewModel.FreehandHighlightWidth * s))
             { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round });
             dc.DrawGeometry(null, pen, Polyline(_inkPoints, s));
@@ -576,6 +576,7 @@ public sealed class AnnotationLayer : FrameworkElement
                     Bounds = rect,
                     ColorHex = _doc.ActiveColorHex,
                     StrokeWidth = _doc.ActiveStrokeWidth,
+                    Opacity = _doc.ActiveOpacity,
                 });
                 break;
 
@@ -605,6 +606,7 @@ public sealed class AnnotationLayer : FrameworkElement
                     Bounds = rect.Inflate(4),
                     ColorHex = _doc.ActiveColorHex,
                     StrokeWidth = _doc.ActiveStrokeWidth,
+                    Opacity = _doc.ActiveOpacity,
                 });
                 break;
 
@@ -658,6 +660,7 @@ public sealed class AnnotationLayer : FrameworkElement
             Quads = quads,
             ColorHex = _doc.ActiveColorHex,
             StrokeWidth = _doc.ActiveStrokeWidth,
+            Opacity = _doc.ActiveOpacity,
         });
     }
 
@@ -839,8 +842,9 @@ public sealed class AnnotationLayer : FrameworkElement
             PageIndex = _page!.Index,
             Bounds = new RectD(minX, minY, maxX - minX, maxY - minY).Inflate(2),
             Strokes = { pts },
-            ColorHex = "#3E6DB5",
-            StrokeWidth = 1.8,
+            ColorHex = _doc.ActiveColorHex,
+            StrokeWidth = _doc.ActiveStrokeWidth,
+            Opacity = _doc.ActiveOpacity,
         });
     }
 
@@ -863,7 +867,7 @@ public sealed class AnnotationLayer : FrameworkElement
             Strokes = { pts },
             ColorHex = _doc.ActiveColorHex,
             StrokeWidth = w,
-            Opacity = DocumentViewModel.FreehandHighlightOpacity,
+            Opacity = _doc.ActiveOpacity,
         });
     }
 
@@ -1231,13 +1235,13 @@ public sealed class AnnotationLayer : FrameworkElement
                 break;
 
             case AnnotationKind.Underline:
-                var up = FrozenPen(new Pen(Brush(a.ColorHex), Math.Max(1.0, a.StrokeWidth * s)));
+                var up = FrozenPen(new Pen(Brush(a.ColorHex, a.Opacity), Math.Max(1.0, a.StrokeWidth * s)));
                 foreach (var q in a.Quads)
                     dc.DrawLine(up, new Point(q.Left * s, q.Bottom * s), new Point(q.Right * s, q.Bottom * s));
                 break;
 
             case AnnotationKind.StrikeOut:
-                var sp = FrozenPen(new Pen(Brush(a.ColorHex), Math.Max(1.0, a.StrokeWidth * s)));
+                var sp = FrozenPen(new Pen(Brush(a.ColorHex, a.Opacity), Math.Max(1.0, a.StrokeWidth * s)));
                 foreach (var q in a.Quads)
                 {
                     double midY = (q.Top + q.Bottom) / 2 * s;
@@ -1253,12 +1257,12 @@ public sealed class AnnotationLayer : FrameworkElement
                 break;
 
             case AnnotationKind.Square:
-                dc.DrawRectangle(null, FrozenPen(new Pen(Brush(a.ColorHex), a.StrokeWidth * s)), ToRect(a.Bounds, s));
+                dc.DrawRectangle(null, FrozenPen(new Pen(Brush(a.ColorHex, a.Opacity), a.StrokeWidth * s)), ToRect(a.Bounds, s));
                 break;
 
             case AnnotationKind.Circle:
                 var r = ToRect(a.Bounds, s);
-                dc.DrawEllipse(null, FrozenPen(new Pen(Brush(a.ColorHex), a.StrokeWidth * s)),
+                dc.DrawEllipse(null, FrozenPen(new Pen(Brush(a.ColorHex, a.Opacity), a.StrokeWidth * s)),
                     new Point(r.X + r.Width / 2, r.Y + r.Height / 2), r.Width / 2, r.Height / 2);
                 break;
 
