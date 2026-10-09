@@ -107,6 +107,24 @@ public static class PageOperations
         return SaveToBytes(doc);
     }
 
+    /// <summary>A PDF whose pages are the given image files, each stretched over a page of
+    /// <paramref name="widthPt"/> x <paramref name="heightPt"/> points (used to print a document
+    /// when Office is not available to make a real, text-based PDF).</summary>
+    public static byte[] FromImages(IReadOnlyList<string> imagePaths, double widthPt, double heightPt)
+    {
+        using var doc = new PdfDocument();
+        foreach (string path in imagePaths)
+        {
+            var page = doc.AddPage();
+            page.Width = PdfSharp.Drawing.XUnit.FromPoint(widthPt);
+            page.Height = PdfSharp.Drawing.XUnit.FromPoint(heightPt);
+            using var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(page);
+            using var img = PdfSharp.Drawing.XImage.FromFile(path);
+            gfx.DrawImage(img, 0, 0, widthPt, heightPt);
+        }
+        return SaveToBytes(doc);
+    }
+
     /// <summary>Parse "1,3-5,8" (1-based) into 0-based indices. Throws FormatException on bad input.</summary>
     public static List<int> ParsePageRanges(string ranges, int pageCount)
     {

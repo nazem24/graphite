@@ -749,6 +749,11 @@
                 </Border>
             </Grid>
         </DataTemplate>
+
+        <!-- An open document of the built-in editor: one editor per document, stacked like the PDFs. -->
+        <DataTemplate x:Key="WriterTemplate" DataType="{x:Type vm:WriterViewModel}">
+            <views:WriterView/>
+        </DataTemplate>
     </Window.Resources>
 
     <Window.InputBindings>
@@ -758,7 +763,9 @@
         <KeyBinding Modifiers="Ctrl" Key="P" Command="{Binding PrintCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="K" Command="{Binding OpenPaletteCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="W" Command="{Binding CloseDocumentCommand}"
-                    CommandParameter="{Binding SelectedDocument}"/>
+                    CommandParameter="{Binding SelectedTab}"/>
+        <KeyBinding Modifiers="Ctrl" Key="N" Command="{Binding NewDocumentCommand}"/>
+        <KeyBinding Modifiers="Ctrl+Shift" Key="N" Command="{Binding Library.NewFolderCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="G" Command="{Binding GoToPageDialogCommand}"/>
         <KeyBinding Modifiers="Alt" Key="Return" Command="{Binding ShowPropertiesCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="OemPlus" Command="{Binding ZoomInCommand}"/>
@@ -787,12 +794,13 @@
             <ListBox x:Name="TabStrip" Style="{StaticResource DocTabStrip}"
                      ItemContainerStyle="{StaticResource DocTabItem}"
                      HorizontalAlignment="Left" VerticalAlignment="Center"
-                     ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}"
+                     ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
                      SelectionChanged="TabStrip_SelectionChanged"
                      PreviewMouseWheel="TabStrip_PreviewMouseWheel"
                      PreviewMouseDown="TabStrip_PreviewMouseDown">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
+                <ListBox.Resources>
+                    <!-- a PDF -->
+                    <DataTemplate DataType="{x:Type vm:DocumentViewModel}">
                         <StackPanel Orientation="Horizontal" ToolTip="{Binding FilePath}">
                             <TextBlock Text="{Binding Title}" MaxWidth="170" TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center"/>
@@ -808,7 +816,26 @@
                             </Button>
                         </StackPanel>
                     </DataTemplate>
-                </ListBox.ItemTemplate>
+                    <!-- a document of the built-in editor (saves itself, so its dot only flashes) -->
+                    <DataTemplate DataType="{x:Type vm:WriterViewModel}">
+                        <StackPanel Orientation="Horizontal" ToolTip="{Binding FilePath}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Doc}" Width="12" Height="12"
+                                  Stretch="Uniform" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding Title}" MaxWidth="170" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="●" FontSize="8" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.AccentSystemBrush}"
+                                       Visibility="{Binding IsDirty, Converter={StaticResource BoolToVis}}"/>
+                            <Button Style="{StaticResource IconButton}" Padding="4" Margin="6,0,0,0"
+                                    ToolTip="Close (Ctrl+W)"
+                                    Command="{Binding DataContext.CloseDocumentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Close}"
+                                      Width="9" Height="9" Stretch="Uniform"/>
+                            </Button>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.Resources>
             </ListBox>
           </DockPanel>
         </Grid>
@@ -831,34 +858,81 @@
             </Border.Effect>
             <DockPanel Margin="8,3">
                 <!-- brand mark -->
-                <Grid DockPanel.Dock="Left" Width="16" Height="16" VerticalAlignment="Center" Margin="8,0,10,0"
-                      ToolTip="Graphite">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Outer}"
-                          Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.7"/>
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Inner}"
-                          Stroke="{DynamicResource App.BrandBlueBrush}" StrokeThickness="1.7"/>
-                </Grid>
+                <!-- The app name sits next to the mark on the start page only (it folds away in
+                     narrow windows, see UpdateBarFold). The mark keeps its 10 px right margin on every
+                     page; the name pulls 2 px back into it so the mark-to-name gap is 8 px, and its own
+                     10 px right margin matches the mark's, so the divider that follows is 15 px away. -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" ToolTip="Graphite">
+                    <Grid Width="16" Height="16" VerticalAlignment="Center" Margin="8,0,10,0">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Outer}"
+                              Stroke="{DynamicResource App.TextBrush}" StrokeThickness="1.7"/>
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Logo.Inner}"
+                              Stroke="{DynamicResource App.BrandBlueBrush}" StrokeThickness="1.7"/>
+                    </Grid>
+                    <Grid Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}">
+                        <TextBlock x:Name="BrandName" Text="Graphite" FontSize="13" FontWeight="SemiBold"
+                                   Margin="-2,0,10,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource App.TextBrush}"/>
+                    </Grid>
+                </StackPanel>
 
                 <!-- right side: command search, then the far-right groups (which fold into "…" when narrow) -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="BarSearch" Style="{StaticResource BarField}" Command="{Binding OpenPaletteCommand}"
-                            Width="136" Height="30" ToolTip="Search commands|Ctrl K|Run any command from the keyboard">
-                        <DockPanel>
-                            <Border x:Name="BarSearchKey" DockPanel.Dock="Right" Style="{StaticResource KeyCap}" VerticalAlignment="Center">
-                                <TextBlock Text="Ctrl K" FontSize="11" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
-                            </Border>
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}"
-                                  Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="BarSearchLabel" Text="Search" Margin="8,0,0,0" FontSize="12"
-                                       VerticalAlignment="Center"/>
-                        </DockPanel>
-                    </Button>
+                    <!-- an editor-only button: exports (documents) -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsWriterSelected, Converter={StaticResource BoolToVis}}">
+                        <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
+                                ToolTip="Export||Make a PDF, a copy or print">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Export}"/>
+                                <TextBlock Text="Export" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
+                                      Width="10" Height="10" Stretch="Uniform" Margin="5,0,0,0"/>
+                            </StackPanel>
+                            <Button.ContextMenu>
+                                <ContextMenu MinWidth="240">
+                                    <MenuItem Header="PDF…" Command="{Binding ExportWriterPdfCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Export}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Save a copy (.docx)…" Command="{Binding SaveWriterCopyCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.SaveAs}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem Header="Print…" InputGestureText="Ctrl+P" Command="{Binding PrintWriterCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Print}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                        <Rectangle Style="{StaticResource ToolSep}"/>
+                    </StackPanel>
+                    <Grid Visibility="{Binding IsHomeSelected, Converter={StaticResource InvBoolToVis}}">
+                        <Button x:Name="BarSearch" Style="{StaticResource BarField}" Command="{Binding OpenPaletteCommand}"
+                                Width="136" Height="30" ToolTip="Search commands|Ctrl K|Run any command from the keyboard">
+                            <DockPanel>
+                                <Border x:Name="BarSearchKey" DockPanel.Dock="Right" Style="{StaticResource KeyCap}" VerticalAlignment="Center">
+                                    <TextBlock Text="Ctrl K" FontSize="11" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                                </Border>
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}"
+                                      Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="BarSearchLabel" Text="Search" Margin="8,0,0,0" FontSize="12"
+                                           VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Button>
+                    </Grid>
                     <StackPanel x:Name="BarFarRight" Orientation="Horizontal" Margin="6,0,0,0" VerticalAlignment="Center">
+                        <ToggleButton Style="{StaticResource BarButton}" IsChecked="{Binding Library.IsRailVisible}"
+                                      Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}"
+                                      ToolTip="Library panel||Show or hide the folders on the left">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Sidebar}"/>
+                        </ToggleButton>
                         <ToggleButton Style="{StaticResource BarButton}" IsChecked="{Binding ShowSidebar}"
+                                      Visibility="{Binding IsPdfSelected, Converter={StaticResource BoolToVis}}"
                                       ToolTip="Pages panel||Show or hide thumbnails and outline">
                             <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Sidebar}"/>
                         </ToggleButton>
                         <ToggleButton Style="{StaticResource BarButton}" IsChecked="{Binding ShowInspector}"
+                                      Visibility="{Binding IsPdfSelected, Converter={StaticResource BoolToVis}}"
                                       ToolTip="Markup panel||Show or hide markup and search">
                             <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Inspector}"/>
                         </ToggleButton>
@@ -888,8 +962,12 @@
                         <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.More}"/>
                         <Button.ContextMenu>
                             <ContextMenu MinWidth="200">
-                                <MenuItem Header="Pages panel" IsCheckable="True" IsChecked="{Binding ShowSidebar, Mode=TwoWay}"/>
-                                <MenuItem Header="Markup panel" IsCheckable="True" IsChecked="{Binding ShowInspector, Mode=TwoWay}"/>
+                                <MenuItem Header="Library panel" IsCheckable="True" IsChecked="{Binding Library.IsRailVisible, Mode=TwoWay}"
+                                          Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}"/>
+                                <MenuItem Header="Pages panel" IsCheckable="True" IsChecked="{Binding ShowSidebar, Mode=TwoWay}"
+                                          Visibility="{Binding IsPdfSelected, Converter={StaticResource BoolToVis}}"/>
+                                <MenuItem Header="Markup panel" IsCheckable="True" IsChecked="{Binding ShowInspector, Mode=TwoWay}"
+                                          Visibility="{Binding IsPdfSelected, Converter={StaticResource BoolToVis}}"/>
                                 <Separator/>
                                 <MenuItem Header="Switch theme" Command="{Binding ToggleThemeCommand}">
                                     <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}" Width="14" Height="14"/></MenuItem.Icon>
@@ -903,6 +981,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <!-- File: grouped by task — open, save, print/properties, about -->
                     <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
+                            Visibility="{Binding IsHomeSelected, Converter={StaticResource InvBoolToVis}}"
                             ToolTip="File|Ctrl+O|Open, save, print and document properties">
                         <StackPanel Orientation="Horizontal">
                             <Path x:Name="FileIcon" Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Open}"/>
@@ -912,6 +991,13 @@
                         </StackPanel>
                         <Button.ContextMenu>
                             <ContextMenu MinWidth="270">
+                                <MenuItem Header="New document" InputGestureText="Ctrl+N" Command="{Binding NewDocumentCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.NewDoc}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="New folder" InputGestureText="Ctrl+Shift+N" Command="{Binding Library.NewFolderCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.NewFolder}" Width="14" Height="14"/></MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
                                 <MenuItem Header="Open…" InputGestureText="Ctrl+O" Command="{Binding OpenCommand}">
                                     <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="14" Height="14"/></MenuItem.Icon>
                                 </MenuItem>
@@ -1373,6 +1459,270 @@
                         </Border>
                     </StackPanel>
                     </Grid>
+
+                    <!-- ============ start screen: where you are, find, create, view ============ -->
+                    <StackPanel x:Name="HomeBar" Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}">
+
+                        <!-- nothing ticked -->
+                        <StackPanel Orientation="Horizontal" DataContext="{Binding Library}"
+                                    Visibility="{Binding HasSelection, Converter={StaticResource InvBoolToVis}}">
+                            <Rectangle Style="{StaticResource ToolSep}"/>
+                            <Button Style="{StaticResource BarButton}" Command="{Binding GoBackCommand}"
+                                    IsEnabled="{Binding CanGoBack}" ToolTip="Back||The place you were before">
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ArrowLeft}"/>
+                            </Button>
+                            <Button Style="{StaticResource BarButton}" Command="{Binding GoForwardCommand}"
+                                    IsEnabled="{Binding CanGoForward}" ToolTip="Forward||">
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ArrowRight}"/>
+                            </Button>
+
+                            <Button Style="{StaticResource BarPill}" Command="{Binding ShowHomeCommand}"
+                                    ToolTip="{Binding LocationLabel}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Home}" Width="14" Height="14"
+                                          Stretch="Uniform"/>
+                                    <TextBlock x:Name="HomeLocationText" Text="{Binding LocationLabel}" Margin="8,0,0,0"
+                                               FontSize="12.5" MaxWidth="170" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+
+                            <Button Style="{StaticResource BarPill}" Command="{Binding ResumeCommand}"
+                                    Visibility="{Binding ShowContinue, Converter={StaticResource BoolToVis}}"
+                                    ToolTip="Resume||Pick up where you left off">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Clock}" Width="14" Height="14"
+                                          Stretch="Uniform"/>
+                                    <TextBlock Text="Resume" Margin="8,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="HomeResumeName" Text="{Binding ContinueItem.FileName}" Margin="7,0,0,0"
+                                               FontSize="12.5" MaxWidth="120" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" Opacity="0.65"/>
+                                </StackPanel>
+                            </Button>
+
+                            <!-- search this place; type > for commands -->
+                            <Border x:Name="HomeSearchHost" Width="210" Height="30" CornerRadius="9" Margin="6,0"
+                                    VerticalAlignment="Center" BorderThickness="1" Background="Transparent"
+                                    BorderBrush="{DynamicResource App.StrokeBrush}">
+                                <Grid Margin="10,0,6,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}" Width="13" Height="13"
+                                          Stretch="Uniform" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding SearchPlaceholder}" Style="{StaticResource Caption}" FontSize="12"
+                                                   IsHitTestVisible="False" TextTrimming="CharacterEllipsis"
+                                                   Visibility="{Binding IsSearching, Converter={StaticResource InvBoolToVis}}"/>
+                                        <TextBox x:Name="HomeSearchBox" Background="Transparent" BorderThickness="0" Padding="0"
+                                                 FontSize="12" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 PreviewKeyDown="HomeSearch_PreviewKeyDown" TextChanged="HomeSearch_TextChanged"/>
+                                    </Grid>
+                                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Padding="5" ToolTip="Clear search"
+                                            Command="{Binding ClearSearchCommand}" Focusable="False"
+                                            Visibility="{Binding IsSearching, Converter={StaticResource BoolToVis}}">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Close}" Width="10" Height="10"
+                                              Stretch="Uniform"/>
+                                    </Button>
+                                    <Border Grid.Column="2" Style="{StaticResource KeyCap}" VerticalAlignment="Center"
+                                            IsHitTestVisible="False" ToolTip="Type > to run a command"
+                                            Visibility="{Binding IsSearching, Converter={StaticResource InvBoolToVis}}">
+                                        <TextBlock Text="&gt;" FontSize="11" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ticked: act on the selection -->
+                        <StackPanel Orientation="Horizontal" DataContext="{Binding Library}"
+                                    Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                            <Rectangle Style="{StaticResource ToolSep}"/>
+                            <Button Style="{StaticResource BarButton}" Command="{Binding ClearSelectionCommand}"
+                                    ToolTip="Clear selection||">
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Close}"/>
+                            </Button>
+                            <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" FontSize="12.5" Margin="2,0,10,0"
+                                       VerticalAlignment="Center"/>
+                            <Rectangle Style="{StaticResource ToolSep}"/>
+                            <Button Style="{StaticResource BarButton}" Padding="9,0" Command="{Binding MergeSelectedCommand}"
+                                    IsEnabled="{Binding CanMerge}" ToolTip="Merge||Join the selected PDFs, in the order shown, into one new file">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Merge}"/>
+                                    <TextBlock Text="Merge" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource BarButton}" Padding="9,0" Command="{Binding MoveSelectedCommand}"
+                                    ToolTip="Move to||Move the selected files into another folder">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.MoveTo}"/>
+                                    <TextBlock Text="Move to" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource BarButton}" Padding="9,0" Command="{Binding PinSelectedCommand}"
+                                    ToolTip="Pin||Keep the selected files at the top of Pinned">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Pin}"/>
+                                    <TextBlock Text="{Binding PinSelectionText}" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
+                                    ToolTip="Export||Zip the selected files, or copy their paths">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Export}"/>
+                                    <TextBlock Text="Export" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
+                                          Width="10" Height="10" Stretch="Uniform" Margin="5,0,0,0"/>
+                                </StackPanel>
+                                <Button.ContextMenu>
+                                    <ContextMenu MinWidth="220">
+                                        <MenuItem Header="Zip selected files…" Command="{Binding Library.ZipSelectedCommand}"/>
+                                        <MenuItem Header="Copy file paths" Command="{Binding Library.CopySelectedPathsCommand}"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                            <Button Style="{StaticResource BarButton}" Padding="9,0" Command="{Binding DeleteSelectedCommand}"
+                                    ToolTip="Delete||Move the selected files to the Recycle Bin">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Delete}"/>
+                                    <TextBlock Text="Delete" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- always: create, and how the list looks -->
+                        <StackPanel Orientation="Horizontal" DataContext="{Binding Library}"
+                                    Visibility="{Binding HasSelection, Converter={StaticResource InvBoolToVis}}">
+
+                            <!-- grid / list (when the page lists files) -->
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                        Visibility="{Binding ShowFilesBody, Converter={StaticResource BoolToVis}}">
+                                <RadioButton Style="{StaticResource ToolToggle}" Margin="1,0" ToolTip="Grid" IsChecked="{Binding IsGrid, Mode=OneWay}"
+                                             Command="{Binding SetViewModeCommand}" CommandParameter="grid">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Thumbs}"/>
+                                </RadioButton>
+                                <RadioButton Style="{StaticResource ToolToggle}" ToolTip="List" Margin="1,0"
+                                             IsChecked="{Binding IsList, Mode=OneWay}"
+                                             Command="{Binding SetViewModeCommand}" CommandParameter="list">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Outline}"/>
+                                </RadioButton>
+                            </StackPanel>
+
+                            <!-- sort (folders and their files) -->
+                            <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
+                                    Visibility="{Binding CanSort, Converter={StaticResource BoolToVis}}"
+                                    ToolTip="Sort||Order folders and files">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Sort}"/>
+                                    <TextBlock Text="{Binding SortMode}" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
+                                          Width="10" Height="10" Stretch="Uniform" Margin="5,0,0,0"/>
+                                </StackPanel>
+                                <Button.ContextMenu>
+                                    <ContextMenu MinWidth="170">
+                                        <MenuItem Header="Name" Command="{Binding Library.SetSortCommand}" CommandParameter="Name"
+                                                  IsChecked="{Binding Library.SortMode, Converter={StaticResource StrEquals}, ConverterParameter=Name, Mode=OneWay}"/>
+                                        <MenuItem Header="Modified" Command="{Binding Library.SetSortCommand}" CommandParameter="Modified"
+                                                  IsChecked="{Binding Library.SortMode, Converter={StaticResource StrEquals}, ConverterParameter=Modified, Mode=OneWay}"/>
+                                        <MenuItem Header="Size" Command="{Binding Library.SetSortCommand}" CommandParameter="Size"
+                                                  IsChecked="{Binding Library.SortMode, Converter={StaticResource StrEquals}, ConverterParameter=Size, Mode=OneWay}"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- ============ document editor: undo, insert, page, name ============ -->
+                    <StackPanel x:Name="WriterBar" Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsWriterSelected, Converter={StaticResource BoolToVis}}">
+                        <Rectangle Style="{StaticResource ToolSep}"/>
+                        <Button Style="{StaticResource BarButton}" Command="{Binding SelectedWriter.UndoCommand}" ToolTip="Undo|Ctrl Z|">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Undo}"/>
+                        </Button>
+                        <Button Style="{StaticResource BarButton}" Command="{Binding SelectedWriter.RedoCommand}" ToolTip="Redo|Ctrl Y|">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Redo}"/>
+                        </Button>
+                        <Rectangle Style="{StaticResource ToolSep}"/>
+
+                        <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
+                                ToolTip="Insert||Pictures, links and tables">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Add}"/>
+                                <TextBlock Text="Insert" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
+                                      Width="10" Height="10" Stretch="Uniform" Margin="5,0,0,0"/>
+                            </StackPanel>
+                            <Button.ContextMenu>
+                                <ContextMenu MinWidth="230">
+                                    <MenuItem Header="Picture…" Command="{Binding SelectedWriter.InsertImageCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Image}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Link…" Command="{Binding SelectedWriter.InsertLinkCommand}">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Link}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem Header="Table">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Table}" Width="14" Height="14"/></MenuItem.Icon>
+                                        <MenuItem Header="2 × 2" Command="{Binding SelectedWriter.InsertTableCommand}" CommandParameter="2x2"/>
+                                        <MenuItem Header="3 × 3" Command="{Binding SelectedWriter.InsertTableCommand}" CommandParameter="3x3"/>
+                                        <MenuItem Header="4 × 4" Command="{Binding SelectedWriter.InsertTableCommand}" CommandParameter="4x4"/>
+                                        <MenuItem Header="5 × 3" Command="{Binding SelectedWriter.InsertTableCommand}" CommandParameter="5x3"/>
+                                        <MenuItem Header="6 × 4" Command="{Binding SelectedWriter.InsertTableCommand}" CommandParameter="6x4"/>
+                                    </MenuItem>
+                                    <MenuItem Header="Row below" Command="{Binding SelectedWriter.TableActionCommand}" CommandParameter="row"
+                                              IsEnabled="{Binding SelectedWriter.InTable}"/>
+                                    <MenuItem Header="Column to the right" Command="{Binding SelectedWriter.TableActionCommand}" CommandParameter="column"
+                                              IsEnabled="{Binding SelectedWriter.InTable}"/>
+                                    <MenuItem Header="Delete row" Command="{Binding SelectedWriter.TableActionCommand}" CommandParameter="deleteRow"
+                                              IsEnabled="{Binding SelectedWriter.InTable}"/>
+                                    <MenuItem Header="Delete table" Command="{Binding SelectedWriter.TableActionCommand}" CommandParameter="deleteTable"
+                                              IsEnabled="{Binding SelectedWriter.InTable}"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+
+                        <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
+                                ToolTip="Page||Paper size and margins">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Doc}"/>
+                                <TextBlock Text="Page" Margin="7,0,0,0" FontSize="12.5" VerticalAlignment="Center"/>
+                                <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.ChevronDown}"
+                                      Width="10" Height="10" Stretch="Uniform" Margin="5,0,0,0"/>
+                            </StackPanel>
+                            <Button.ContextMenu>
+                                <ContextMenu MinWidth="200">
+                                    <TextBlock Text="PAPER" Style="{StaticResource SectionLabel}" Margin="12,8,0,4"/>
+                                    <MenuItem Header="A4" Command="{Binding SelectedWriter.SetPageSizeCommand}" CommandParameter="A4"
+                                              IsChecked="{Binding SelectedWriter.Page.SizeName, Converter={StaticResource StrEquals}, ConverterParameter=A4, Mode=OneWay}"/>
+                                    <MenuItem Header="Letter" Command="{Binding SelectedWriter.SetPageSizeCommand}" CommandParameter="Letter"
+                                              IsChecked="{Binding SelectedWriter.Page.SizeName, Converter={StaticResource StrEquals}, ConverterParameter=Letter, Mode=OneWay}"/>
+                                    <Separator/>
+                                    <TextBlock Text="MARGINS" Style="{StaticResource SectionLabel}" Margin="12,6,0,4"/>
+                                    <MenuItem Header="Narrow" Command="{Binding SelectedWriter.SetPageMarginsCommand}" CommandParameter="Narrow"
+                                              IsChecked="{Binding SelectedWriter.Page.MarginName, Converter={StaticResource StrEquals}, ConverterParameter=Narrow, Mode=OneWay}"/>
+                                    <MenuItem Header="Normal" Command="{Binding SelectedWriter.SetPageMarginsCommand}" CommandParameter="Normal"
+                                              IsChecked="{Binding SelectedWriter.Page.MarginName, Converter={StaticResource StrEquals}, ConverterParameter=Normal, Mode=OneWay}"/>
+                                    <MenuItem Header="Wide" Command="{Binding SelectedWriter.SetPageMarginsCommand}" CommandParameter="Wide"
+                                              IsChecked="{Binding SelectedWriter.Page.MarginName, Converter={StaticResource StrEquals}, ConverterParameter=Wide, Mode=OneWay}"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+
+                        <Rectangle Style="{StaticResource ToolSep}"/>
+
+                        <!-- the document's name (renames the file) and where it is saved -->
+                        <StackPanel Margin="4,-1,0,-1" VerticalAlignment="Center">
+                            <TextBox x:Name="WriterTitleBox" Width="230" Padding="6,0" Background="Transparent"
+                                     BorderBrush="Transparent" FontWeight="SemiBold" FontSize="12.5"
+                                     Text="{Binding SelectedWriter.Title, UpdateSourceTrigger=LostFocus}"
+                                     ToolTip="Document name||Edit to rename the file"
+                                     PreviewKeyDown="WriterTitle_PreviewKeyDown"/>
+                            <TextBlock Text="{Binding SelectedWriter.SaveStatus}" Style="{StaticResource Caption}" FontSize="11"
+                                       Margin="7,0,0,0" MaxWidth="230"/>
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -1430,10 +1780,36 @@
             </ItemsControl.ItemContainerStyle>
         </ItemsControl>
 
+        <!-- ======================= documents of the built-in editor ======================= -->
+        <ItemsControl x:Name="WriterHost" Grid.Row="2" Focusable="False" IsTabStop="False"
+                      ItemsSource="{Binding Writers}"
+                      ItemTemplate="{StaticResource WriterTemplate}"
+                      Visibility="{Binding Writers.Count, Converter={StaticResource NonZeroToVis}}">
+            <ItemsControl.Template>
+                <ControlTemplate TargetType="ItemsControl">
+                    <ItemsPresenter/>
+                </ControlTemplate>
+            </ItemsControl.Template>
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Grid/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsActive}" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ItemsControl.ItemContainerStyle>
+        </ItemsControl>
+
         <!-- ======================= start screen (Home tab) ======================= -->
         <!-- The library: pick a folder once (OneDrive, say) and browse its subfolders and PDFs
              here. Shown whenever no document tab is selected. -->
-        <Grid Grid.Row="2" Visibility="{Binding SelectedDocument, Converter={StaticResource NullToVisInv}}">
+        <Grid x:Name="HomeHost" Grid.Row="2" Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}">
             <ctrl:AmbientBackdrop/>
             <views:LibraryHome x:Name="HomeView" DataContext="{Binding Library}"/>
         </Grid>

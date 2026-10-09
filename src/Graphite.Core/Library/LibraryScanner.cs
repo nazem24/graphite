@@ -57,7 +57,15 @@ public static class LibraryScanner
     private static bool Accept(FileInfo f, bool includeOffice, bool allTypes) =>
         allTypes
             ? !f.Name.StartsWith("~$", StringComparison.Ordinal) && (f.Attributes & FileAttributes.Hidden) == 0
-            : IsSupported(f.Name, includeOffice);
+            : IsListed(f, includeOffice);
+
+    /// <summary>A supported file, or a document written by Graphite's own editor (listed even when
+    /// Office files are switched off, because the person created it here).</summary>
+    private static bool IsListed(FileInfo f, bool includeOffice) =>
+        IsSupported(f.Name, includeOffice) ||
+        (f.Extension.Equals(".docx", StringComparison.OrdinalIgnoreCase) &&
+         !f.Name.StartsWith("~$", StringComparison.Ordinal) &&
+         GraphiteDocx.IsGraphiteDocument(f.FullName));
 
     /// <summary>True for a OneDrive-style placeholder whose content is not on this PC
     /// (recall-on-open / recall-on-data-access / offline attribute).</summary>
@@ -182,7 +190,7 @@ public static class LibraryScanner
                 foreach (var f in info.EnumerateFiles("*", Options))
                 {
                     visited++;
-                    if (!IsSupported(f.Name, includeOffice)) continue;
+                    if (!IsListed(f, includeOffice)) continue;
                     count++;
                     DateTime t = f.LastWriteTimeUtc;
                     if (t > newest) newest = t;

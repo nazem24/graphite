@@ -194,6 +194,18 @@ public partial class PageViewModel : ObservableObject
         _renderedScale = 0;
     }
 
+    /// <summary>Drop every bitmap this page holds, thumbnail included, for good. Used when the
+    /// document is closed: a realized list container can still reference the page for a moment,
+    /// and without this it would keep the page and sidebar bitmaps alive with it.</summary>
+    public void ReleaseBitmaps()
+    {
+        Interlocked.Increment(ref _generation);
+        _thumbStale = false;   // a lingering container reading Thumbnail must not re-render it
+        _thumbnail = null;
+        _renderedScale = 0;
+        if (Image != null) Image = null;
+    }
+
     /// <summary>Render at the monitor's real pixel density, with a little headroom on
     /// 100 % displays where page edges rarely land on whole pixels. The old fixed 1.5×
     /// oversample spent 2.25× the pixels (memory and CPU) at 100 % scaling and was still

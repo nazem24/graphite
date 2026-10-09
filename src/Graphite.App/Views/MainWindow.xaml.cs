@@ -111,6 +111,9 @@ public partial class MainWindow : Window
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(MainViewModel.SelectedTab))
+            OnSelectedTabSwitched();
+
         if (e.PropertyName == nameof(MainViewModel.IsFullscreen))
             ApplyFullscreen(ViewModel.IsFullscreen);
         else if (e.PropertyName == nameof(MainViewModel.SelectedDocument))
@@ -168,6 +171,14 @@ public partial class MainWindow : Window
                 dirty.Count == 1
                     ? "1 document has unsaved changes. Close anyway?"
                     : $"{dirty.Count} documents have unsaved changes. Close anyway?",
+                "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
+            if (answer != MessageBoxResult.Yes) { e.Cancel = true; return; }
+        }
+        // Documents of the built-in editor save themselves; make sure the last edit made it to disk.
+        if (!ViewModel.FlushWriters())
+        {
+            var answer = MessageDialog.Show(this,
+                "A document couldn't be saved. Close anyway and lose its latest changes?",
                 "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
             if (answer != MessageBoxResult.Yes) { e.Cancel = true; return; }
         }
@@ -244,6 +255,7 @@ public partial class MainWindow : Window
     private int _restoreGen;          // supersedes older settle loops
     private Point? _zoomAnchor;       // viewport point to keep fixed during the next zoom change
     private Point? _zoomTarget;       // where that point should end up (default: where it was)
+    private (int Page, double Top)? _zoomPin; // live-preview zoom: the page whose top edge must land exactly where the preview drew it
     private int _pinSettleGen;        // bumped by any manual scroll / jump / tab switch; cancels late anchor corrections
 
     private void PagesHost_Loaded(object sender, RoutedEventArgs e)
@@ -661,7 +673,15 @@ public partial class MainWindow : Window
         // for pages it hasn't built, so deriving the page from them could pick the wrong one.
         int anchorPage = -1;
         double innerPt = 0;
-        if (doc.IsContinuous && doc.Pages.Count > 0 &&
+        if (_zoomPin is { } pin && doc.IsContinuous && pin.Page >= 0 && pin.Page < doc.Pages.Count)
+        {
+            // A wheel / pinch zoom was previewed on screen: keep the anchored page exactly
+            // where the preview showed it (its top edge at pin.Top) instead of re-deriving it.
+            anchorPage = pin.Page;
+            innerPt = 0;
+            b = new Point(b.X, pin.Top);
+        }
+        else if (doc.IsContinuous && doc.Pages.Count > 0 &&
             !TryAnchorFromContainers(lb, sv, a.Y, oldZoom, out anchorPage, out innerPt))
         {
             double off = 0;
@@ -885,7 +905,6 @@ public partial class MainWindow : Window
         // is shown again (the cheap thumbnail stands in meanwhile).
         if (prev != null && ViewModel.Documents.Contains(prev)) prev.ReleaseBitmaps();
         if (next == null) return;
-        AnimateDocSwitch(prev, next);
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
         {
             EnsureScrollRestored(next);
@@ -913,19 +932,37 @@ public partial class MainWindow : Window
         SyncFromViewport(lb, doc); // make sure the visible pages have their bitmaps
     }
 
-    /// <summary>Tab switch: the incoming document slides in from the side its tab is on
-    /// (left when going back towards the first tab, right when moving forward) and fades up.
-    /// A brand-new tab plays its own rise-in instead.</summary>
-    private void AnimateDocSwitch(DocumentViewModel? prev, DocumentViewModel next)
+    private object? _shownTab;
+
+    private void OnSelectedTabSwitched()
+    {
+        var prev = _shownTab;
+        var next = ViewModel.SelectedTab;
+        if (ReferenceEquals(prev, next)) return;
+        _shownTab = next;
+        AnimateTabSwitch(prev, next);
+    }
+
+    /// <summary>Tab switch: the incoming page — a PDF, a document in the editor, or the start
+    /// screen — slides in from the side its tab is on (left when going back towards the first
+    /// tab, right when moving forward) and fades up. A brand-new tab plays its own rise-in
+    /// instead (its view isn't loaded yet when this runs).</summary>
+    private void AnimateTabSwitch(object? prev, object? next)
     {
         if (!Motion.Enabled) return;
-        if (DocHost.ItemContainerGenerator.ContainerFromItem(next) is not FrameworkElement { IsLoaded: true } host ||
-            Motion.RigOf(host) is not { } rig)
-            return;
 
-        int from = prev == null ? -1 : ViewModel.Documents.IndexOf(prev);
-        int to = ViewModel.Documents.IndexOf(next);
-        double direction = from < 0 || from == to ? 0 : to > from ? 1 : -1;
+        FrameworkElement? host = next switch
+        {
+            DocumentViewModel d => DocHost.ItemContainerGenerator.ContainerFromItem(d) as FrameworkElement,
+            WriterViewModel w => WriterHost.ItemContainerGenerator.ContainerFromItem(w) as FrameworkElement,
+            _ => HomeHost,
+        };
+        if (host is not { IsLoaded: true } || Motion.RigOf(host) is not { } rig) return;
+
+        // The start screen is the first tab.
+        int from = prev == null ? -1 : ViewModel.Tabs.IndexOf(prev);
+        int to = next == null ? -1 : ViewModel.Tabs.IndexOf(next);
+        double direction = from == to ? 0 : to > from ? 1 : -1;
 
         Motion.Tween(host, OpacityProperty, 0, 1, 240);
         Motion.Tween(rig.Scale, ScaleTransform.ScaleXProperty, 0.97, 1, 300);
@@ -1099,18 +1136,61 @@ public partial class MainWindow : Window
     private void TabStrip_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is not DependencyObject src ||
-            FindAncestor<ListBoxItem>(src) is not { DataContext: DocumentViewModel doc })
+            FindAncestor<ListBoxItem>(src) is not { DataContext: { } tab })
             return;
 
         if (e.ChangedButton == MouseButton.Middle)
         {
-            ViewModel.CloseDocumentCommand.Execute(doc);
+            ViewModel.CloseDocumentCommand.Execute(tab);
             e.Handled = true;
         }
         else if (e.ChangedButton == MouseButton.Left &&
                  FindAncestor<System.Windows.Controls.Button>(src) == null) // the ✕ keeps its own click
         {
-            ViewModel.SelectedDocument = doc;
+            ViewModel.SelectedTab = tab;
+            e.Handled = true;
+        }
+    }
+
+    // ------------------------------------------------------------- start-screen search
+
+    private void HomeSearch_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && ViewModel.Library.IsSearching)
+        {
+            ViewModel.Library.ClearSearchCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Typing ">" turns the search box into the command palette, like the editors people know.</summary>
+    private void HomeSearch_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not TextBox box || !box.Text.StartsWith('>')) return;
+        string rest = box.Text[1..].TrimStart();
+        box.Text = "";
+        ViewModel.OpenPalette();
+        ViewModel.PaletteQuery = rest;
+        if (rest.Length > 0)
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () => PaletteBox.Select(PaletteBox.Text.Length, 0));
+    }
+
+    // ------------------------------------------------------------- document name
+
+    /// <summary>Enter keeps the new name and returns to the page; Esc puts the old one back.</summary>
+    private void WriterTitle_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox box) return;
+        if (e.Key == Key.Enter)
+        {
+            box.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+            ViewModel.SelectedWriter?.Surface?.FocusEditor();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            box.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
+            ViewModel.SelectedWriter?.Surface?.FocusEditor();
             e.Handled = true;
         }
     }
@@ -1438,6 +1518,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Start screen: Delete removes whatever is ticked (never while typing in a box).
+        if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None && ViewModel.IsHomeSelected &&
+            ViewModel.Library.HasSelection &&
+            Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase)
+        {
+            ViewModel.Library.DeleteSelectedCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
         // Switch tabs: Ctrl+Tab → next, Ctrl+Shift+Tab → previous (wraps around).
         if (e.Key == Key.Tab && (Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
             (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
@@ -1530,12 +1620,13 @@ public partial class MainWindow : Window
             _ = doc.RedoAsync();
             e.Handled = true;
         }
-        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.SelectedDocument == null)
+        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.IsHomeSelected)
         {
-            HomeView.FocusSearch();
+            HomeSearchBox.Focus();
+            HomeSearchBox.SelectAll();
             e.Handled = true;
         }
-        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.SelectedDocument != null)
         {
             ViewModel.ShowInspector = true;
             if (doc != null)

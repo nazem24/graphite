@@ -228,6 +228,19 @@ public static class ThemeService
         return pinned;
     }
 
+    /// <summary>A file was renamed: its recent, pinned and reading-position entries follow it.</summary>
+    public static void RenamePath(string oldPath, string newPath)
+    {
+        for (int i = 0; i < _settings.RecentFiles.Count; i++)
+            if (string.Equals(_settings.RecentFiles[i], oldPath, StringComparison.OrdinalIgnoreCase))
+                _settings.RecentFiles[i] = newPath;
+        for (int i = 0; i < _settings.PinnedFiles.Count; i++)
+            if (string.Equals(_settings.PinnedFiles[i], oldPath, StringComparison.OrdinalIgnoreCase))
+                _settings.PinnedFiles[i] = newPath;
+        if (_settings.Reading.Remove(oldPath, out var info)) _settings.Reading[newPath] = info;
+        Save();
+    }
+
     public static ReadingInfo? GetReading(string path) =>
         _settings.Reading.TryGetValue(path, out var info) ? info : null;
 

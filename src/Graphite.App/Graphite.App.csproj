@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <Resource Include="Assets\Graphite.ico" />
+    <!-- Start-screen clock: Inter Display SemiBold (SIL OFL, see Assets\Fonts\Inter-OFL.txt), subset to digits, colon and AM/PM -->
+    <Resource Include="Assets\Fonts\GraphiteClock.ttf" />
     <!-- OCR language data (populate via tools\get-tessdata.ps1) -->
     <Content Include="tessdata\**" CopyToOutputDirectory="PreserveNewest" Condition="Exists('tessdata')" />
   </ItemGroup>

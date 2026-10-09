@@ -44,10 +44,14 @@
         <ContextMenu x:Key="FileMenu" x:Shared="False">
             <MenuItem Header="Open" Click="CardMenu_Open"/>
             <MenuItem Header="Open in new tab" Click="CardMenu_OpenInBackground"/>
+            <MenuItem Header="Edit in Graphite" Click="CardMenu_EditWord" Visibility="{Binding IsDocx, Converter={StaticResource BoolToVis}}"/>
+            <MenuItem Header="Open as PDF" Click="CardMenu_PdfWord" Visibility="{Binding IsDocx, Converter={StaticResource BoolToVis}}"/>
             <Separator/>
             <MenuItem Header="{Binding PinMenuText}" Click="CardMenu_Pin"/>
             <MenuItem Header="Show in Explorer" Click="CardMenu_Reveal"/>
             <MenuItem Header="Copy path" Click="CardMenu_CopyPath"/>
+            <Separator/>
+            <MenuItem Header="Delete" InputGestureText="Del" Click="CardMenu_Delete"/>
         </ContextMenu>
 
         <!-- ============================ a document, grid view ============================ -->
@@ -56,7 +60,7 @@
                     Command="{Binding DataContext.OpenFileCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding Path}" ToolTip="{Binding Path}"
                     ContextMenu="{StaticResource FileMenu}" ContextMenuOpening="Card_ContextMenuOpening"
-                    Loaded="FileCard_Loaded">
+                    PreviewMouseLeftButtonDown="Card_PreviewMouseDown" Loaded="FileCard_Loaded">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="152"/>
@@ -93,6 +97,33 @@
                             </StackPanel>
                         </Grid>
 
+                        <!-- Word files: hovering the preview offers two ways in -->
+                        <Grid Visibility="{Binding IsDocx, Converter={StaticResource BoolToVis}}"
+                              Style="{StaticResource RevealOnCardHover}">
+                            <Border Background="#99080A0E" CornerRadius="13,13,0,0" Margin="1,1,1,0"
+                                    IsHitTestVisible="False"/>
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Button Style="{StaticResource CardActionPrimary}" ToolTip="Open in Graphite's editor"
+                                        Command="{Binding DataContext.OpenAsEditorCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Path}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.EditText}"
+                                              Width="14" Height="14" Stretch="Uniform"
+                                              Stroke="{DynamicResource App.AccentContrastBrush}"/>
+                                        <TextBlock Text="Edit document" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource CardActionButton}" Margin="0,8,0,0" ToolTip="Convert to PDF and open that"
+                                        Command="{Binding DataContext.OpenAsPdfCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Path}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Doc}"
+                                              Width="14" Height="14" Stretch="Uniform"/>
+                                        <TextBlock Text="Open as PDF" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+    
                         <!-- hover actions -->
                         <StackPanel x:Name="Actions" Orientation="Horizontal" HorizontalAlignment="Right"
                                     VerticalAlignment="Top" Margin="0,10,10,0" Visibility="Collapsed">
@@ -110,7 +141,7 @@
 
                         <!-- pin: top left; shows on hover, stays (filled) while pinned -->
                         <Button x:Name="PinBtn" Style="{StaticResource CardCornerButton}" HorizontalAlignment="Left"
-                                VerticalAlignment="Top" Margin="10,10,0,0" Visibility="Collapsed"
+                                VerticalAlignment="Top" Margin="42,10,0,0" Visibility="Collapsed"
                                 Command="{Binding DataContext.TogglePinCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding Path}" ToolTip="{Binding PinMenuText}">
                             <Path Width="13" Height="13" Stretch="Uniform">
@@ -128,6 +159,11 @@
                             </Path>
                         </Button>
 
+                        <!-- tick box: shows on hover, and on every card once something is ticked -->
+                        <ToggleButton x:Name="SelBtn" Style="{StaticResource SelectBox}" HorizontalAlignment="Left"
+                                      VerticalAlignment="Top" Margin="8,9,0,0" Visibility="Collapsed"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay}" ToolTip="Select"/>
+
                         <!-- where you stopped -->
                         <Grid Height="3" VerticalAlignment="Bottom" Background="{DynamicResource App.StrokeBrush}"
                               Visibility="{Binding HasProgress, Converter={StaticResource BoolToVis}}">
@@ -138,6 +174,7 @@
                             <Border Background="{DynamicResource App.AccentSystemBrush}"/>
                         </Grid>
                     </Grid>
+                    </Grid>
 
                     <StackPanel Grid.Row="1" Margin="14,10,14,10">
                         <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold"
@@ -145,12 +182,25 @@
                         <TextBlock Text="{Binding InfoText}" Style="{StaticResource Caption}" Margin="0,3,0,0"/>
                         <TextBlock Text="{Binding WhenText}" Style="{StaticResource Caption}" Margin="0,1,0,0"/>
                     </StackPanel>
+
+                    <!-- ticked: an accent ring around the whole card -->
+                    <Border x:Name="SelRing" Grid.RowSpan="2" Margin="-1" CornerRadius="14" BorderThickness="2"
+                            BorderBrush="{DynamicResource App.AccentSystemBrush}" IsHitTestVisible="False"
+                            Visibility="Collapsed"/>
                 </Grid>
             </Button>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding IsMouseOver, ElementName=Card}" Value="True">
                     <Setter TargetName="Actions" Property="Visibility" Value="Visible"/>
                     <Setter TargetName="PinBtn" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="SelBtn" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter TargetName="SelBtn" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="SelRing" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding DataContext.HasSelection, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                    <Setter TargetName="SelBtn" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsPinned}" Value="True">
                     <Setter TargetName="PinBtn" Property="Visibility" Value="Visible"/>
@@ -160,34 +210,58 @@
 
         <!-- ============================ a document, list view ============================ -->
         <DataTemplate x:Key="FileRowTemplate" DataType="{x:Type vm:FileCardViewModel}">
-            <Button Style="{StaticResource LibCard}" Height="50" Margin="0,0,0,6"
+            <Button x:Name="Row" Style="{StaticResource LibCard}" Height="50" Margin="0,0,0,6"
                     Command="{Binding DataContext.OpenFileCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding Path}" ToolTip="{Binding Path}"
-                    ContextMenu="{StaticResource FileMenu}" ContextMenuOpening="Card_ContextMenuOpening">
-                <Grid Margin="14,0,8,0">
+                    ContextMenu="{StaticResource FileMenu}" ContextMenuOpening="Card_ContextMenuOpening"
+                    PreviewMouseLeftButtonDown="Card_PreviewMouseDown">
+                <Grid Margin="10,0,8,0">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="32"/>
                         <ColumnDefinition Width="34"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="170"/>
                         <ColumnDefinition Width="140"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Border Width="22" Height="28" Background="White" CornerRadius="2" HorizontalAlignment="Left"
+                    <ToggleButton Grid.Column="0" Style="{StaticResource SelectBox}" HorizontalAlignment="Left"
+                                  VerticalAlignment="Center" IsChecked="{Binding IsSelected, Mode=TwoWay}" ToolTip="Select"/>
+                    <Border Grid.Column="1" Width="22" Height="28" Background="White" CornerRadius="2" HorizontalAlignment="Left"
                             VerticalAlignment="Center">
                         <Rectangle Fill="{StaticResource PaperLines}" Margin="4,6,4,5"/>
                     </Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
                         <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding FolderName}" Style="{StaticResource Caption}" Margin="0,1,0,0"/>
                     </StackPanel>
-                    <TextBlock Grid.Column="2" Text="{Binding InfoText}" Style="{StaticResource Caption}"
+                    <TextBlock Grid.Column="3" Text="{Binding InfoText}" Style="{StaticResource Caption}"
                                VerticalAlignment="Center" Margin="8,0"/>
-                    <TextBlock Grid.Column="3" Text="{Binding WhenText}" Style="{StaticResource Caption}"
+                    <TextBlock Grid.Column="4" Text="{Binding WhenText}" Style="{StaticResource Caption}"
                                VerticalAlignment="Center" Margin="8,0"/>
-                    <Button Grid.Column="4" Style="{StaticResource CardCornerButton}" ToolTip="More" Click="CardMore_Click">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.More}"
-                              Width="13" Height="13" Stretch="Uniform"/>
-                    </Button>
+                    <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Margin="0,0,8,0" CornerRadius="10" BorderThickness="1" Padding="2"
+                                Background="{DynamicResource App.GlassSolidBrush}"
+                                BorderBrush="{DynamicResource App.StrokeBrush}"
+                                Visibility="{Binding IsDocx, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource RevealOnCardHover}">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource SegmentButton}" Content="Edit" ToolTip="Open in Graphite's editor"
+                                        Command="{Binding DataContext.OpenAsEditorCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Path}"/>
+                                <Rectangle Width="1" Height="14" Fill="{DynamicResource App.StrokeBrush}" Margin="1,0"/>
+                                <Button Style="{StaticResource SegmentButton}" Content="PDF" ToolTip="Convert to PDF and open that"
+                                        Command="{Binding DataContext.OpenAsPdfCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Path}"/>
+                            </StackPanel>
+                        </Border>
+                        <Button Style="{StaticResource CardCornerButton}" ToolTip="More" Click="CardMore_Click">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.More}"
+                                  Width="13" Height="13" Stretch="Uniform"/>
+                        </Button>
+                    </StackPanel>
+                    <Border Grid.ColumnSpan="6" Margin="-10,0,-8,0" CornerRadius="14" BorderThickness="2"
+                            BorderBrush="{DynamicResource App.AccentSystemBrush}" IsHitTestVisible="False"
+                            Visibility="{Binding IsSelected, Converter={StaticResource BoolToVis}}"/>
                 </Grid>
             </Button>
         </DataTemplate>
@@ -206,7 +280,7 @@
 
                     <!-- a stack of pages: the newest PDF's first page sits on top -->
                     <Grid Width="124" Height="118" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                          Margin="0,0,6,-6">
+                          Margin="0,0,16,16">
                         <Border Width="86" Height="104" Background="White" Opacity="0.5" CornerRadius="3"
                                 HorizontalAlignment="Left" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1">
                             <Border.RenderTransform>
@@ -284,12 +358,14 @@
 
     <Grid Margin="12,4,12,12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="268"/>
+            <ColumnDefinition Width="{Binding RailColumnWidth}"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <!-- ================================ rail ================================ -->
-        <Border Grid.Column="0" Style="{StaticResource GlassCard}" Padding="12,12,12,10">
+        <!-- The column is 18 px wider than the card so the gap folds away with it. -->
+        <Border Grid.Column="0" Style="{StaticResource GlassCard}" Padding="12,12,12,10" Margin="0,0,18,0"
+                Visibility="{Binding IsRailVisible, Converter={StaticResource BoolToVis}}">
             <DockPanel>
                 <!-- footer: library sync state, app version, update check -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
@@ -458,132 +534,186 @@
         </Border>
 
         <!-- ================================ content ================================ -->
-        <Grid Grid.Column="1" Margin="18,0,0,0">
+        <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- header: where you are, search, view options -->
+            <!-- header. Home: clock, greeting and date. Everywhere else: where you are
+                 (breadcrumb, title) and the "all file types" switch. Search, sort and
+                 grid/list live in the command bar. -->
             <Grid Grid.Row="0" Margin="0,4,0,16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+                <!-- start screen: clock | greeting on the left, the three "make or bring in" actions
+                     in one glass pill pushed to the right edge. They share a row while there is room;
+                     LibraryHome.xaml.cs drops the pill underneath (and, in a very narrow window, the
+                     Viewbox shrinks it) when there is not. -->
+                <Grid x:Name="HomeHeader" Margin="2,2,0,0" SizeChanged="HomeHeader_SizeChanged"
+                      Visibility="{Binding ShowHomeSections, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                <StackPanel Grid.Column="0" VerticalAlignment="Top">
-                    <!-- breadcrumb: back, then every level of the path -->
-                    <StackPanel Orientation="Horizontal" Margin="-4,0,0,4" Height="26"
-                                Visibility="{Binding ShowBreadcrumb, Converter={StaticResource BoolToVis}}">
-                        <Button Style="{StaticResource IconButton}" Padding="6" Command="{Binding GoUpCommand}"
-                                ToolTip="Back up one level" Margin="0,0,8,0">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ArrowLeft}"
-                                  Width="14" Height="14" Stretch="Uniform"/>
-                        </Button>
-                        <ItemsControl ItemsSource="{Binding Breadcrumbs}" Focusable="False">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type vm:BreadcrumbItem}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button Style="{StaticResource IconButton}" Padding="6,4"
-                                                Command="{Binding DataContext.OpenCrumbCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding Path}">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource App.TextSecondaryBrush}"/>
-                                        </Button>
-                                        <TextBlock Text="/" VerticalAlignment="Center" Margin="1,0,1,1" Opacity="0.55"
-                                                   Foreground="{DynamicResource App.TextSecondaryBrush}"
-                                                   Visibility="{Binding IsNotLast, Converter={StaticResource BoolToVis}}"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                    <StackPanel x:Name="HomeLeft" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
+                                Margin="0,0,0,12" SizeChanged="HomeHeader_SizeChanged">
+                        <!-- clock: Apple-style semibold digits (Inter Display, bundled) with a round two-dot
+                             colon in the same colour. The colon is placed in code (LibraryHome.PlaceClockColon)
+                             so its centre sits on the digits' own centre. -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="ClockHourText" Text="{Binding ClockHour}"
+                                       FontFamily="/Assets/Fonts/#Graphite Clock, Segoe UI Variable Display, Segoe UI Semibold, Segoe UI"
+                                       Typography.NumeralAlignment="Tabular" FontSize="76" FontWeight="Normal"
+                                       Foreground="{DynamicResource App.TextBrush}" VerticalAlignment="Top"/>
+                            <StackPanel x:Name="ClockColon" VerticalAlignment="Top" Margin="4,0,4,0">
+                                <Ellipse Width="10" Height="10" Fill="{DynamicResource App.TextBrush}"/>
+                                <Ellipse Width="10" Height="10" Margin="0,16,0,0" Fill="{DynamicResource App.TextBrush}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding ClockMinute}"
+                                       FontFamily="/Assets/Fonts/#Graphite Clock, Segoe UI Variable Display, Segoe UI Semibold, Segoe UI"
+                                       Typography.NumeralAlignment="Tabular" FontSize="76" FontWeight="Normal"
+                                       Foreground="{DynamicResource App.TextBrush}" VerticalAlignment="Top"/>
+                            <TextBlock Text="{Binding ClockSuffix}" FontFamily="/Assets/Fonts/#Graphite Clock, Segoe UI Variable Display, Segoe UI Semibold, Segoe UI" FontSize="22" FontWeight="Normal" Margin="8,0,0,10"
+                                       Foreground="{DynamicResource App.TextSecondaryBrush}" VerticalAlignment="Bottom"/>
+                        </StackPanel>
+
+                        <Rectangle Width="1" Height="60" Margin="28,0,26,0" VerticalAlignment="Center"
+                                   Fill="{DynamicResource App.StrokeSoftBrush}"/>
+
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Greeting}" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource App.TextBrush}"/>
+                            <TextBlock Text="{Binding DateText}" Style="{StaticResource Caption}" FontSize="14"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
                     </StackPanel>
 
-                    <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitle}"/>
-                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Caption}" FontSize="12.5" Margin="0,3,0,0"/>
-                </StackPanel>
+                    <!-- the action pill: one "New" button that opens the three ways to start (add a PDF,
+                         blank document, new folder) in a small card underneath it. -->
+                    <Viewbox x:Name="HomePill" Grid.Column="2" HorizontalAlignment="Right"
+                             StretchDirection="DownOnly" Stretch="Uniform" VerticalAlignment="Center"
+                             Margin="0,0,0,12">
+                        <Grid>
+                                <Button x:Name="NewButton" Style="{StaticResource HeroActionPrimary}" Height="34"
+                                        Padding="13,0,11,0" Click="NewButton_Click" ToolTip="New">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Add}"
+                                              Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center"
+                                              Stroke="{DynamicResource App.AccentContrastBrush}"/>
+                                        <TextBlock Text="New" Style="{StaticResource Body}" FontSize="13" FontWeight="SemiBold"
+                                                   Margin="8,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource App.AccentContrastBrush}"/>
+                                        <Path x:Name="NewChevron" Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
+                                              Width="9" Height="9" Stretch="Uniform" Margin="7,0,0,0" VerticalAlignment="Center"
+                                              Stroke="{DynamicResource App.AccentContrastBrush}" Opacity="0.8" RenderTransformOrigin="0.5,0.5">
+                                            <Path.RenderTransform>
+                                                <RotateTransform/>
+                                            </Path.RenderTransform>
+                                        </Path>
+                                    </StackPanel>
+                                </Button>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,2,0,0">
+                                <!-- An opaque card that opens just under the button and grows out of it (from the button's width,
+                                     anchored at its right edge); the button stays visible above it. See NewPopup_Opened. -->
+                                <Popup x:Name="NewPopup" PlacementTarget="{Binding ElementName=NewButton}" Placement="Custom"
+                                       StaysOpen="False" AllowsTransparency="True" PopupAnimation="None"
+                                       Opened="NewPopup_Opened" Closed="NewPopup_Closed">
+                                    <Grid Width="388" Height="242">
+                                        <Border x:Name="NewCard" Margin="40" Width="62" Height="8"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                CornerRadius="18" BorderThickness="1"
+                                                Background="{DynamicResource App.CardBrush}"
+                                                BorderBrush="{DynamicResource App.StrokeBrush}">
+                                            <Border.Effect>
+                                                <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32"/>
+                                            </Border.Effect>
+                                            <Grid x:Name="NewClipHost" SizeChanged="NewClipHost_SizeChanged">
+                                                <StackPanel x:Name="NewItems" Margin="5" HorizontalAlignment="Right" VerticalAlignment="Top" Width="296" Opacity="0">
+                                        <Button Style="{StaticResource HeroAction}" Height="50" Command="{Binding OpenFileDialogCommand}"
+                                                Click="NewItem_Click">
+                                            <DockPanel Width="268">
+                                                <Border DockPanel.Dock="Right" Style="{StaticResource KeyCap}" VerticalAlignment="Center" Margin="16,0,4,0">
+                                                    <TextBlock Text="Ctrl O" Style="{StaticResource Caption}" FontSize="10.5"/>
+                                                </Border>
+                                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Upload}" DockPanel.Dock="Left"
+                                                      Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"
+                                                      Stroke="{DynamicResource App.TextBrush}"/>
+                                                <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="Add a PDF" Style="{StaticResource Body}" FontSize="14" FontWeight="SemiBold"/>
+                                                    <TextBlock HorizontalAlignment="Left" Text="or drop files anywhere" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,1,0,0"
+                                                               MaxWidth="150"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Button>
+                                        <Button Style="{StaticResource HeroAction}" Height="50" Command="{Binding NewDocumentCommand}"
+                                                Click="NewItem_Click">
+                                            <DockPanel Width="268">
+                                                <Border DockPanel.Dock="Right" Style="{StaticResource KeyCap}" VerticalAlignment="Center" Margin="16,0,4,0">
+                                                    <TextBlock Text="Ctrl N" Style="{StaticResource Caption}" FontSize="10.5"/>
+                                                </Border>
+                                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.NewDoc}" DockPanel.Dock="Left"
+                                                      Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"
+                                                      Stroke="{DynamicResource App.TextBrush}"/>
+                                                <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="Blank document" Style="{StaticResource Body}" FontSize="14" FontWeight="SemiBold"/>
+                                                    <TextBlock HorizontalAlignment="Left" Text="{Binding NewItemFolderName, StringFormat='In {0}'}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,1,0,0"
+                                                               MaxWidth="150"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Button>
+                                        <Button Style="{StaticResource HeroAction}" Height="50" Command="{Binding NewFolderCommand}"
+                                                Click="NewItem_Click">
+                                            <DockPanel Width="268">
+                                                <Border DockPanel.Dock="Right" Style="{StaticResource KeyCap}" VerticalAlignment="Center" Margin="16,0,4,0">
+                                                    <TextBlock Text="Ctrl Shift N" Style="{StaticResource Caption}" FontSize="10.5"/>
+                                                </Border>
+                                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.NewFolder}" DockPanel.Dock="Left"
+                                                      Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"
+                                                      Stroke="{DynamicResource App.TextBrush}"/>
+                                                <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="New folder" Style="{StaticResource Body}" FontSize="14" FontWeight="SemiBold"/>
+                                                    <TextBlock HorizontalAlignment="Left" Text="{Binding NewItemFolderName, StringFormat='In {0}'}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,1,0,0"
+                                                               MaxWidth="150"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Button>
+                                                                                        </StackPanel>
+
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+                                </Popup>
+                        </Grid>
+                    </Viewbox>
+                </Grid>
+
+                <!-- folders, recent, pinned, search results -->
+                <Grid Visibility="{Binding ShowFilesBody, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitle}"/>
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Caption}" FontSize="12.5" Margin="0,3,0,0"/>
+                    </StackPanel>
+
                     <!-- show every file type (inside a folder) -->
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
-                                ToolTip="Also list images, text files and everything else. Graphite opens PDFs; Windows opens the rest."
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,8,0,0"
+                                ToolTip="Also list images, text files and everything else. Graphite opens PDFs and its own documents; Windows opens the rest."
                                 Visibility="{Binding ShowTypeToggle, Converter={StaticResource BoolToVis}}">
                         <ToggleButton Style="{StaticResource SwitchToggle}" IsChecked="{Binding ShowAllTypes, Mode=TwoWay}"
                                       VerticalAlignment="Center"/>
                         <TextBlock Text="All file types" Style="{StaticResource Body}" Margin="9,0,0,0"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
-
-                    <!-- sort (inside a folder) -->
-                    <Button Style="{StaticResource GhostButton}" Click="SortMenu_Click" Margin="0,0,10,0"
-                            Visibility="{Binding CanSort, Converter={StaticResource BoolToVis}}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding SortLabel}"/>
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
-                                  Width="10" Height="10" Stretch="Uniform" Margin="7,1,0,0"/>
-                        </StackPanel>
-                        <Button.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Name" Command="{Binding SetSortCommand}" CommandParameter="Name"/>
-                                <MenuItem Header="Modified" Command="{Binding SetSortCommand}" CommandParameter="Modified"/>
-                                <MenuItem Header="Size" Command="{Binding SetSortCommand}" CommandParameter="Size"/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
-
-                    <!-- search, scoped to wherever you are -->
-                    <Border Width="300" Height="36" CornerRadius="18" Background="{DynamicResource App.CardBrush}"
-                            BorderBrush="{DynamicResource App.StrokeBrush}" BorderThickness="1">
-                        <Grid Margin="14,0,8,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}" Width="14" Height="14"
-                                  Stretch="Uniform" VerticalAlignment="Center"/>
-                            <Grid Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding SearchPlaceholder}" Style="{StaticResource Caption}" FontSize="12.5"
-                                           IsHitTestVisible="False"
-                                           Visibility="{Binding IsSearching, Converter={StaticResource InvBoolToVis}}"/>
-                                <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0" Padding="0"
-                                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                                         PreviewKeyDown="SearchBox_PreviewKeyDown"/>
-                            </Grid>
-                            <Button Grid.Column="2" Style="{StaticResource IconButton}" Padding="5" ToolTip="Clear search"
-                                    Command="{Binding ClearSearchCommand}"
-                                    Visibility="{Binding IsSearching, Converter={StaticResource BoolToVis}}">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Close}" Width="10" Height="10"
-                                      Stretch="Uniform"/>
-                            </Button>
-                            <Border Grid.Column="2" CornerRadius="7" Padding="7,2" Margin="4,0,0,0" VerticalAlignment="Center"
-                                    Background="{DynamicResource App.HoverBrush}" IsHitTestVisible="False"
-                                    Visibility="{Binding IsSearching, Converter={StaticResource InvBoolToVis}}">
-                                <TextBlock Text="Ctrl F" Style="{StaticResource Caption}" FontSize="10.5"/>
-                            </Border>
-                        </Grid>
-                    </Border>
-
-                    <!-- grid / list -->
-                    <StackPanel Orientation="Horizontal" Margin="10,0,0,0"
-                                Visibility="{Binding ShowFilesBody, Converter={StaticResource BoolToVis}}">
-                        <RadioButton Style="{StaticResource ToolToggle}" ToolTip="Grid"
-                                     IsChecked="{Binding IsGrid, Mode=OneWay}"
-                                     Command="{Binding SetViewModeCommand}" CommandParameter="grid">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Thumbs}"/>
-                        </RadioButton>
-                        <RadioButton Style="{StaticResource ToolToggle}" ToolTip="List" Margin="4,0,0,0"
-                                     IsChecked="{Binding IsList, Mode=OneWay}"
-                                     Command="{Binding SetViewModeCommand}" CommandParameter="list">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Outline}"/>
-                        </RadioButton>
-                    </StackPanel>
-                </StackPanel>
+                </Grid>
             </Grid>
 
             <!-- ============================ home sections ============================ -->
@@ -591,73 +721,47 @@
                           Visibility="{Binding ShowHomeSections, Converter={StaticResource BoolToVis}}">
                 <StackPanel Margin="0,0,10,12">
 
-                    <!-- continue reading + open elsewhere -->
-                    <Grid Margin="0,0,0,28">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="{Binding ContinueColumnWidth}"/>
-                            <ColumnDefinition Width="{Binding DropColumnWidth}"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Button Grid.Column="0" Style="{StaticResource LibCard}" Height="124" Margin="0,0,14,0"
-                                DataContext="{Binding ContinueItem}" Loaded="FileCard_Loaded" DataContextChanged="ContinueCard_DataContextChanged"
-                                Command="{Binding DataContext.ResumeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                Visibility="{Binding DataContext.ShowContinue, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
-                            <Grid Margin="18,14,18,14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Background="White" CornerRadius="3" Width="72" Height="94" VerticalAlignment="Center">
-                                    <Border.Effect>
-                                        <DropShadowEffect BlurRadius="10" ShadowDepth="2" Direction="270" Opacity="0.3"/>
-                                    </Border.Effect>
-                                    <Grid>
-                                        <Rectangle Fill="{StaticResource PaperLines}" Margin="9,13,9,10"
-                                                   Visibility="{Binding Thumbnail, Converter={StaticResource NullToVisInv}}"/>
-                                        <ctrl:FadeImage Source="{Binding Thumbnail}" Stretch="Uniform"/>
-                                    </Grid>
-                                </Border>
-                                <StackPanel Grid.Column="1" Margin="18,0,16,0" VerticalAlignment="Center">
-                                    <TextBlock Text="CONTINUE READING" Style="{StaticResource SectionLabel}"/>
-                                    <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold"
-                                               FontSize="17" Margin="0,4,0,0"/>
-                                    <TextBlock Text="{Binding ContinueText}" Style="{StaticResource Caption}" FontSize="12"
-                                               Margin="0,3,0,0"/>
-                                    <Grid Height="4" Margin="0,12,0,0" Background="{DynamicResource App.StrokeBrush}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="{Binding ProgressDone}"/>
-                                            <ColumnDefinition Width="{Binding ProgressRest}"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Background="{DynamicResource App.AccentSystemBrush}" CornerRadius="2"/>
-                                    </Grid>
-                                </StackPanel>
-                                <Button Grid.Column="2" Style="{StaticResource AccentButton}" Content="Resume"
-                                        VerticalAlignment="Center"
-                                        Command="{Binding DataContext.ResumeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                            </Grid>
-                        </Button>
-
-                        <Grid Grid.Column="1" Height="124">
-                            <Rectangle RadiusX="16" RadiusY="16" StrokeThickness="1.3" StrokeDashArray="4 4"
-                                       Stroke="{DynamicResource App.StrokeBrush}"/>
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="Drop any PDF here, or open a file from outside this library"
-                                           Style="{StaticResource Caption}" FontSize="12.5" TextAlignment="Center"
-                                           TextWrapping="Wrap" TextTrimming="None" MaxWidth="280"/>
-                                <Button Style="{StaticResource GhostButton}" Command="{Binding OpenFileDialogCommand}"
-                                        HorizontalAlignment="Center" Margin="0,12,0,0">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Open file…"/>
-                                        <Border CornerRadius="6" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center"
-                                                Background="{DynamicResource App.HoverBrush}">
-                                            <TextBlock Text="Ctrl O" Style="{StaticResource Caption}" FontSize="10.5"/>
-                                        </Border>
-                                    </StackPanel>
-                                </Button>
+                    <!-- continue reading -->
+                    <Button Style="{StaticResource LibCard}" Height="124" Margin="0,0,0,28" MaxWidth="900"
+                            HorizontalAlignment="Left"
+                            DataContext="{Binding ContinueItem}" Loaded="FileCard_Loaded" DataContextChanged="ContinueCard_DataContextChanged"
+                            Command="{Binding DataContext.ResumeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            Visibility="{Binding DataContext.ShowContinue, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+                        <Grid Margin="18,14,18,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Background="White" CornerRadius="3" Width="72" Height="94" VerticalAlignment="Center">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="10" ShadowDepth="2" Direction="270" Opacity="0.3"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <Rectangle Fill="{StaticResource PaperLines}" Margin="9,13,9,10"
+                                               Visibility="{Binding Thumbnail, Converter={StaticResource NullToVisInv}}"/>
+                                    <ctrl:FadeImage Source="{Binding Thumbnail}" Stretch="Uniform"/>
+                                </Grid>
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="18,0,16,0" VerticalAlignment="Center">
+                                <TextBlock Text="CONTINUE READING" Style="{StaticResource SectionLabel}"/>
+                                <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold"
+                                           FontSize="17" Margin="0,4,0,0"/>
+                                <TextBlock Text="{Binding ContinueText}" Style="{StaticResource Caption}" FontSize="12"
+                                           Margin="0,3,0,0"/>
+                                <Grid Height="4" Margin="0,12,0,0" Background="{DynamicResource App.StrokeBrush}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="{Binding ProgressDone}"/>
+                                        <ColumnDefinition Width="{Binding ProgressRest}"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="{DynamicResource App.AccentSystemBrush}" CornerRadius="2"/>
+                                </Grid>
                             </StackPanel>
+                            <Button Grid.Column="2" Style="{StaticResource AccentButton}" Content="Resume"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding DataContext.ResumeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                         </Grid>
-                    </Grid>
+                    </Button>
 
                     <!-- no library yet -->
                     <Border Style="{StaticResource GlassCard}" Padding="26,24" Margin="0,0,0,28" MaxWidth="640"
@@ -676,21 +780,8 @@
                     <!-- folders -->
                     <StackPanel Visibility="{Binding ShowFoldersSection, Converter={StaticResource BoolToVis}}">
                         <DockPanel Margin="2,0,0,12">
-                            <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Padding="8,4"
-                                    Click="SortMenu_Click">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding SortLabel}" Style="{StaticResource Caption}" FontSize="12"/>
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronDown}"
-                                          Width="9" Height="9" Stretch="Uniform" Margin="6,1,0,0"/>
-                                </StackPanel>
-                                <Button.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Name" Command="{Binding SetSortCommand}" CommandParameter="Name"/>
-                                        <MenuItem Header="Modified" Command="{Binding SetSortCommand}" CommandParameter="Modified"/>
-                                        <MenuItem Header="Size (PDF count)" Command="{Binding SetSortCommand}" CommandParameter="Size"/>
-                                    </ContextMenu>
-                                </Button.ContextMenu>
-                            </Button>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding Subtitle}" Style="{StaticResource Caption}"
+                                       FontSize="12" VerticalAlignment="Center"/>
                             <TextBlock Text="FOLDERS" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
                         </DockPanel>
                         <ItemsControl ItemsSource="{Binding Folders}" ItemTemplate="{StaticResource FolderCardTemplate}"

@@ -89,6 +89,15 @@ public sealed partial class FileCardViewModel : ObservableObject
     /// <summary>Not a PDF and not an Office file: shown by "all file types", opened by Windows.</summary>
     public bool IsOther => !IsOffice && !Extension.Equals("PDF", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>A Word .docx: gets separate "Edit" and "PDF" buttons.</summary>
+    public bool IsDocx => Extension.Equals("DOCX", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A PDF (what Merge works on).</summary>
+    public bool IsPdf => Extension.Equals("PDF", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Ticked in the list: the toolbar then offers actions for everything ticked.</summary>
+    [ObservableProperty] private bool isSelected;
+
     /// <summary>Files Graphite can't draw a page of get their extension on a blank sheet instead.</summary>
     public bool ShowExtension => IsOffice || IsOther;
 

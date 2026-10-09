@@ -1,11 +1,17 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.IO;
 using System.Windows;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Graphite.App.Services;
 using Graphite.App.Views;
 using Graphite.Core.Export;
+using Graphite.Core.Library;
 using Graphite.Core.Pdf;
 using Microsoft.Win32;
 
@@ -15,10 +21,27 @@ public sealed record PaletteCommand(string Name, string? Gesture, Action Execute
 
 public partial class MainViewModel : ObservableObject
 {
+    /// <summary>The open PDFs.</summary>
     public ObservableCollection<DocumentViewModel> Documents { get; } = new();
+
+    /// <summary>The open documents of the built-in editor.</summary>
+    public ObservableCollection<WriterViewModel> Writers { get; } = new();
+
+    /// <summary>Every open tab (PDFs and documents) in the order they were opened: what the tab strip shows.</summary>
+    public ObservableCollection<object> Tabs { get; } = new();
+
     public ObservableCollection<string> RecentFiles { get; } = new();
 
+    /// <summary>The selected PDF; null on the Home tab and while a document is selected.</summary>
     [ObservableProperty] private DocumentViewModel? selectedDocument;
+
+    /// <summary>The selected document of the editor; null on the Home tab and while a PDF is selected.</summary>
+    [ObservableProperty] private WriterViewModel? selectedWriter;
+
+    /// <summary>The selected tab, whatever its kind (null = Home). Kept in step with the two above.</summary>
+    [ObservableProperty] private object? selectedTab;
+
+    private bool _syncingTabs;
     [ObservableProperty] private bool isDarkTheme;
     [ObservableProperty] private bool showSidebar = true;
     [ObservableProperty] private bool showInspector = true;
@@ -38,18 +61,72 @@ public partial class MainViewModel : ObservableObject
     {
         IsDarkTheme = ThemeService.IsDark;
         foreach (var f in ThemeService.RecentFiles) RecentFiles.Add(f);
+        Documents.CollectionChanged += (_, e) => MirrorTabs(e);
+        Writers.CollectionChanged += (_, e) => MirrorTabs(e);
         Library = new LibraryViewModel(this);
         Library.Initialize();
+    }
+
+    private void MirrorTabs(NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems != null)
+            foreach (object item in e.OldItems) Tabs.Remove(item);
+        if (e.NewItems != null)
+            foreach (object item in e.NewItems) Tabs.Add(item);
     }
 
     private static Window? Owner => Application.Current.MainWindow;
 
     /// <summary>True while the Home tab (start screen) is showing instead of a document.</summary>
-    public bool IsHomeSelected => SelectedDocument == null;
+    public bool IsHomeSelected => SelectedDocument == null && SelectedWriter == null;
+
+    /// <summary>A PDF is showing (the markup tools apply).</summary>
+    public bool IsPdfSelected => SelectedDocument != null;
+
+    /// <summary>A document of the built-in editor is showing.</summary>
+    public bool IsWriterSelected => SelectedWriter != null;
 
     /// <summary>Switch to the Home tab. Open documents stay open in their own tabs.</summary>
     [RelayCommand]
-    private void GoHome() => SelectedDocument = null;
+    private void GoHome() => SelectedTab = null;
+
+    private void RaiseSelectionKinds()
+    {
+        OnPropertyChanged(nameof(IsHomeSelected));
+        OnPropertyChanged(nameof(IsPdfSelected));
+        OnPropertyChanged(nameof(IsWriterSelected));
+    }
+
+    partial void OnSelectedTabChanged(object? value)
+    {
+        if (_syncingTabs) return;
+        _syncingTabs = true;
+        try
+        {
+            SelectedWriter = value as WriterViewModel;
+            SelectedDocument = value as DocumentViewModel;
+        }
+        finally { _syncingTabs = false; }
+        RaiseSelectionKinds();
+    }
+
+    partial void OnSelectedWriterChanged(WriterViewModel? oldValue, WriterViewModel? newValue)
+    {
+        if (oldValue != null) oldValue.IsActive = false;
+        if (newValue != null) newValue.IsActive = true;
+        if (!_syncingTabs)
+        {
+            _syncingTabs = true;
+            try
+            {
+                if (newValue != null) SelectedDocument = null;
+                SelectedTab = newValue;
+            }
+            finally { _syncingTabs = false; }
+        }
+        RaiseSelectionKinds();
+        if (newValue == null && SelectedDocument == null) Library.OnHomeShown();
+    }
 
     partial void OnSelectedDocumentChanged(DocumentViewModel? oldValue, DocumentViewModel? newValue)
     {
@@ -59,8 +136,18 @@ public partial class MainViewModel : ObservableObject
             SaveReadingPosition(oldValue);
         }
         if (newValue != null) newValue.IsActive = true;
-        OnPropertyChanged(nameof(IsHomeSelected));
-        if (newValue == null) Library.OnHomeShown();
+        if (!_syncingTabs)
+        {
+            _syncingTabs = true;
+            try
+            {
+                SelectedWriter = null;
+                SelectedTab = newValue;
+            }
+            finally { _syncingTabs = false; }
+        }
+        RaiseSelectionKinds();
+        if (newValue == null && SelectedWriter == null) Library.OnHomeShown();
     }
 
     /// <summary>Remember the page this document was left on, so the start screen can offer
@@ -134,9 +221,16 @@ public partial class MainViewModel : ObservableObject
                 // Already open? Just focus it.
                 var existing = Documents.FirstOrDefault(d =>
                     string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
-                if (existing != null) { if (activate) SelectedDocument = existing; continue; }
+                if (existing != null) { if (activate) SelectedTab = existing; continue; }
+                var openWriter = Writers.FirstOrDefault(w =>
+                    string.Equals(w.FilePath, path, StringComparison.OrdinalIgnoreCase));
+                if (openWriter != null) { if (activate) SelectedTab = openWriter; continue; }
 
-                if (OfficeToPdf.CanConvert(path))
+                // A document written by Graphite's own editor opens in the editor; any other
+                // Word file is converted to PDF with Office as before.
+                if (GraphiteDocx.IsGraphiteDocument(path))
+                    OpenWriter(path, activate);
+                else if (OfficeToPdf.CanConvert(path))
                     await OpenOfficeAsPdfAsync(path);
                 else
                     await OpenPdfAsync(path, activate, resume);
@@ -197,7 +291,7 @@ public partial class MainViewModel : ObservableObject
         // Already open? Just focus it.
         var existing = Documents.FirstOrDefault(d =>
             string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
-        if (existing != null) { if (activate) SelectedDocument = existing; return; }
+        if (existing != null) { if (activate) SelectedTab = existing; return; }
 
         byte[] bytes = await File.ReadAllBytesAsync(path);
         DocumentViewModel doc;
@@ -228,7 +322,7 @@ public partial class MainViewModel : ObservableObject
         SaveReadingPosition(doc);
 
         Documents.Add(doc);
-        if (activate) SelectedDocument = doc;
+        if (activate) SelectedTab = doc;
     }
 
     private static (byte[] Bytes, string Password)? PromptAndDecrypt(byte[] bytes, string fileName)
@@ -246,12 +340,13 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>Set by the window: plays the tab's closing animation; the tab is removed
     /// once the returned task completes.</summary>
-    public Func<DocumentViewModel, Task>? TabClosing { get; set; }
+    public Func<object, Task>? TabClosing { get; set; }
 
     [RelayCommand]
-    private async Task CloseDocument(DocumentViewModel? doc)
+    private async Task CloseDocument(object? tab)
     {
-        if (doc == null) return;
+        if (tab is WriterViewModel writer) { await CloseWriterAsync(writer); return; }
+        if (tab is not DocumentViewModel doc) return;
         if (doc.IsDirty)
         {
             var answer = MessageDialog.Show(Owner,
@@ -269,7 +364,7 @@ public partial class MainViewModel : ObservableObject
         }
         // Closing the active tab should land on its neighbour (what a browser does), not
         // on an empty view — the tab strip is a plain ListBox, so that is on us.
-        int index = Documents.IndexOf(doc);
+        int index = Tabs.IndexOf(doc);
         bool wasSelected = ReferenceEquals(SelectedDocument, doc);
         // Let the tab strip play its collapse animation before the tab disappears.
         if (TabClosing != null)
@@ -279,26 +374,305 @@ public partial class MainViewModel : ObservableObject
         }
         SaveReadingPosition(doc);
         Documents.Remove(doc);
-        if (wasSelected || SelectedDocument == null || ReferenceEquals(SelectedDocument, doc))
-            SelectedDocument = Documents.Count > 0 ? Documents[Math.Clamp(index, 0, Documents.Count - 1)] : null;
+        if (wasSelected)
+            SelectedTab = Tabs.Count > 0 ? Tabs[Math.Clamp(index, 0, Tabs.Count - 1)] : null;
         doc.Dispose();
+        MemoryTrim.Schedule();
     }
 
-    /// <summary>Ctrl+Tab / Ctrl+Shift+Tab: move to the next / previous tab, wrapping around.</summary>
+    private async Task CloseWriterAsync(WriterViewModel writer)
+    {
+        // Documents save themselves; only a failed save needs the person's say.
+        if (!writer.Flush())
+        {
+            var answer = MessageDialog.Show(Owner,
+                $"“{writer.Title}” couldn't be saved. Close it anyway and lose the latest changes?",
+                "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
+            if (answer != MessageBoxResult.Yes) return;
+        }
+
+        int index = Tabs.IndexOf(writer);
+        bool wasSelected = ReferenceEquals(SelectedWriter, writer);
+        if (TabClosing != null)
+        {
+            try { await TabClosing(writer); }
+            catch (Exception ex) { App.LogError("Tab close animation failed", ex); }
+        }
+        Writers.Remove(writer);
+        if (wasSelected)
+            SelectedTab = Tabs.Count > 0 ? Tabs[Math.Clamp(index, 0, Tabs.Count - 1)] : null;
+        writer.PathChanged -= OnWriterPathChanged;
+        writer.Dispose();
+        MemoryTrim.Schedule();
+        Library.RefreshCommand.Execute(null);
+    }
+
+    /// <summary>Ctrl+Tab / Ctrl+Shift+Tab: move to the next / previous tab, wrapping around.
+    /// The start screen is the first stop, ahead of the first document.</summary>
     public void CycleDocument(int delta)
     {
-        if (Documents.Count < 2) return;
-        int current = SelectedDocument == null ? -1 : Documents.IndexOf(SelectedDocument);
-        int next = current < 0
-            ? 0
-            : ((current + delta) % Documents.Count + Documents.Count) % Documents.Count;
-        SelectedDocument = Documents[next];
+        if (Tabs.Count == 0) return;
+        int slots = Tabs.Count + 1; // slot 0 = Home, slot n = Tabs[n - 1]
+        int current = SelectedTab == null ? 0 : Tabs.IndexOf(SelectedTab) + 1;
+        int next = ((current + delta) % slots + slots) % slots;
+        SelectedTab = next == 0 ? null : Tabs[next - 1];
+    }
+
+    // ------------------------------------------------------------- documents (the built-in editor)
+
+    /// <summary>Make a new blank document in the folder the library is showing (Ctrl+N).</summary>
+    [RelayCommand]
+    public void NewDocument() => CreateDocumentIn(Library.NewItemFolder);
+
+    public void CreateDocumentIn(string folder)
+    {
+        try
+        {
+            var writer = WriterViewModel.CreateNew(folder);
+            AddWriter(writer);
+            SelectedTab = writer;
+            Library.RefreshCommand.Execute(null);
+        }
+        catch (Exception ex) { Error(ex); }
+    }
+
+    /// <summary>Open a Word file the way the person picked: in the editor, or as a PDF.</summary>
+    public async Task OpenWordAsync(string path, bool inEditor)
+    {
+        try
+        {
+            if (inEditor) OpenWordInEditor(path);
+            else await OpenWordAsPdfAsync(path);
+        }
+        catch (Exception ex) { Error(ex); }
+    }
+
+    private void OpenWordInEditor(string path)
+    {
+        var open = Writers.FirstOrDefault(w => string.Equals(w.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (open != null) { SelectedTab = open; return; }
+
+        if (GraphiteDocx.IsGraphiteDocument(path)) { OpenWriter(path, true); return; }
+
+        // Written by Word (or anything else): the editor doesn't keep everything Word does, so it
+        // works on a copy and leaves the original exactly as it is.
+        string folder = Path.GetDirectoryName(path) ?? "";
+        string name = Path.GetFileNameWithoutExtension(path);
+        string copy = GraphiteDocx.UniquePath(folder, name + " (Graphite)", ".docx");
+        var answer = MessageDialog.Show(Owner,
+            $"\"{Path.GetFileName(path)}\" wasn't made in Graphite, and the editor can't keep every Word feature " +
+            $"(some layout or formatting may change).\n\nEdit a copy named \"{Path.GetFileName(copy)}\"? " +
+            "The original stays untouched.",
+            "Edit in Graphite", DialogButtons.YesNo, DialogIcon.Info);
+        if (answer != MessageBoxResult.Yes) return;
+
+        var (document, page) = DocxCodec.Load(path);
+        DocxCodec.Save(copy, document, page, name);
+        GraphiteDocx.Forget(copy);
+        OpenWriter(copy, true);
+        Library.RefreshCommand.Execute(null);
+    }
+
+    private async Task OpenWordAsPdfAsync(string path)
+    {
+        var open = Writers.FirstOrDefault(w => string.Equals(w.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (open != null && !open.Flush()) return;
+
+        try
+        {
+            await OpenOfficeAsPdfAsync(path);
+        }
+        catch (Exception ex) when (GraphiteDocx.IsGraphiteDocument(path))
+        {
+            // No Word here: draw the pages ourselves (images, not selectable text).
+            App.LogError("Word PDF conversion unavailable, drawing pages instead", ex);
+            string target = Path.Combine(Path.GetDirectoryName(path) ?? "", Path.GetFileNameWithoutExtension(path) + ".pdf");
+            RenderPagesToPdf(path, target);
+            await OpenPdfAsync(target);
+            Library.RefreshCommand.Execute(null);
+            MessageDialog.Show(Owner,
+                "Word isn't installed, so the PDF holds page images rather than selectable text. " +
+                "Use Recognize text (OCR) on it to make it searchable.",
+                "Open as PDF", DialogButtons.OK, DialogIcon.Info);
+        }
+    }
+
+    private void OpenWriter(string path, bool activate)
+    {
+        var writer = WriterViewModel.Open(path);
+        AddWriter(writer);
+        if (activate) SelectedTab = writer;
+    }
+
+    private void AddWriter(WriterViewModel writer)
+    {
+        writer.PathChanged += OnWriterPathChanged;
+        Writers.Add(writer);
+        ThemeService.AddRecentFile(writer.FilePath);
+        RecentFiles.Remove(writer.FilePath);
+        RecentFiles.Insert(0, writer.FilePath);
+        // Stamps "last opened" so the start screen lists it under Recent.
+        ThemeService.SetReading(writer.FilePath, 0, 1);
+    }
+
+    private void OnWriterPathChanged(string oldPath, string newPath)
+    {
+        ThemeService.RenamePath(oldPath, newPath);
+        int at = RecentFiles.IndexOf(oldPath);
+        if (at >= 0) RecentFiles[at] = newPath;
+        Library.RefreshCommand.Execute(null);
+    }
+
+    /// <summary>Save every open document now (the window is closing). False when one could not be saved.</summary>
+    public bool FlushWriters()
+    {
+        bool all = true;
+        foreach (var writer in Writers) all &= writer.Flush();
+        return all;
+    }
+
+    /// <summary>A copy of the open document under another name or in another folder.</summary>
+    [RelayCommand]
+    private void SaveWriterCopy()
+    {
+        if (SelectedWriter is not { } writer || !writer.Flush()) return;
+        var dlg = new SaveFileDialog
+        {
+            Filter = "Word document|*.docx",
+            FileName = writer.Title + " copy.docx",
+            InitialDirectory = writer.FolderPath,
+        };
+        if (dlg.ShowDialog(Owner) != true) return;
+        try
+        {
+            File.Copy(writer.FilePath, dlg.FileName, overwrite: true);
+            GraphiteDocx.Forget(dlg.FileName);
+            Library.RefreshCommand.Execute(null);
+            MessageDialog.Show(Owner, $"Saved a copy to {dlg.FileName}.", "Graphite", DialogButtons.OK, DialogIcon.Info);
+        }
+        catch (Exception ex) { Error(ex); }
+    }
+
+    [RelayCommand]
+    private void PrintWriter()
+    {
+        if (SelectedWriter is not { } writer || !writer.Flush()) return;
+        try
+        {
+            var dialog = new System.Windows.Controls.PrintDialog();
+            if (dialog.ShowDialog() != true) return;
+            var (copy, page) = DocxCodec.Load(writer.FilePath);
+            PrepareForPages(copy, page);
+            dialog.PrintDocument(((IDocumentPaginatorSource)copy).DocumentPaginator, writer.Title);
+        }
+        catch (Exception ex) { Error(ex); }
+    }
+
+    /// <summary>A private copy of the document laid out on fixed pages (what printing and PDF export paginate).</summary>
+    private static void PrepareForPages(FlowDocument document, PageSettings page)
+    {
+        document.PageWidth = page.WidthDip;
+        document.PageHeight = page.HeightDip;
+        document.PagePadding = new Thickness(page.MarginDip);
+        document.ColumnWidth = page.WidthDip;
+    }
+
+    /// <summary>Export the open document as a PDF: through Word when it is installed (real text),
+    /// otherwise as page images that Graphite's OCR can make searchable.</summary>
+    [RelayCommand]
+    private async Task ExportWriterPdf()
+    {
+        if (SelectedWriter is not { } writer || !writer.Flush()) return;
+        var dlg = new SaveFileDialog
+        {
+            Filter = "PDF document|*.pdf",
+            FileName = writer.Title + ".pdf",
+            InitialDirectory = writer.FolderPath,
+        };
+        if (dlg.ShowDialog(Owner) != true) return;
+
+        string target = dlg.FileName;
+        string source = writer.FilePath;
+        bool viaOffice = false;
+        var previousCursor = Mouse.OverrideCursor;
+        Mouse.OverrideCursor = Cursors.Wait;
+        try
+        {
+            try
+            {
+                await Task.Run(() => OfficeToPdf.Convert(source, target));
+                viaOffice = File.Exists(target);
+            }
+            catch (Exception ex)
+            {
+                // No Word (or it refused): fall back to drawing the pages ourselves.
+                App.LogError("Word PDF export unavailable, drawing pages instead", ex);
+            }
+            if (!viaOffice) RenderPagesToPdf(source, target);
+
+            GraphiteDocx.Forget(source);
+            await OpenFilesAsync(new[] { target }, activate: false);
+            Library.RefreshCommand.Execute(null);
+            MessageDialog.Show(Owner,
+                viaOffice
+                    ? $"Exported to {target}."
+                    : $"Exported to {target}.\n\nWord isn't installed, so the PDF holds page images rather than selectable text. Use Recognize text (OCR) on it to make it searchable.",
+                "Export complete", DialogButtons.OK, DialogIcon.Info);
+        }
+        catch (Exception ex) { Error(ex); }
+        finally { Mouse.OverrideCursor = previousCursor; }
+    }
+
+    private static void RenderPagesToPdf(string docxPath, string pdfPath)
+    {
+        var (copy, page) = DocxCodec.Load(docxPath);
+        PrepareForPages(copy, page);
+        var paginator = ((IDocumentPaginatorSource)copy).DocumentPaginator;
+        paginator.ComputePageCount();
+
+        string temp = Path.Combine(Path.GetTempPath(), "graphite-export-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+        try
+        {
+            const double scale = 2.0;
+            var images = new List<string>();
+            for (int i = 0; i < Math.Max(1, paginator.PageCount); i++)
+            {
+                using DocumentPage documentPage = paginator.GetPage(i);
+                var bitmap = new RenderTargetBitmap((int)Math.Ceiling(page.WidthDip * scale), (int)Math.Ceiling(page.HeightDip * scale),
+                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                var paper = new DrawingVisual();
+                using (var dc = paper.RenderOpen())
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, page.WidthDip, page.HeightDip));
+                bitmap.Render(paper);
+                bitmap.Render(documentPage.Visual);
+
+                var encoder = new JpegBitmapEncoder { QualityLevel = 90 };
+                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                string file = Path.Combine(temp, $"page{i + 1}.jpg");
+                using (var fs = File.Create(file)) encoder.Save(fs);
+                images.Add(file);
+            }
+            File.WriteAllBytes(pdfPath, PageOperations.FromImages(images, page.WidthPt, page.HeightPt));
+        }
+        finally
+        {
+            try { Directory.Delete(temp, recursive: true); } catch { /* best effort */ }
+        }
     }
 
     // ------------------------------------------------------------- save
 
     [RelayCommand]
-    private Task Save() => SelectedDocument == null ? Task.CompletedTask : SaveDocAsync(SelectedDocument);
+    private Task Save()
+    {
+        if (SelectedWriter is { } writer)
+        {
+            writer.Save();
+            return Task.CompletedTask;
+        }
+        return SelectedDocument == null ? Task.CompletedTask : SaveDocAsync(SelectedDocument);
+    }
 
     private async Task SaveDocAsync(DocumentViewModel doc)
     {
@@ -313,6 +687,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveAs()
     {
+        if (SelectedWriter != null) { SaveWriterCopy(); return; }
         if (SelectedDocument is not { } doc) return;
         var dlg = new SaveFileDialog
         {
@@ -599,8 +974,19 @@ public partial class MainViewModel : ObservableObject
         d.ActiveTool = ToolKind.Highlight;
     }
 
-    [RelayCommand] private void ZoomIn() { if (SelectedDocument is { } d) d.Zoom = Math.Min(6, d.Zoom * 1.2); }
-    [RelayCommand] private void ZoomOut() { if (SelectedDocument is { } d) d.Zoom = Math.Max(0.25, d.Zoom / 1.2); }
+    [RelayCommand]
+    private void ZoomIn()
+    {
+        if (SelectedDocument is { } d) d.Zoom = Math.Min(6, d.Zoom * 1.2);
+        else if (SelectedWriter is { } w) w.Zoom = Math.Round(w.Zoom + 0.1, 2);
+    }
+
+    [RelayCommand]
+    private void ZoomOut()
+    {
+        if (SelectedDocument is { } d) d.Zoom = Math.Max(0.25, d.Zoom / 1.2);
+        else if (SelectedWriter is { } w) w.Zoom = Math.Round(w.Zoom - 0.1, 2);
+    }
 
     [RelayCommand]
     private void GoToPageDialog()
@@ -629,6 +1015,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task Print()
     {
+        if (SelectedWriter != null) { PrintWriter(); return; }
         if (SelectedDocument is not { } doc) return;
         try
         {
@@ -805,6 +1192,8 @@ public partial class MainViewModel : ObservableObject
         var list = new List<PaletteCommand>
         {
             new("Open document…", "Ctrl+O", () => _ = Open()),
+            new("New document", "Ctrl+N", NewDocument),
+            new("New folder", "Ctrl+Shift+N", () => Library.NewFolderCommand.Execute(null)),
             new("Go to Home (library)", null, GoHome),
             new("Choose library folder…", null, () => Library.ChooseFolderCommand.Execute(null)),
             new("Merge PDFs…", null, () => _ = Merge()),
@@ -816,6 +1205,20 @@ public partial class MainViewModel : ObservableObject
             new("Toggle markup panel", null, () => ShowInspector = !ShowInspector),
             new("Check for updates…", null, () => _ = CheckForUpdates()),
         };
+
+        if (SelectedWriter is { } writer)
+        {
+            list.InsertRange(1, new PaletteCommand[]
+            {
+                new("Save a copy…", "Ctrl+Shift+S", SaveWriterCopy),
+                new("Print…", "Ctrl+P", PrintWriter),
+                new("Export document as PDF…", null, () => _ = ExportWriterPdf()),
+                new("Toggle outline", null, () => writer.ShowOutline = !writer.ShowOutline),
+                new("Next tab", "Ctrl+Tab", () => CycleDocument(+1)),
+                new("Previous tab", "Ctrl+Shift+Tab", () => CycleDocument(-1)),
+                new("Close document", "Ctrl+W", () => _ = CloseWriterAsync(writer)),
+            });
+        }
 
         if (SelectedDocument is { } doc)
         {

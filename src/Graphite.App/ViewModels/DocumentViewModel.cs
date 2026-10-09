@@ -1135,7 +1135,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         _searchCts = null;
         _undo.Clear();
         _redo.Clear();
-        foreach (var p in Pages) p.EvictFullImage();
+        foreach (var p in Pages) p.ReleaseBitmaps();
         PlacedImages.Clear();
         Index.Dispose();
     }

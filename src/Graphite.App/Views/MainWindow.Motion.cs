@@ -369,7 +369,7 @@ public partial class MainWindow
     // ------------------------------------------------------------- tabs
 
     /// <summary>The closing tab shrinks and fades before it is removed.</summary>
-    private Task AnimateTabCloseAsync(DocumentViewModel doc)
+    private Task AnimateTabCloseAsync(object doc)
     {
         if (!Motion.Enabled ||
             TabStrip.ItemContainerGenerator.ContainerFromItem(doc) is not FrameworkElement tab ||
@@ -590,6 +590,12 @@ public partial class MainWindow
         BarSearchKey.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
         BarSearch.Width = folded ? 34 : 136;
         BarSearch.Visibility = level >= 2 ? Visibility.Collapsed : Visibility.Visible;
+
+        // The start screen's bar is the widest: let its flexible parts give way first.
+        if (HomeResumeName != null) HomeResumeName.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
+        if (BrandName != null) BrandName.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
+        if (HomeSearchHost != null) HomeSearchHost.Width = level >= 2 ? 150 : 210;
+        if (HomeLocationText != null) HomeLocationText.MaxWidth = level >= 2 ? 110 : 170;
     }
 
     private void ShowPageBar(bool show, bool animate = true, bool force = false)

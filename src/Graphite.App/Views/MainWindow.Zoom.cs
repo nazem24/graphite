@@ -205,6 +205,18 @@ public partial class MainWindow
         StopZoomPreviewTimers();
 
         double factor = zp.Eased ? zp.TargetFactor : zp.Factor;
+
+        // Where the preview has the anchored page on screen once it has caught up with the
+        // target. The real layout is pinned to exactly that spot (read from WPF's own transforms,
+        // not re-derived from a model), so letting go of the wheel / fingers never moves the page.
+        (int Page, double Top)? pin = null;
+        if (zp.Continuous && zp.AnchorPage >= 0)
+        {
+            zp.Factor = factor;
+            ApplyZoomPreview(zp);
+            pin = MeasureAnchorPage(zp);
+        }
+
         RestorePageGaps(zp);
         zp.Surface.RenderTransform = Transform.Identity;
 
@@ -220,11 +232,13 @@ public partial class MainWindow
             // up — zoom and drag resolved in one step, with a single clamp at the document ends.
             _zoomAnchor = zp.Anchor;
             _zoomTarget = zp.Anchor + zp.Shift;
+            _zoomPin = pin;
             try { doc.Zoom = newZoom; }
             finally
             {
                 _zoomAnchor = null;
                 _zoomTarget = null;
+                _zoomPin = null;
             }
         }
         else if (zp.Shift.LengthSquared > 0.25)
@@ -240,6 +254,20 @@ public partial class MainWindow
             finally { _trackingSuspended--; }
         }
         SyncFromViewport(lb, doc);
+    }
+
+    /// <summary>The viewport Y of the anchored page's top edge (inside its margin) exactly as
+    /// the live preview currently draws it, or null if that page isn't on screen.</summary>
+    private static (int Page, double Top)? MeasureAnchorPage(ZoomPreview zp)
+    {
+        if (zp.List.ItemContainerGenerator.ContainerFromIndex(zp.AnchorPage) is not FrameworkElement { ActualHeight: > 0 } c)
+            return null;
+        try
+        {
+            double top = c.TransformToAncestor(zp.Scroller).Transform(new Point(0, PageGap / 2)).Y;
+            return double.IsFinite(top) ? (zp.AnchorPage, top) : null;
+        }
+        catch (InvalidOperationException) { return null; }
     }
 
     /// <summary>Ctrl+wheel (and a precision-touchpad pinch, which arrives as Ctrl+wheel).</summary>

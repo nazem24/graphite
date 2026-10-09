@@ -48,9 +48,13 @@ public partial class LibraryViewModel : ObservableObject
         _watchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _watchTimer.Tick += (_, _) => { _watchTimer.Stop(); _ = ReloadAsync(rescanRail: true); };
 
-        _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _clockTimer.Tick += (_, _) => UpdateStatus();
+        // One tick a second keeps the big clock on the start screen exact; the sync label only
+        // needs refreshing now and then.
+        _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _clockTimer.Tick += (_, _) => OnClockTick();
         _clockTimer.Start();
+        UpdateClock();
+        Files.CollectionChanged += (_, _) => RecountSelection();
     }
 
     // ------------------------------------------------------------- state
@@ -79,6 +83,7 @@ public partial class LibraryViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRoot))]
     [NotifyPropertyChangedFor(nameof(RootName))]
+    [NotifyPropertyChangedFor(nameof(CanSort))]
     [NotifyPropertyChangedFor(nameof(ShowFoldersSection))]
     [NotifyPropertyChangedFor(nameof(SearchPlaceholder))]
     private string? rootPath;
@@ -152,7 +157,7 @@ public partial class LibraryViewModel : ObservableObject
     public bool ShowFoldersSection => HasRoot && HasFolders;
     public bool ShowChips => HasFolders && CurrentView == LibraryView.Folder && !IsSearching;
     public bool ShowTypeToggle => CurrentView == LibraryView.Folder;
-    public bool CanSort => !IsSearching && CurrentView is LibraryView.Folder;
+    public bool CanSort => !IsSearching && (CurrentView == LibraryView.Folder || (CurrentView == LibraryView.Home && HasRoot));
     public string SortLabel => $"Sort: {SortMode}";
 
     public string SearchPlaceholder => CurrentView switch
@@ -192,6 +197,9 @@ public partial class LibraryViewModel : ObservableObject
         HasRecents = false;
         CurrentPath = null;
         CurrentView = LibraryView.Home;
+        _history.Clear();
+        _historyIndex = -1;
+        RecordNav();
         ClearSearchSilently();
         StartWatcher(path);
         if (save) ThemeService.SetLibrary(_roots, path, IncludeOffice);
@@ -238,6 +246,7 @@ public partial class LibraryViewModel : ObservableObject
         ClearSearchSilently();
         CurrentView = LibraryView.Home;
         CurrentPath = null;
+        RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: !_railLoaded);
     }
@@ -248,6 +257,7 @@ public partial class LibraryViewModel : ObservableObject
         ClearSearchSilently();
         CurrentView = LibraryView.Recent;
         CurrentPath = null;
+        RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: false);
     }
@@ -258,6 +268,7 @@ public partial class LibraryViewModel : ObservableObject
         ClearSearchSilently();
         CurrentView = LibraryView.Pinned;
         CurrentPath = null;
+        RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: false);
     }
@@ -269,6 +280,7 @@ public partial class LibraryViewModel : ObservableObject
         ClearSearchSilently();
         CurrentView = LibraryView.Folder;
         CurrentPath = path;
+        RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: !_railLoaded);
     }
@@ -436,6 +448,27 @@ public partial class LibraryViewModel : ObservableObject
         if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
         if (OpenWithWindows(path)) return;
         await _main.OpenFilesAsync(new[] { path }, activate: false, resume: true);
+    }
+
+    /// <summary>Word files: open in Graphite's editor (a copy, when Graphite didn't write it).</summary>
+    [RelayCommand]
+    private Task OpenAsEditor(string? path) => OpenWord(path, inEditor: true);
+
+    /// <summary>Word files: convert to PDF and open that.</summary>
+    [RelayCommand]
+    private Task OpenAsPdf(string? path) => OpenWord(path, inEditor: false);
+
+    private async Task OpenWord(string? path, bool inEditor)
+    {
+        if (string.IsNullOrEmpty(path)) return;
+        if (!File.Exists(path))
+        {
+            MessageDialog.Show(Application.Current?.MainWindow, "That file no longer exists.", "Graphite",
+                DialogButtons.OK, DialogIcon.Info);
+            _ = ReloadAsync(rescanRail: true);
+            return;
+        }
+        await _main.OpenWordAsync(path, inEditor);
     }
 
     [RelayCommand]
@@ -744,7 +777,12 @@ public partial class LibraryViewModel : ObservableObject
     private void FillFiles(IEnumerable<LibraryFile> files, CancellationToken ct)
     {
         Files.Clear();
-        foreach (var f in files) Files.Add(new FileCardViewModel(f, ct));
+        foreach (var f in files)
+        {
+            var card = new FileCardViewModel(f, ct);
+            card.PropertyChanged += Card_PropertyChanged;
+            Files.Add(card);
+        }
         HasFiles = Files.Count > 0;
     }
 
