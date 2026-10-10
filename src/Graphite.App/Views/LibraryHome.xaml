@@ -4,6 +4,7 @@
              xmlns:vm="clr-namespace:Graphite.App.ViewModels"
              xmlns:ctrl="clr-namespace:Graphite.App.Controls"
              xmlns:conv="clr-namespace:Graphite.App.Converters"
+             xmlns:svc="clr-namespace:Graphite.App.Services"
              Focusable="False">
 
     <!-- DataContext: LibraryViewModel (set by MainWindow). Commands that live on it are reached
@@ -58,7 +59,7 @@
         <DataTemplate x:Key="FileCardTemplate" DataType="{x:Type vm:FileCardViewModel}">
             <Button x:Name="Card" Style="{StaticResource LibCard}" Width="222" Height="238" Margin="0,0,12,12"
                     Command="{Binding DataContext.OpenFileCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding Path}" ToolTip="{Binding Path}"
+                    CommandParameter="{Binding Path}"
                     ContextMenu="{StaticResource FileMenu}" ContextMenuOpening="Card_ContextMenuOpening"
                     PreviewMouseLeftButtonDown="Card_PreviewMouseDown" Loaded="FileCard_Loaded">
                 <Grid>
@@ -212,7 +213,7 @@
         <DataTemplate x:Key="FileRowTemplate" DataType="{x:Type vm:FileCardViewModel}">
             <Button x:Name="Row" Style="{StaticResource LibCard}" Height="50" Margin="0,0,0,6"
                     Command="{Binding DataContext.OpenFileCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding Path}" ToolTip="{Binding Path}"
+                    CommandParameter="{Binding Path}"
                     ContextMenu="{StaticResource FileMenu}" ContextMenuOpening="Card_ContextMenuOpening"
                     PreviewMouseLeftButtonDown="Card_PreviewMouseDown">
                 <Grid Margin="10,0,8,0">
@@ -266,91 +267,341 @@
             </Button>
         </DataTemplate>
 
-        <!-- ============================ a folder, home card ============================ -->
+        <!-- ============================ the folder shape ============================ -->
+
+        <!-- Back of a folder with its tab, 222 x 234. One shape for every card; the colours come from the
+             card's own brushes (see FolderLook), so changing a folder's colour redraws it. -->
+        <Geometry x:Key="FolderBackGeometry">M 0,14 A 14,14 0 0 1 14,0 L 86,0 A 12,12 0 0 1 98,12 L 98,22 L 208,22 A 14,14 0 0 1 222,36 L 222,220 A 14,14 0 0 1 208,234 L 14,234 A 14,14 0 0 1 0,220 Z</Geometry>
+
+        <!-- The inside of the folder gets darker toward the pocket, as if the pocket cast a shadow. -->
+        <LinearGradientBrush x:Key="FolderBackShade" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#00000000" Offset="0.22"/>
+            <GradientStop Color="#52000000" Offset="0.49"/>
+        </LinearGradientBrush>
+
+        <!-- A folder: the back with its tab, three sheets of paper standing in it, and the pocket in front.
+             Hovering lifts the sheets a little. DataContext is the FolderCardViewModel. -->
+        <Style x:Key="FolderTile" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform/>
+                            </Grid.RenderTransform>
+                            <Grid Width="222" Height="234" HorizontalAlignment="Center" VerticalAlignment="Bottom">
+                                <!-- Everything that does not change while you hover is drawn once into a bitmap, so the
+                                     lift below only moves pictures around instead of re-rendering shadows every frame. -->
+                                <Grid x:Name="backLayer" IsHitTestVisible="False">
+                                    <Grid.CacheMode>
+                                        <BitmapCache/>
+                                    </Grid.CacheMode>
+                                    <Path x:Name="back" Data="{StaticResource FolderBackGeometry}" Fill="{Binding BackBrush}">
+                                        <Path.Effect>
+                                            <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Opacity="0.25"/>
+                                        </Path.Effect>
+                                    </Path>
+                                    <Path Data="{StaticResource FolderBackGeometry}" Fill="{StaticResource FolderBackShade}"/>
+                                </Grid>
+
+                                <!-- the sheets: two plain ones behind, the top one with its coloured bars -->
+                                <Grid x:Name="papers" IsHitTestVisible="False">
+                                    <Grid.CacheMode>
+                                        <BitmapCache/>
+                                    </Grid.CacheMode>
+                                    <Grid.RenderTransform>
+                                        <TranslateTransform/>
+                                    </Grid.RenderTransform>
+                                    <Border Width="106" Height="140" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                            Margin="16,58,0,0" CornerRadius="5" RenderTransformOrigin="0.5,1">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                <GradientStop Color="#F1F1ED" Offset="0"/>
+                                                <GradientStop Color="#D2D3CF" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.RenderTransform>
+                                            <RotateTransform Angle="-4"/>
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border Width="106" Height="140" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Margin="0,56,16,0" CornerRadius="5" RenderTransformOrigin="0.5,1">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                <GradientStop Color="#D2D3CF" Offset="0"/>
+                                                <GradientStop Color="#EEEFEB" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.RenderTransform>
+                                            <RotateTransform Angle="3.5"/>
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border Width="106" Height="150" HorizontalAlignment="Center" VerticalAlignment="Top"
+                                            Margin="0,46,0,0" CornerRadius="5" Background="#F6F6F3">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="10" ShadowDepth="2" Direction="270" Opacity="0.32"/>
+                                        </Border.Effect>
+                                        <Canvas>
+                                            <Border Canvas.Left="9" Canvas.Top="10" Width="88" Height="14" CornerRadius="2.5"
+                                                    Background="{Binding BarBrush}"/>
+                                            <Rectangle Canvas.Left="9" Canvas.Top="28" Width="88" Height="3" RadiusX="1.5" RadiusY="1.5" Fill="#D2D2CE"/>
+                                            <Rectangle Canvas.Left="9" Canvas.Top="34" Width="62" Height="3" RadiusX="1.5" RadiusY="1.5" Fill="#D2D2CE"/>
+                                            <Border Canvas.Left="9" Canvas.Top="41" Width="88" Height="10" CornerRadius="2.5"
+                                                    Background="{Binding BarLightBrush}"/>
+                                            <Rectangle Canvas.Left="9" Canvas.Top="55" Width="88" Height="3" RadiusX="1.5" RadiusY="1.5" Fill="#D2D2CE"/>
+                                            <Rectangle Canvas.Left="9" Canvas.Top="61" Width="62" Height="3" RadiusX="1.5" RadiusY="1.5" Fill="#D2D2CE"/>
+                                        </Canvas>
+                                    </Border>
+                                </Grid>
+
+                                <!-- the pocket -->
+                                <Border x:Name="pocket" Height="120" VerticalAlignment="Bottom" CornerRadius="14"
+                                        Background="{Binding FrontBrush}" BorderBrush="#18FFFFFF" BorderThickness="0,1,0,0"/>
+                                <Border x:Name="hl" Height="120" VerticalAlignment="Bottom" CornerRadius="14"
+                                        Background="#14FFFFFF" Opacity="0" IsHitTestVisible="False"/>
+
+                                <!-- keyboard focus: an outline that follows the folder's shape -->
+                                <Path x:Name="ring" Data="{StaticResource FolderBackGeometry}" Stroke="{DynamicResource App.AccentSystemBrush}"
+                                      StrokeThickness="2" Opacity="0" IsHitTestVisible="False"/>
+
+                                <ContentPresenter/>
+                            </Grid>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="papers" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" To="-10" Duration="0:0:0.22" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="papers" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" To="0" Duration="0:0:0.26" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.22"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ring" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.985" Duration="0:0:0.08" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.985" Duration="0:0:0.08" EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.18" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.18" EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One colour in the folder colour picker: a round swatch, ticked while it is the folder's colour. -->
+        <Style x:Key="SwatchButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="root" Width="30" Height="30" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform/>
+                            </Grid.RenderTransform>
+                            <Ellipse x:Name="ring" Stroke="{DynamicResource App.TextBrush}" StrokeThickness="2" Opacity="0"/>
+                            <Ellipse Margin="4" Fill="{Binding Brush}"/>
+                            <Path x:Name="tick" Style="{StaticResource IconPath}" Data="{StaticResource Icon.Check}"
+                                  Width="12" Height="12" Stretch="Uniform" Stroke="White" Visibility="Collapsed"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ring" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                <Setter TargetName="ring" Property="Opacity" Value="1"/>
+                                <Setter TargetName="tick" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="root" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Right-click / "…" menu of a folder card. DataContext is set when it opens. -->
+        <ContextMenu x:Key="FolderMenu" x:Shared="False">
+            <MenuItem Header="Open" Click="FolderMenu_Open"/>
+            <MenuItem Header="Change colour…" Click="FolderMenu_Colour"/>
+            <MenuItem Header="Reset colour" Click="FolderMenu_ResetColour"/>
+            <Separator/>
+            <MenuItem Header="Show in Explorer" Click="FolderMenu_Reveal"/>
+            <MenuItem Header="Copy path" Click="FolderMenu_CopyPath"/>
+        </ContextMenu>
+
+        <!-- ============================ a folder, card ============================ -->
+        <!-- Same size as a document card, so folders and documents share one grid. The shape is the
+             FolderTile style; this is what is written on the pocket. -->
         <DataTemplate x:Key="FolderCardTemplate" DataType="{x:Type vm:FolderCardViewModel}">
-            <Button Style="{StaticResource LibCard}" Width="296" Height="142" Margin="0,0,12,12"
+            <Button x:Name="Tile" Style="{StaticResource FolderTile}" Width="222" Height="238" Margin="0,0,12,12"
                     Command="{Binding DataContext.ShowFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding Path}" ToolTip="{Binding Path}" Loaded="FolderCard_Loaded">
-                <Grid ClipToBounds="True">
-                    <Border Width="36" Height="36" CornerRadius="11" Background="{DynamicResource App.HoverBrush}"
-                            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="16,16,0,0">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="16" Height="16"
-                              Stretch="Uniform"/>
+                    CommandParameter="{Binding Path}"
+                    ContextMenu="{StaticResource FolderMenu}" ContextMenuOpening="Card_ContextMenuOpening"
+                    Loaded="FolderTile_Loaded">
+                <Grid>
+                    <!-- how many files are inside -->
+                    <Border Width="26" Height="26" CornerRadius="13" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                            Margin="0,0,14,80" Background="{Binding BadgeBrush}"
+                            Visibility="{Binding ShowBadge, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding BadgeText}" FontSize="12" FontWeight="Bold"
+                                   Foreground="{Binding BadgeTextBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
 
-                    <!-- a stack of pages: the newest PDF's first page sits on top -->
-                    <Grid Width="124" Height="118" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                          Margin="0,0,16,16">
-                        <Border Width="86" Height="104" Background="White" Opacity="0.5" CornerRadius="3"
-                                HorizontalAlignment="Left" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1">
-                            <Border.RenderTransform>
-                                <RotateTransform Angle="-9"/>
-                            </Border.RenderTransform>
-                        </Border>
-                        <Border Width="86" Height="106" Background="White" Opacity="0.78" CornerRadius="3"
-                                HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="16,0,0,0"
-                                RenderTransformOrigin="0.5,1">
-                            <Border.RenderTransform>
-                                <RotateTransform Angle="-4"/>
-                            </Border.RenderTransform>
-                        </Border>
-                        <Border Width="88" Height="108" Background="White" CornerRadius="3"
-                                BorderThickness="1" BorderBrush="#40000000"
-                                HorizontalAlignment="Right" VerticalAlignment="Bottom" RenderTransformOrigin="0.5,1">
-                            <Border.RenderTransform>
-                                <RotateTransform Angle="3"/>
-                            </Border.RenderTransform>
-                            <Grid ClipToBounds="True">
-                                <Rectangle Fill="{StaticResource PaperLines}" Margin="10,14,10,10"/>
-                                <ctrl:FadeImage Source="{Binding Preview}" Stretch="UniformToFill"
-                                                VerticalAlignment="Top" HorizontalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-                    </Grid>
-
-                    <!-- kept clear of the page stack on the right, so nothing sits on white paper -->
-                    <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="16,0,0,14" MaxWidth="130">
-                        <TextBlock Text="{Binding Name}" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="14.5"
-                                   TextWrapping="Wrap" MaxHeight="40"/>
-                        <TextBlock Text="{Binding CountLine}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,4,0,0"/>
-                        <TextBlock Text="{Binding ChangedText}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,1,0,0"/>
+                    <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="18,0,16,16" MaxWidth="188">
+                        <TextBlock Text="{Binding Name}" Style="{StaticResource Body}" FontSize="17" FontWeight="Bold"
+                                   Foreground="{Binding TextBrush}"/>
+                        <TextBlock Text="{Binding SubText}" Style="{StaticResource Caption}" FontSize="12" FontWeight="SemiBold"
+                                   Margin="0,3,0,0" Foreground="{Binding SubTextBrush}"/>
                     </StackPanel>
+
+                    <!-- hover: the same "…" menu as right-click (colour lives in there) -->
+                    <Border Style="{StaticResource RevealOnCardHover}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,0,10,0">
+                        <Button Style="{StaticResource CardCornerButton}" ToolTip="More" Click="CardMore_Click">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.More}"
+                                  Width="13" Height="13" Stretch="Uniform"/>
+                        </Button>
+                    </Border>
                 </Grid>
             </Button>
         </DataTemplate>
 
-        <!-- ============================ a nested folder, chip ============================ -->
-        <DataTemplate x:Key="FolderChipTemplate" DataType="{x:Type vm:FolderCardViewModel}">
-            <Button Style="{StaticResource LibChip}" Margin="0,0,10,10" ToolTip="{Binding Path}"
+        <!-- ============================ a folder, list row ============================ -->
+        <DataTemplate x:Key="FolderRowTemplate" DataType="{x:Type vm:FolderCardViewModel}">
+            <Button x:Name="Row" Style="{StaticResource LibCard}" Height="50" Margin="0,0,0,6"
                     Command="{Binding DataContext.ShowFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding Path}">
-                <StackPanel Orientation="Horizontal">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="15" Height="15"
-                          Stretch="Uniform"/>
-                    <TextBlock Text="{Binding Name}" Style="{StaticResource Body}" Margin="9,0,0,0" MaxWidth="220"/>
-                    <TextBlock Text="{Binding PdfCount}" Style="{StaticResource Caption}" Margin="10,0,0,0"
+                    CommandParameter="{Binding Path}"
+                    ContextMenu="{StaticResource FolderMenu}" ContextMenuOpening="Card_ContextMenuOpening"
+                    Loaded="FolderTile_Loaded">
+                <Grid Margin="10,0,8,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="32"/>
+                        <ColumnDefinition Width="34"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="170"/>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- a small folder in the folder's colour -->
+                    <Grid Grid.Column="1" Width="28" Height="24" HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <Path Fill="{Binding BackBrush}" Width="28" Height="24" Stretch="None"
+                              Data="M 0,4 A 3,3 0 0 1 3,1 L 9,1 A 2,2 0 0 1 11,3 L 11,4 L 25,4 A 3,3 0 0 1 28,7 L 28,21 A 3,3 0 0 1 25,24 L 3,24 A 3,3 0 0 1 0,21 Z"/>
+                        <Border Width="16" Height="12" Background="#F6F6F3" CornerRadius="2"
+                                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                        <Border Height="14" VerticalAlignment="Bottom" CornerRadius="4" Background="{Binding FrontBrush}"/>
+                    </Grid>
+
+                    <TextBlock Grid.Column="2" Text="{Binding Name}" Style="{StaticResource Body}" FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
-                </StackPanel>
+                    <TextBlock Grid.Column="3" Text="{Binding CountLine}" Style="{StaticResource Caption}"
+                               VerticalAlignment="Center" Margin="8,0"/>
+                    <TextBlock Grid.Column="4" Text="{Binding ChangedText}" Style="{StaticResource Caption}"
+                               VerticalAlignment="Center" Margin="8,0"/>
+                    <Button Grid.Column="5" Style="{StaticResource CardCornerButton}" ToolTip="More" Click="CardMore_Click"
+                            VerticalAlignment="Center">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.More}"
+                              Width="13" Height="13" Stretch="Uniform"/>
+                    </Button>
+                </Grid>
             </Button>
         </DataTemplate>
 
-        <!-- ============================ a recent file, compact card ============================ -->
+        <!-- ============================ a recent file, tile ============================ -->
+        <!-- Same column width as a folder card (222 + 12), so recent files line up with the folders above them:
+             the first page on the left, name, where it lives and when on the right, and how far you got. -->
         <DataTemplate x:Key="RecentCardTemplate" DataType="{x:Type vm:FileCardViewModel}">
-            <Button Style="{StaticResource LibCard}" Width="296" Height="58" Margin="0,0,12,12" ToolTip="{Binding Path}"
+            <Button x:Name="Tile" Style="{StaticResource LibCard}" Width="222" Height="100" Margin="0,0,12,12"
+                   
                     Command="{Binding DataContext.OpenFileCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding Path}">
-                <Grid Margin="14,0,12,0">
+                    CommandParameter="{Binding Path}"
+                    ContextMenu="{StaticResource FileMenu}" ContextMenuOpening="Card_ContextMenuOpening"
+                    Loaded="FileCard_Loaded">
+                <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Border Width="24" Height="30" Background="White" CornerRadius="2" VerticalAlignment="Center">
-                        <Rectangle Fill="{StaticResource PaperLines}" Margin="4,6,4,5"/>
+
+                    <!-- the first page, standing on a soft shadow -->
+                    <Border Margin="16,0,0,0" Width="54" Height="70" Background="White" CornerRadius="3"
+                            VerticalAlignment="Center" BorderThickness="1" BorderBrush="#30000000">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270" Opacity="0.3"/>
+                        </Border.Effect>
+                        <Grid ClipToBounds="True">
+                            <Rectangle Fill="{StaticResource PaperLines}" Margin="7,10,7,8"
+                                       Visibility="{Binding Thumbnail, Converter={StaticResource NullToVisInv}}"/>
+                            <TextBlock Text="{Binding Extension}" FontWeight="SemiBold" FontSize="11" Foreground="#8A8F98"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding ShowExtension, Converter={StaticResource BoolToVis}}"/>
+                            <ctrl:FadeImage Source="{Binding Thumbnail}" Stretch="Uniform"/>
+                        </Grid>
                     </Border>
-                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold"/>
-                        <TextBlock Text="{Binding RecentText}" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+
+                    <StackPanel Grid.Column="1" Margin="14,0,14,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="12.5"
+                                   TextWrapping="Wrap" MaxHeight="34"/>
+                        <TextBlock Text="{Binding RecentText}" Style="{StaticResource Caption}" Margin="0,4,0,0"/>
+
+                        <!-- how far you got -->
+                        <Grid Margin="0,9,0,0" Height="12"
+                              Visibility="{Binding HasProgress, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid Height="3" VerticalAlignment="Center" Background="{DynamicResource App.StrokeBrush}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="{Binding ProgressDone}"/>
+                                    <ColumnDefinition Width="{Binding ProgressRest}"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Background="{DynamicResource App.AccentSystemBrush}" CornerRadius="1.5"/>
+                            </Grid>
+                            <TextBlock Grid.Column="1" Text="{Binding PageText}" Style="{StaticResource Caption}"
+                                       FontSize="10" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
                     </StackPanel>
+
+                    <!-- hover: the same "…" menu as right-click -->
+                    <Border Grid.Column="1" Style="{StaticResource RevealOnCardHover}" HorizontalAlignment="Right"
+                            VerticalAlignment="Top" Margin="0,8,8,0">
+                        <Button Style="{StaticResource CardCornerButton}" ToolTip="More" Click="CardMore_Click">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.More}"
+                                  Width="13" Height="13" Stretch="Uniform"/>
+                        </Button>
+                    </Border>
                 </Grid>
             </Button>
         </DataTemplate>
@@ -442,7 +693,7 @@
                                 <DataTemplate DataType="{x:Type vm:RailItem}">
                                     <RadioButton IsChecked="{Binding IsActive, Mode=OneWay}"
                                                  Command="{Binding DataContext.OpenRailItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                 CommandParameter="{Binding}" ToolTip="{Binding Path}">
+                                                 CommandParameter="{Binding}">
                                         <RadioButton.Style>
                                             <Style TargetType="RadioButton" BasedOn="{StaticResource RailNav}">
                                                 <Style.Triggers>
@@ -534,7 +785,14 @@
         </Border>
 
         <!-- ================================ content ================================ -->
-        <Grid Grid.Column="1">
+        <!-- PageHost clips; PageContent is the page itself (it slides and fades in when you open a folder);
+             SnapshotImage is a picture of the page you just left, sliding and fading out on top of it.
+             See LibraryHome.xaml.cs (page transition). -->
+        <Grid x:Name="PageHost" Grid.Column="1" ClipToBounds="True">
+          <Grid x:Name="PageContent" RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform>
+                <TranslateTransform/>
+            </Grid.RenderTransform>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -593,12 +851,97 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- the action pill: one "New" button that opens the three ways to start (add a PDF,
-                         blank document, new folder) in a small card underneath it. -->
+                    <!-- continue reading: a compact card at the right of the header (shrinks, or drops under the
+                         greeting, when the window is narrow; LibraryHome.xaml.cs LayoutHomeHeader). -->
                     <Viewbox x:Name="HomePill" Grid.Column="2" HorizontalAlignment="Right"
                              StretchDirection="DownOnly" Stretch="Uniform" VerticalAlignment="Center"
                              Margin="0,0,0,12">
-                        <Grid>
+                        <Button Style="{StaticResource LibCard}" Width="340" Height="68"
+                                DataContext="{Binding ContinueItem}" Loaded="FileCard_Loaded"
+                                DataContextChanged="ContinueCard_DataContextChanged"
+                                Command="{Binding DataContext.ResumeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                Visibility="{Binding DataContext.ShowContinue, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+                            <Grid Margin="14,0,14,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Background="White" CornerRadius="2.5" Width="38" Height="48" VerticalAlignment="Center">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="8" ShadowDepth="1.5" Direction="270" Opacity="0.3"/>
+                                    </Border.Effect>
+                                    <Grid>
+                                        <Rectangle Fill="{StaticResource PaperLines}" Margin="5,8,5,6"
+                                                   Visibility="{Binding Thumbnail, Converter={StaticResource NullToVisInv}}"/>
+                                        <ctrl:FadeImage Source="{Binding Thumbnail}" Stretch="Uniform"/>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Continue reading" Style="{StaticResource Caption}" FontSize="11"/>
+                                    <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold"
+                                               FontSize="13" Margin="0,2,0,0"/>
+                                    <Grid Margin="0,7,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Height="4" VerticalAlignment="Center" Background="{DynamicResource App.StrokeBrush}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="{Binding ProgressDone}"/>
+                                                <ColumnDefinition Width="{Binding ProgressRest}"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Background="{DynamicResource App.AccentSystemBrush}" CornerRadius="2"/>
+                                        </Grid>
+                                        <TextBlock Grid.Column="1" Text="{Binding PageText}" Style="{StaticResource Caption}"
+                                                   FontSize="10.5" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                                <!-- the whole card resumes; the arrow is just the hint -->
+                                <Grid Grid.Column="2" Width="34" Height="34" VerticalAlignment="Center">
+                                    <Border CornerRadius="10" Background="{DynamicResource App.AccentSystemBrush}" Opacity="0.2"/>
+                                    <Border CornerRadius="10" BorderThickness="1" BorderBrush="{DynamicResource App.AccentSystemBrush}" Opacity="0.45"/>
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ArrowRight}" Width="14" Height="14"
+                                          Stretch="Uniform" Stroke="{DynamicResource App.AccentSystemBrush}"/>
+                                </Grid>
+                            </Grid>
+                        </Button>
+                    </Viewbox>
+                </Grid>
+
+                <!-- folders, recent, pinned, search results -->
+                <Grid Visibility="{Binding ShowFilesBody, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitle}"/>
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Caption}" FontSize="12.5" Margin="0,3,0,0"/>
+                    </StackPanel>
+
+                    <!-- show every file type (inside a folder) -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,8,0,0"
+                                ToolTip="Also list images, text files and everything else. Graphite opens PDFs and its own documents; Windows opens the rest."
+                                Visibility="{Binding ShowTypeToggle, Converter={StaticResource BoolToVis}}">
+                        <ToggleButton Style="{StaticResource SwitchToggle}" IsChecked="{Binding ShowAllTypes, Mode=TwoWay}"
+                                      VerticalAlignment="Center"/>
+                        <TextBlock Text="All file types" Style="{StaticResource Body}" Margin="9,0,0,0"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+
+            <!-- ============================ home sections ============================ -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          Visibility="{Binding ShowHomeSections, Converter={StaticResource BoolToVis}}">
+                <StackPanel Margin="0,0,10,12">
+
+                    <!-- the section row: "FOLDERS" and its count on the left, the New button at the far right.
+                         The New card (add a PDF, blank document, new folder) opens just under the button. -->
+                    <DockPanel Margin="2,0,0,14" MinHeight="34">
+                        <Grid DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0">
                                 <Button x:Name="NewButton" Style="{StaticResource HeroActionPrimary}" Height="34"
                                         Padding="13,0,11,0" Click="NewButton_Click" ToolTip="New">
                                     <StackPanel Orientation="Horizontal">
@@ -689,79 +1032,12 @@
                                     </Grid>
                                 </Popup>
                         </Grid>
-                    </Viewbox>
-                </Grid>
-
-                <!-- folders, recent, pinned, search results -->
-                <Grid Visibility="{Binding ShowFilesBody, Converter={StaticResource BoolToVis}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" VerticalAlignment="Top">
-                        <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitle}"/>
-                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Caption}" FontSize="12.5" Margin="0,3,0,0"/>
-                    </StackPanel>
-
-                    <!-- show every file type (inside a folder) -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,8,0,0"
-                                ToolTip="Also list images, text files and everything else. Graphite opens PDFs and its own documents; Windows opens the rest."
-                                Visibility="{Binding ShowTypeToggle, Converter={StaticResource BoolToVis}}">
-                        <ToggleButton Style="{StaticResource SwitchToggle}" IsChecked="{Binding ShowAllTypes, Mode=TwoWay}"
-                                      VerticalAlignment="Center"/>
-                        <TextBlock Text="All file types" Style="{StaticResource Body}" Margin="9,0,0,0"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Grid>
-            </Grid>
-
-            <!-- ============================ home sections ============================ -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                          Visibility="{Binding ShowHomeSections, Converter={StaticResource BoolToVis}}">
-                <StackPanel Margin="0,0,10,12">
-
-                    <!-- continue reading -->
-                    <Button Style="{StaticResource LibCard}" Height="124" Margin="0,0,0,28" MaxWidth="900"
-                            HorizontalAlignment="Left"
-                            DataContext="{Binding ContinueItem}" Loaded="FileCard_Loaded" DataContextChanged="ContinueCard_DataContextChanged"
-                            Command="{Binding DataContext.ResumeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                            Visibility="{Binding DataContext.ShowContinue, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
-                        <Grid Margin="18,14,18,14">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Background="White" CornerRadius="3" Width="72" Height="94" VerticalAlignment="Center">
-                                <Border.Effect>
-                                    <DropShadowEffect BlurRadius="10" ShadowDepth="2" Direction="270" Opacity="0.3"/>
-                                </Border.Effect>
-                                <Grid>
-                                    <Rectangle Fill="{StaticResource PaperLines}" Margin="9,13,9,10"
-                                               Visibility="{Binding Thumbnail, Converter={StaticResource NullToVisInv}}"/>
-                                    <ctrl:FadeImage Source="{Binding Thumbnail}" Stretch="Uniform"/>
-                                </Grid>
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="18,0,16,0" VerticalAlignment="Center">
-                                <TextBlock Text="CONTINUE READING" Style="{StaticResource SectionLabel}"/>
-                                <TextBlock Text="{Binding FileName}" Style="{StaticResource Body}" FontWeight="SemiBold"
-                                           FontSize="17" Margin="0,4,0,0"/>
-                                <TextBlock Text="{Binding ContinueText}" Style="{StaticResource Caption}" FontSize="12"
-                                           Margin="0,3,0,0"/>
-                                <Grid Height="4" Margin="0,12,0,0" Background="{DynamicResource App.StrokeBrush}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="{Binding ProgressDone}"/>
-                                        <ColumnDefinition Width="{Binding ProgressRest}"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Background="{DynamicResource App.AccentSystemBrush}" CornerRadius="2"/>
-                                </Grid>
-                            </StackPanel>
-                            <Button Grid.Column="2" Style="{StaticResource AccentButton}" Content="Resume"
-                                    VerticalAlignment="Center"
-                                    Command="{Binding DataContext.ResumeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                        </Grid>
-                    </Button>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding Subtitle}" Style="{StaticResource Caption}"
+                                   FontSize="12" VerticalAlignment="Center"
+                                   Visibility="{Binding ShowFoldersSection, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="FOLDERS" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"
+                                   Visibility="{Binding ShowFoldersSection, Converter={StaticResource BoolToVis}}"/>
+                    </DockPanel>
 
                     <!-- no library yet -->
                     <Border Style="{StaticResource GlassCard}" Padding="26,24" Margin="0,0,0,28" MaxWidth="640"
@@ -779,11 +1055,6 @@
 
                     <!-- folders -->
                     <StackPanel Visibility="{Binding ShowFoldersSection, Converter={StaticResource BoolToVis}}">
-                        <DockPanel Margin="2,0,0,12">
-                            <TextBlock DockPanel.Dock="Right" Text="{Binding Subtitle}" Style="{StaticResource Caption}"
-                                       FontSize="12" VerticalAlignment="Center"/>
-                            <TextBlock Text="FOLDERS" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
-                        </DockPanel>
                         <ItemsControl ItemsSource="{Binding Folders}" ItemTemplate="{StaticResource FolderCardTemplate}"
                                       Focusable="False" Margin="0,0,0,12">
                             <ItemsControl.ItemsPanel>
@@ -796,7 +1067,12 @@
 
                     <!-- recently opened -->
                     <StackPanel Visibility="{Binding HasRecents, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="RECENTLY OPENED" Style="{StaticResource SectionLabel}" Margin="2,10,0,12"/>
+                        <DockPanel Margin="2,10,0,12" MinHeight="28">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Show all"
+                                    ToolTip="Everything you opened lately" Command="{Binding ShowRecentCommand}"
+                                    VerticalAlignment="Center"/>
+                            <TextBlock Text="RECENTLY OPENED" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
+                        </DockPanel>
                         <ItemsControl ItemsSource="{Binding Recents}" ItemTemplate="{StaticResource RecentCardTemplate}"
                                       Focusable="False">
                             <ItemsControl.ItemsPanel>
@@ -813,12 +1089,17 @@
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           Visibility="{Binding ShowFilesBody, Converter={StaticResource BoolToVis}}">
                 <StackPanel Margin="0,0,10,12">
-                    <!-- nested folders as chips, above the files -->
-                    <TextBlock Text="SUBFOLDERS" Style="{StaticResource SectionLabel}" Margin="2,0,0,10"
-                               Visibility="{Binding ShowChips, Converter={StaticResource BoolToVis}}"/>
-                    <ItemsControl ItemsSource="{Binding Folders}" ItemTemplate="{StaticResource FolderChipTemplate}"
-                                  Focusable="False" Margin="0,0,0,10"
-                                  Visibility="{Binding ShowChips, Converter={StaticResource BoolToVis}}">
+                    <!-- subfolders and documents together: folders first, as cards in the grid or rows in the list -->
+                    <ItemsControl ItemsSource="{Binding Entries}" Focusable="False"
+                                  Visibility="{Binding IsGrid, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.Resources>
+                            <DataTemplate DataType="{x:Type vm:FolderCardViewModel}">
+                                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource FolderCardTemplate}"/>
+                            </DataTemplate>
+                            <DataTemplate DataType="{x:Type vm:FileCardViewModel}">
+                                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource FileCardTemplate}"/>
+                            </DataTemplate>
+                        </ItemsControl.Resources>
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel/>
@@ -826,23 +1107,85 @@
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
 
-                    <ItemsControl ItemsSource="{Binding Files}" ItemTemplate="{StaticResource FileCardTemplate}"
-                                  Focusable="False" Visibility="{Binding IsGrid, Converter={StaticResource BoolToVis}}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
+                    <ItemsControl ItemsSource="{Binding Entries}" Focusable="False"
+                                  Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.Resources>
+                            <DataTemplate DataType="{x:Type vm:FolderCardViewModel}">
+                                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource FolderRowTemplate}"/>
+                            </DataTemplate>
+                            <DataTemplate DataType="{x:Type vm:FileCardViewModel}">
+                                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource FileRowTemplate}"/>
+                            </DataTemplate>
+                        </ItemsControl.Resources>
                     </ItemsControl>
-
-                    <ItemsControl ItemsSource="{Binding Files}" ItemTemplate="{StaticResource FileRowTemplate}"
-                                  Focusable="False" Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}"/>
 
                     <TextBlock Text="{Binding EmptyText}" Style="{StaticResource Caption}" FontSize="13" TextAlignment="Center"
                                TextWrapping="Wrap" TextTrimming="None" Margin="0,48,0,0"
                                Visibility="{Binding HasFiles, Converter={StaticResource InvBoolToVis}}"/>
                 </StackPanel>
             </ScrollViewer>
+          </Grid>
+
+          <Image x:Name="SnapshotImage" Visibility="Collapsed" IsHitTestVisible="False" Stretch="Fill"
+                 HorizontalAlignment="Left" VerticalAlignment="Top" UseLayoutRounding="True" SnapsToDevicePixels="True">
+              <Image.RenderTransform>
+                  <TranslateTransform/>
+              </Image.RenderTransform>
+          </Image>
+
+            <!-- ============================ folder colour picker ============================ -->
+            <!-- One picker for every folder card: opened next to the card it is for (see LibraryHome.xaml.cs). -->
+            <Popup x:Name="ColorPopup" Placement="Bottom" HorizontalOffset="-16" VerticalOffset="-44"
+                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                   Opened="ColorPopup_Opened">
+                <Border Margin="16" Width="268" Padding="16,14,16,14" CornerRadius="16" BorderThickness="1"
+                        Background="{DynamicResource App.CardBrush}" BorderBrush="{DynamicResource App.StrokeBrush}">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32"/>
+                    </Border.Effect>
+                    <StackPanel>
+                        <TextBlock Text="FOLDER COLOUR" Style="{StaticResource SectionLabel}"/>
+
+                        <ItemsControl x:Name="SwatchList" Margin="0,10,0,0" Focusable="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type svc:FolderSwatch}">
+                                    <Button Style="{StaticResource SwatchButton}" Margin="0,0,5,5"
+                                            ToolTip="{Binding Name}" Tag="{Binding Hex}" Click="Swatch_Click"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- any colour: type a hex code -->
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Ellipse x:Name="HexPreview" Width="22" Height="22" Stroke="{DynamicResource App.StrokeBrush}"
+                                     StrokeThickness="1" VerticalAlignment="Center"/>
+                            <TextBox x:Name="HexBox" Grid.Column="1" Margin="10,0,8,0" Height="30" MaxLength="7"
+                                     VerticalContentAlignment="Center" ToolTip="Any colour, as a hex code like #2C6B66"
+                                     TextChanged="HexBox_TextChanged" KeyDown="HexBox_KeyDown"/>
+                            <Button Grid.Column="2" Style="{StaticResource AccentButton}" Content="Apply" Click="HexApply_Click"/>
+                        </Grid>
+
+                        <Rectangle Height="1" Margin="0,14,0,10" Fill="{DynamicResource App.StrokeBrush}"/>
+
+                        <DockPanel LastChildFill="False">
+                            <Button DockPanel.Dock="Left" Style="{StaticResource GhostButton}" Content="Reset"
+                                    ToolTip="Back to the default colour" Click="ColorReset_Click"/>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Use for all folders"
+                                    ToolTip="Give every folder this colour" Click="ColorAll_Click"/>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
         </Grid>
     </Grid>
 </UserControl>

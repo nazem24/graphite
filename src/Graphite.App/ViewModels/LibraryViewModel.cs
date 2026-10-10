@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -55,6 +56,14 @@ public partial class LibraryViewModel : ObservableObject
         _clockTimer.Start();
         UpdateClock();
         Files.CollectionChanged += (_, _) => RecountSelection();
+
+        // Folders first, then documents, in one list: a folder page shows its subfolders as cards
+        // in the same grid (or rows in the same list) as its files.
+        Entries = new CompositeCollection
+        {
+            new CollectionContainer { Collection = Folders },
+            new CollectionContainer { Collection = Files },
+        };
     }
 
     // ------------------------------------------------------------- state
@@ -64,6 +73,9 @@ public partial class LibraryViewModel : ObservableObject
     public ObservableCollection<FileCardViewModel> Files { get; } = new();
     public ObservableCollection<FileCardViewModel> Recents { get; } = new();
     public ObservableCollection<BreadcrumbItem> Breadcrumbs { get; } = new();
+
+    /// <summary><see cref="Folders"/> followed by <see cref="Files"/>, as the folder page lists them.</summary>
+    public CompositeCollection Entries { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHomeActive))]
@@ -243,6 +255,7 @@ public partial class LibraryViewModel : ObservableObject
     [RelayCommand]
     private void ShowHome()
     {
+        BeginTransition(LibraryView.Home, null);
         ClearSearchSilently();
         CurrentView = LibraryView.Home;
         CurrentPath = null;
@@ -254,6 +267,7 @@ public partial class LibraryViewModel : ObservableObject
     [RelayCommand]
     private void ShowRecent()
     {
+        BeginTransition(LibraryView.Recent, null);
         ClearSearchSilently();
         CurrentView = LibraryView.Recent;
         CurrentPath = null;
@@ -265,6 +279,7 @@ public partial class LibraryViewModel : ObservableObject
     [RelayCommand]
     private void ShowPinned()
     {
+        BeginTransition(LibraryView.Pinned, null);
         ClearSearchSilently();
         CurrentView = LibraryView.Pinned;
         CurrentPath = null;
@@ -277,12 +292,54 @@ public partial class LibraryViewModel : ObservableObject
     private void ShowFolder(string? path)
     {
         if (string.IsNullOrEmpty(path)) return;
+        BeginTransition(LibraryView.Folder, path);
         ClearSearchSilently();
         CurrentView = LibraryView.Folder;
         CurrentPath = path;
         RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: !_railLoaded);
+    }
+
+    /// <summary>Raised just before the page changes (before any of its state does), so the view can
+    /// photograph what is on screen and animate away from it. The argument is how the move feels:
+    /// +1 into a folder, -1 back up toward home, 0 sideways (recent, pinned, a sibling folder).</summary>
+    public event Action<int>? NavigationStarting;
+
+    private void BeginTransition(LibraryView view, string? path)
+    {
+        if (view == CurrentView &&
+            (view != LibraryView.Folder || LibraryScanner.SamePath(path ?? "", CurrentPath ?? "")))
+            return;
+        int from = NavDepth(CurrentView, CurrentPath), to = NavDepth(view, path);
+        NavigationStarting?.Invoke(to > from ? 1 : to < from ? -1 : 0);
+    }
+
+    /// <summary>How deep a page sits: home, recent and pinned are 0; the main folder's own files 1;
+    /// every folder below it one more.</summary>
+    private int NavDepth(LibraryView view, string? path)
+    {
+        if (view != LibraryView.Folder || string.IsNullOrEmpty(path)) return 0;
+        if (RootPath == null || !LibraryScanner.IsSameOrChild(RootPath, path)) return 1;
+        string relative = Path.GetRelativePath(RootPath, path);
+        if (relative == ".") return 1;
+        return 1 + relative.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
+    // ------------------------------------------------------------- folder colours
+
+    /// <summary>Give one folder card a colour ("#RRGGBB"), or null to take it back to the default.</summary>
+    public void SetFolderColor(FolderCardViewModel card, string? hex)
+    {
+        ThemeService.SetFolderColor(card.Path, hex);
+        card.RefreshColor();
+    }
+
+    /// <summary>Use one colour for every folder card.</summary>
+    public void SetAllFolderColors(string hex)
+    {
+        ThemeService.SetAllFolderColors(hex);
+        foreach (var folder in Folders) folder.RefreshColor();
     }
 
     /// <summary>A breadcrumb was clicked: the library root is the home page, anything else a folder.</summary>

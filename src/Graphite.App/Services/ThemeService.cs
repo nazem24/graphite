@@ -38,6 +38,10 @@ public static class ThemeService
         public string LibrarySort { get; set; } = "Name";
         public bool LibraryGrid { get; set; } = true;
         public List<string> PinnedFiles { get; set; } = new();
+        /// <summary>Colour (#RRGGBB) the person gave a folder card, by folder path.</summary>
+        public Dictionary<string, string> FolderColors { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Colour of every folder card that has none of its own ("use for all folders").</summary>
+        public string? DefaultFolderColor { get; set; }
         /// <summary>Where the person stopped reading, per file path.</summary>
         public Dictionary<string, ReadingInfo> Reading { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
@@ -78,6 +82,8 @@ public static class ThemeService
             _settings.Reading ?? new(), StringComparer.OrdinalIgnoreCase);
         _settings.LibraryRoots ??= new();
         _settings.PinnedFiles ??= new();
+        _settings.FolderColors = new Dictionary<string, string>(
+            _settings.FolderColors ?? new(), StringComparer.OrdinalIgnoreCase);
         Motion.UserReduced = _settings.ReduceMotion;
         ApplyTheme(_settings.DarkTheme);
     }
@@ -211,6 +217,27 @@ public static class ThemeService
     {
         _settings.LibrarySort = sort;
         _settings.LibraryGrid = grid;
+        Save();
+    }
+
+    /// <summary>The colour a folder card has: its own, else the "all folders" colour, else null
+    /// (the built-in teal).</summary>
+    public static string? GetFolderColor(string path) =>
+        _settings.FolderColors.TryGetValue(path, out var own) ? own : _settings.DefaultFolderColor;
+
+    /// <summary>Give one folder a colour, or pass null to take it back to the default.</summary>
+    public static void SetFolderColor(string path, string? hex)
+    {
+        if (string.IsNullOrEmpty(hex)) _settings.FolderColors.Remove(path);
+        else _settings.FolderColors[path] = hex;
+        Save();
+    }
+
+    /// <summary>Make one colour the default for every folder and drop the individual choices.</summary>
+    public static void SetAllFolderColors(string hex)
+    {
+        _settings.DefaultFolderColor = hex;
+        _settings.FolderColors.Clear();
         Save();
     }
 

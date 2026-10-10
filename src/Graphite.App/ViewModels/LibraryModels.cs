@@ -12,17 +12,18 @@ public enum LibraryView { Home, Folder, Recent, Pinned }
 
 public enum RailKind { Root, Folder, Files }
 
-/// <summary>A sub-folder: a card on the library home, a chip inside a folder.</summary>
+/// <summary>A folder: a folder-shaped card on the library home and inside other folders, a row in
+/// list view. Its colour is the person's own choice (see <see cref="FolderPalette"/>).</summary>
 public sealed partial class FolderCardViewModel : ObservableObject
 {
     private readonly LibraryFolder _folder;
-    private readonly CancellationToken _ct;
-    private bool _previewRequested;
+    private FolderLook _look;
 
+    // The token is part of the signature so every place that builds cards stays as it was.
     public FolderCardViewModel(LibraryFolder folder, CancellationToken ct)
     {
         _folder = folder;
-        _ct = ct;
+        _look = FolderPalette.Look(ReadColor());
     }
 
     public string Name => _folder.Name;
@@ -33,26 +34,43 @@ public sealed partial class FolderCardViewModel : ObservableObject
     /// <summary>"7 PDFs", or "No files yet".</summary>
     public string CountLine => PdfCount == 0 ? "No files yet" : CountText;
 
-    /// <summary>"Changed 5 months ago", on its own line under the count so neither is cut off.</summary>
+    /// <summary>"Changed 5 months ago", empty for an empty folder.</summary>
     public string ChangedText => PdfCount == 0 ? "" : $"Changed {LibraryScanner.Changed(_folder.NewestWriteUtc)}";
+
+    /// <summary>The second line of the card: when it last changed, or that it is empty.</summary>
+    public string SubText => PdfCount == 0 ? "No files yet" : ChangedText;
+
     public string Detail => PdfCount == 0
         ? "No files yet"
         : $"{CountText} · changed {LibraryScanner.Changed(_folder.NewestWriteUtc)}";
 
-    /// <summary>First page of the folder's newest PDF, drawn as the top sheet of the stack.</summary>
-    [ObservableProperty] private ImageSource? preview;
+    /// <summary>The number in the round badge on the pocket.</summary>
+    public bool ShowBadge => PdfCount > 0;
+    public string BadgeText => PdfCount > 99 ? "99+" : PdfCount.ToString();
 
-    public async Task LoadPreviewAsync()
+    // ---- colour
+
+    public Brush BackBrush => _look.Back;
+    public Brush FrontBrush => _look.Front;
+    public Brush TextBrush => _look.Text;
+    public Brush SubTextBrush => _look.SubText;
+    public Brush BadgeBrush => _look.Badge;
+    public Brush BadgeTextBrush => _look.BadgeText;
+    public Brush BarBrush => _look.Bar;
+    public Brush BarLightBrush => _look.BarLight;
+
+    /// <summary>The pocket colour as "#RRGGBB" (what the colour picker shows as current).</summary>
+    public string ColorHex => FolderPalette.ToHex(ReadColor());
+
+    /// <summary>The folder's own colour, else the all-folders colour, else the built-in teal.</summary>
+    private Color ReadColor() =>
+        FolderPalette.TryParse(ThemeService.GetFolderColor(Path), out var c) ? c : FolderPalette.Default;
+
+    /// <summary>The saved colour changed: read it again and redraw the card.</summary>
+    public void RefreshColor()
     {
-        if (_previewRequested || _folder.PreviewFile is not { } file) return;
-        _previewRequested = true;
-        try
-        {
-            var info = new FileInfo(file);
-            var result = await ThumbnailService.GetAsync(file, info.Length, info.LastWriteTimeUtc, 220, _ct);
-            if (result != null && !_ct.IsCancellationRequested) Preview = result.Image;
-        }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Folder preview failed: {ex.Message}"); }
+        _look = FolderPalette.Look(ReadColor());
+        OnPropertyChanged(string.Empty);
     }
 }
 
@@ -111,6 +129,7 @@ public sealed partial class FileCardViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(InfoText))]
     [NotifyPropertyChangedFor(nameof(ContinueText))]
+    [NotifyPropertyChangedFor(nameof(PageText))]
     private int pageCount;
 
     [ObservableProperty] private ImageSource? thumbnail;
@@ -165,6 +184,9 @@ public sealed partial class FileCardViewModel : ObservableObject
         }
     }
 
+    /// <summary>"p. 12 / 48": where the person stopped, short enough for the small continue card.</summary>
+    public string PageText => PageCount > 0 ? $"p. {_readingPage + 1} / {PageCount}" : "";
+
     /// <summary>The page the person stopped on (0-based), or -1 when never opened.</summary>
     public int ReadingPage => OpenedUtc == null ? -1 : _readingPage;
 
@@ -180,6 +202,7 @@ public sealed partial class FileCardViewModel : ObservableObject
         OpenedUtc = info.LastOpenedUtc;
         Progress = info.PageCount > 1 && info.Page > 0 ? (info.Page + 1.0) / info.PageCount : 0;
         OnPropertyChanged(nameof(ContinueText));
+        OnPropertyChanged(nameof(PageText));
     }
 
     /// <summary>Render the first page (skipped for online-only and Office files).</summary>

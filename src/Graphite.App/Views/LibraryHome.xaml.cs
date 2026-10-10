@@ -1,9 +1,13 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Graphite.App.Services;
 using Graphite.App.ViewModels;
 
 namespace Graphite.App.Views;
@@ -16,6 +20,7 @@ public partial class LibraryHome : UserControl
     public LibraryHome()
     {
         InitializeComponent();
+        DataContextChanged += LibraryHome_DataContextChanged;
         // The card hangs just under the button, right edges lined up, so it can grow out of it.
         NewPopup.CustomPopupPlacementCallback = (popupSize, targetSize, _) => new[]
         {
@@ -170,12 +175,18 @@ public partial class LibraryHome : UserControl
     {
         if (sender is FrameworkElement { DataContext: FileCardViewModel file })
             _ = file.LoadThumbnailAsync();
-        else if (sender is FrameworkElement { DataContext: FolderCardViewModel folder })
-            _ = folder.LoadPreviewAsync();
     }
 
-    private void FileCard_Loaded(object sender, RoutedEventArgs e) => LoadPreview(sender);
-    private void FolderCard_Loaded(object sender, RoutedEventArgs e) => LoadPreview(sender);
+    private void FileCard_Loaded(object sender, RoutedEventArgs e)
+    {
+        LoadPreview(sender);
+        if (sender is FrameworkElement card) AnimateTileIn(card);
+    }
+
+    private void FolderTile_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement card) AnimateTileIn(card);
+    }
 
     private void ContinueCard_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) =>
         LoadPreview(sender);
@@ -275,5 +286,275 @@ public partial class LibraryHome : UserControl
     private void CardMenu_CopyPath(object sender, RoutedEventArgs e)
     {
         if (CardOf(sender) is { } c) Library?.CopyPathCommand.Execute(c.Path);
+    }
+
+    // ------------------------------------------------------------- folder cards
+
+    private static FolderCardViewModel? FolderOf(object sender) =>
+        (sender as FrameworkElement)?.DataContext as FolderCardViewModel;
+
+    /// <summary>The card a menu item's menu was opened on (right-click, or the "…" button).</summary>
+    private static FrameworkElement? MenuTarget(object sender) =>
+        sender is MenuItem item && ItemsControl.ItemsControlFromItemContainer(item) is ContextMenu { PlacementTarget: FrameworkElement target }
+            ? target
+            : null;
+
+    private void FolderMenu_Open(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is { } folder) Library?.ShowFolderCommand.Execute(folder.Path);
+    }
+
+    private void FolderMenu_Colour(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is not { } folder || MenuTarget(sender) is not { } target) return;
+        // The menu is still closing while this runs; a popup opened right now would be closed again by it.
+        Dispatcher.InvokeAsync(() => OpenColorPicker(folder, target), DispatcherPriority.Background);
+    }
+
+    private void FolderMenu_ResetColour(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is { } folder) Library?.SetFolderColor(folder, null);
+    }
+
+    private void FolderMenu_Reveal(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is { } folder) Library?.RevealInExplorerCommand.Execute(folder.Path);
+    }
+
+    private void FolderMenu_CopyPath(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is { } folder) Library?.CopyPathCommand.Execute(folder.Path);
+    }
+
+    // ------------------------------------------------------------- folder colour picker
+
+    private FolderCardViewModel? _colorFolder;
+
+    private void OpenColorPicker(FolderCardViewModel folder, FrameworkElement target)
+    {
+        _colorFolder = folder;
+        ColorPopup.PlacementTarget = target;
+        RefreshColorPicker();
+        ColorPopup.IsOpen = true;
+    }
+
+    /// <summary>Show the folder's current colour: tick its swatch (if it is one) and fill the hex box.</summary>
+    private void RefreshColorPicker()
+    {
+        if (_colorFolder == null) return;
+        string current = _colorFolder.ColorHex;
+        SwatchList.ItemsSource = FolderPalette.Presets
+            .Select(p => new FolderSwatch(p.Name, p.Hex, string.Equals(p.Hex, current, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        HexBox.Text = current;
+    }
+
+    private void ColorPopup_Opened(object? sender, EventArgs e) => HexBox.CaretIndex = HexBox.Text.Length;
+
+    /// <summary>Colours apply to the folder as soon as they are chosen, so the card itself is the preview.</summary>
+    private void ApplyColor(string? hex)
+    {
+        if (_colorFolder == null) return;
+        Library?.SetFolderColor(_colorFolder, hex);
+        RefreshColorPicker();
+    }
+
+    private void Swatch_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is string hex) ApplyColor(hex);
+    }
+
+    private void HexBox_TextChanged(object sender, TextChangedEventArgs e) =>
+        HexPreview.Fill = FolderPalette.TryParse(HexBox.Text, out var c) ? new SolidColorBrush(c) : Brushes.Transparent;
+
+    private void HexBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        ApplyHexBox();
+    }
+
+    private void HexApply_Click(object sender, RoutedEventArgs e) => ApplyHexBox();
+
+    private void ApplyHexBox()
+    {
+        if (FolderPalette.TryParse(HexBox.Text, out var c)) ApplyColor(FolderPalette.ToHex(c));
+        else HexBox.SelectAll();
+    }
+
+    private void ColorReset_Click(object sender, RoutedEventArgs e) => ApplyColor(null);
+
+    private void ColorAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (_colorFolder == null) return;
+        // What the box says if it is a colour, else the folder's own.
+        string hex = FolderPalette.TryParse(HexBox.Text, out var c) ? FolderPalette.ToHex(c) : _colorFolder.ColorHex;
+        Library?.SetAllFolderColors(hex);
+        ColorPopup.IsOpen = false;
+    }
+
+    // ------------------------------------------------------------- page transition
+
+    // Opening a folder (or going back) is one movement: a picture of the page you were on slides away
+    // while the new page slides in from the side you are heading to, and its cards rise into place one
+    // after another. Going deeper moves left, coming back moves right, and a sideways change (recent,
+    // pinned) just fades and lifts. Skipped entirely when motion is reduced.
+
+    private LibraryViewModel? _watched;
+    private int _gen;                        // bumped whenever a transition starts or is cut short
+    private int _direction;                  // +1 deeper, -1 back, 0 sideways
+    private bool _awaitingPage;              // the old page is pictured on top; the new one is still loading
+    private DateTime _staggerUntil = DateTime.MinValue;
+    private int _staggerIndex;
+    private DispatcherTimer? _failsafe;
+
+    private void LibraryHome_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_watched != null)
+        {
+            _watched.NavigationStarting -= OnNavigationStarting;
+            _watched.PropertyChanged -= OnLibraryPropertyChanged;
+        }
+        _watched = e.NewValue as LibraryViewModel;
+        if (_watched != null)
+        {
+            _watched.NavigationStarting += OnNavigationStarting;
+            _watched.PropertyChanged += OnLibraryPropertyChanged;
+        }
+    }
+
+    private void OnNavigationStarting(int direction)
+    {
+        EndTransition();
+        if (!Motion.Enabled || !IsLoaded || !IsVisible || PageHost.ActualWidth < 16 || PageHost.ActualHeight < 16)
+            return;
+
+        var picture = Picture(PageContent);
+        if (picture == null) return;
+
+        _gen++;
+        _direction = direction;
+        _awaitingPage = true;
+
+        SnapshotImage.Source = picture;
+        SnapshotImage.Width = PageHost.ActualWidth;
+        SnapshotImage.Height = PageHost.ActualHeight;
+        SnapshotImage.Opacity = 1;
+        SnapshotImage.Visibility = Visibility.Visible;
+
+        // The new page stays out of sight until it is ready, so nothing flashes under the picture.
+        PageContent.Opacity = 0;
+
+        // Instant feedback for the click: the old page dims a little while the folder is read.
+        SnapshotImage.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(1, 0.55, Motion.Ms(140)) { EasingFunction = Motion.EaseOut, FillBehavior = FillBehavior.HoldEnd });
+
+        // A folder that is slow to read must not leave the page blank for good.
+        _failsafe ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+        _failsafe.Tick -= Failsafe_Tick;
+        _failsafe.Tick += Failsafe_Tick;
+        _failsafe.Start();
+    }
+
+    private void Failsafe_Tick(object? sender, EventArgs e)
+    {
+        _failsafe?.Stop();
+        if (_awaitingPage) PlayPageTransition();
+    }
+
+    private void OnLibraryPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(LibraryViewModel.IsLoading) && _awaitingPage && _watched is { IsLoading: false })
+            PlayPageTransition();
+    }
+
+    /// <summary>The new page is ready: slide the old picture away and the new page in.</summary>
+    private void PlayPageTransition()
+    {
+        _failsafe?.Stop();
+        _awaitingPage = false;
+        int gen = _gen;
+        _staggerIndex = 0;
+        _staggerUntil = DateTime.UtcNow.AddMilliseconds(1000);
+
+        var pageMove = (TranslateTransform)PageContent.RenderTransform;
+        var picMove = (TranslateTransform)SnapshotImage.RenderTransform;
+        double dir = _direction;
+
+        // the old page: slides one way and fades out
+        double outX = -dir * 40, outY = dir == 0 ? -10 : 0;
+        var fade = new DoubleAnimation(0, Motion.Ms(230)) { EasingFunction = Motion.EaseIn, FillBehavior = FillBehavior.HoldEnd };
+        fade.Completed += (_, _) => { if (gen == _gen) EndTransition(); };
+        SnapshotImage.BeginAnimation(OpacityProperty, fade);
+        picMove.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(outX, Motion.Ms(260)) { EasingFunction = Motion.EaseIn, FillBehavior = FillBehavior.HoldEnd });
+        picMove.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(outY, Motion.Ms(260)) { EasingFunction = Motion.EaseIn, FillBehavior = FillBehavior.HoldEnd });
+
+        // the new page: arrives from the other side
+        Motion.Tween(PageContent, OpacityProperty, 0, 1, 280, 40);
+        Motion.Tween(pageMove, TranslateTransform.XProperty, dir * 46, 0, 380, 20);
+        Motion.Tween(pageMove, TranslateTransform.YProperty, dir == 0 ? 18 : 0, 0, 380, 20);
+    }
+
+    /// <summary>Put everything back to rest: no picture, the page fully shown, no animation running.</summary>
+    private void EndTransition()
+    {
+        _gen++;
+        _awaitingPage = false;
+        _failsafe?.Stop();
+
+        PageContent.BeginAnimation(OpacityProperty, null);
+        PageContent.Opacity = 1;
+        var pageMove = (TranslateTransform)PageContent.RenderTransform;
+        pageMove.BeginAnimation(TranslateTransform.XProperty, null);
+        pageMove.BeginAnimation(TranslateTransform.YProperty, null);
+        pageMove.X = 0;
+        pageMove.Y = 0;
+
+        SnapshotImage.BeginAnimation(OpacityProperty, null);
+        var picMove = (TranslateTransform)SnapshotImage.RenderTransform;
+        picMove.BeginAnimation(TranslateTransform.XProperty, null);
+        picMove.BeginAnimation(TranslateTransform.YProperty, null);
+        picMove.X = 0;
+        picMove.Y = 0;
+        SnapshotImage.Visibility = Visibility.Collapsed;
+        SnapshotImage.Source = null;
+    }
+
+    /// <summary>A picture of an element as it looks right now.</summary>
+    private BitmapSource? Picture(FrameworkElement element)
+    {
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(element);
+            int w = (int)Math.Ceiling(element.ActualWidth * dpi.DpiScaleX);
+            int h = (int)Math.Ceiling(element.ActualHeight * dpi.DpiScaleY);
+            if (w < 1 || h < 1) return null;
+
+            var bitmap = new RenderTargetBitmap(w, h, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+                dc.DrawRectangle(new VisualBrush(element), null, new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+            bitmap.Render(visual);
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Page picture failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>While a page is arriving, its cards rise into place one after another.</summary>
+    private void AnimateTileIn(FrameworkElement tile)
+    {
+        if (!Motion.Enabled || DateTime.UtcNow > _staggerUntil) return;
+        double delay = 60 + Math.Min(_staggerIndex++, 18) * 26;
+        Motion.FadeIn(tile, 240, delay, 16);
+        if (Motion.RigOf(tile) is { } rig)
+        {
+            Motion.Tween(rig.Scale, ScaleTransform.ScaleXProperty, 0.94, 1, 320, delay);
+            Motion.Tween(rig.Scale, ScaleTransform.ScaleYProperty, 0.94, 1, 320, delay);
+        }
     }
 }
