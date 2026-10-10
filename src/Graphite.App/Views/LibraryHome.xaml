@@ -467,7 +467,7 @@
                     Command="{Binding DataContext.ShowFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding Path}"
                     ContextMenu="{StaticResource FolderMenu}" ContextMenuOpening="Card_ContextMenuOpening"
-                    Loaded="FolderTile_Loaded">
+                    MouseEnter="FolderTile_MouseEnter" MouseLeave="FolderTile_MouseLeave">
                 <Grid>
                     <!-- how many files are inside -->
                     <Border Width="26" Height="26" CornerRadius="13" HorizontalAlignment="Right" VerticalAlignment="Bottom"
@@ -503,7 +503,7 @@
                     Command="{Binding DataContext.ShowFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding Path}"
                     ContextMenu="{StaticResource FolderMenu}" ContextMenuOpening="Card_ContextMenuOpening"
-                    Loaded="FolderTile_Loaded">
+                    MouseEnter="FolderTile_MouseEnter" MouseLeave="FolderTile_MouseLeave">
                 <Grid Margin="10,0,8,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="32"/>
@@ -685,7 +685,7 @@
                     </DockPanel>
                 </StackPanel>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer svc:SmoothScroll.Enabled="True" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" PanningDeceleration="0.0015" CanContentScroll="False" Stylus.IsFlicksEnabled="False">
                     <Grid>
                         <ItemsControl ItemsSource="{Binding RailItems}" Focusable="False"
                                       Visibility="{Binding HasRoot, Converter={StaticResource BoolToVis}}">
@@ -785,8 +785,8 @@
         </Border>
 
         <!-- ================================ content ================================ -->
-        <!-- PageHost clips; PageContent is the page itself (it slides and fades in when you open a folder);
-             SnapshotImage is a picture of the page you just left, sliding and fading out on top of it.
+        <!-- PageHost clips; PageContent is the page itself: it fades out, is swapped while invisible, then slides and
+             fades back in when you change folder.
              See LibraryHome.xaml.cs (page transition). -->
         <Grid x:Name="PageHost" Grid.Column="1" ClipToBounds="True">
           <Grid x:Name="PageContent" RenderTransformOrigin="0.5,0.5">
@@ -934,7 +934,7 @@
             </Grid>
 
             <!-- ============================ home sections ============================ -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+            <ScrollViewer svc:SmoothScroll.Enabled="True" Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" PanningDeceleration="0.0015" CanContentScroll="False" Stylus.IsFlicksEnabled="False"
                           Visibility="{Binding ShowHomeSections, Converter={StaticResource BoolToVis}}">
                 <StackPanel Margin="0,0,10,12">
 
@@ -1086,7 +1086,7 @@
             </ScrollViewer>
 
             <!-- ============================ a folder / recent / pinned / search results ============================ -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+            <ScrollViewer svc:SmoothScroll.Enabled="True" Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" PanningDeceleration="0.0015" CanContentScroll="False" Stylus.IsFlicksEnabled="False"
                           Visibility="{Binding ShowFilesBody, Converter={StaticResource BoolToVis}}">
                 <StackPanel Margin="0,0,10,12">
                     <!-- subfolders and documents together: folders first, as cards in the grid or rows in the list -->
@@ -1125,13 +1125,6 @@
                 </StackPanel>
             </ScrollViewer>
           </Grid>
-
-          <Image x:Name="SnapshotImage" Visibility="Collapsed" IsHitTestVisible="False" Stretch="Fill"
-                 HorizontalAlignment="Left" VerticalAlignment="Top" UseLayoutRounding="True" SnapsToDevicePixels="True">
-              <Image.RenderTransform>
-                  <TranslateTransform/>
-              </Image.RenderTransform>
-          </Image>
 
             <!-- ============================ folder colour picker ============================ -->
             <!-- One picker for every folder card: opened next to the card it is for (see LibraryHome.xaml.cs). -->

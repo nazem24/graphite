@@ -253,66 +253,89 @@ public partial class LibraryViewModel : ObservableObject
     // ------------------------------------------------------------- navigation
 
     [RelayCommand]
-    private void ShowHome()
+    private void ShowHome() => Navigate(LibraryView.Home, null, () =>
     {
-        BeginTransition(LibraryView.Home, null);
         ClearSearchSilently();
         CurrentView = LibraryView.Home;
         CurrentPath = null;
         RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: !_railLoaded);
-    }
+    });
 
     [RelayCommand]
-    private void ShowRecent()
+    private void ShowRecent() => Navigate(LibraryView.Recent, null, () =>
     {
-        BeginTransition(LibraryView.Recent, null);
         ClearSearchSilently();
         CurrentView = LibraryView.Recent;
         CurrentPath = null;
         RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: false);
-    }
+    });
 
     [RelayCommand]
-    private void ShowPinned()
+    private void ShowPinned() => Navigate(LibraryView.Pinned, null, () =>
     {
-        BeginTransition(LibraryView.Pinned, null);
         ClearSearchSilently();
         CurrentView = LibraryView.Pinned;
         CurrentPath = null;
         RecordNav();
         UpdateRailSelection();
         _ = ReloadAsync(rescanRail: false);
-    }
+    });
 
     [RelayCommand]
     private void ShowFolder(string? path)
     {
         if (string.IsNullOrEmpty(path)) return;
-        BeginTransition(LibraryView.Folder, path);
-        ClearSearchSilently();
-        CurrentView = LibraryView.Folder;
-        CurrentPath = path;
-        RecordNav();
-        UpdateRailSelection();
-        _ = ReloadAsync(rescanRail: !_railLoaded);
+        Navigate(LibraryView.Folder, path, () =>
+        {
+            ClearSearchSilently();
+            CurrentView = LibraryView.Folder;
+            CurrentPath = path;
+            RecordNav();
+            UpdateRailSelection();
+            _ = ReloadAsync(rescanRail: !_railLoaded);
+        });
     }
 
-    /// <summary>Raised just before the page changes (before any of its state does), so the view can
-    /// photograph what is on screen and animate away from it. The argument is how the move feels:
-    /// +1 into a folder, -1 back up toward home, 0 sideways (recent, pinned, a sibling folder).</summary>
-    public event Action<int>? NavigationStarting;
+    /// <summary>Raised when the page is about to change. The view fades the current page out and then calls
+    /// <c>apply</c>, which switches the page and loads it, so the swap happens while nothing is visible.
+    /// The first argument is how the move feels: +1 into a folder, -1 back up toward home, 0 sideways
+    /// (recent, pinned, a sibling folder). A handler must always call <c>apply</c> exactly once.</summary>
+    public event Action<int, Action>? NavigationStarting;
 
-    private void BeginTransition(LibraryView view, string? path)
+    private LibraryView? _pendingView;
+    private string? _pendingPath;
+
+    private void Navigate(LibraryView view, string? path, Action apply)
     {
-        if (view == CurrentView &&
-            (view != LibraryView.Folder || LibraryScanner.SamePath(path ?? "", CurrentPath ?? "")))
+        // Already there (or already on its way there): nothing to do.
+        var (curView, curPath) = _pendingView is { } pv ? (pv, _pendingPath) : (CurrentView, CurrentPath);
+        if (view == curView && (view != LibraryView.Folder || LibraryScanner.SamePath(path ?? "", curPath ?? "")))
+        {
+            if (_pendingView == null) apply();   // a plain refresh of the same page
             return;
-        int from = NavDepth(CurrentView, CurrentPath), to = NavDepth(view, path);
-        NavigationStarting?.Invoke(to > from ? 1 : to < from ? -1 : 0);
+        }
+
+        bool travelling = _navigating;          // back / forward must not be recorded as a new step
+        void run()
+        {
+            _pendingView = null;
+            _pendingPath = null;
+            bool before = _navigating;
+            _navigating = travelling;
+            try { apply(); }
+            finally { _navigating = before; }
+        }
+
+        if (NavigationStarting is not { } handler) { run(); return; }
+
+        int from = NavDepth(curView, curPath), to = NavDepth(view, path);
+        _pendingView = view;
+        _pendingPath = path;
+        handler(to > from ? 1 : to < from ? -1 : 0, run);
     }
 
     /// <summary>How deep a page sits: home, recent and pinned are 0; the main folder's own files 1;
@@ -596,6 +619,7 @@ public partial class LibraryViewModel : ObservableObject
                 BuildRail();
             }
 
+            if (CurrentView != LibraryView.Folder) _listedPath = null;
             string query = SearchText.Trim();
             switch (CurrentView)
             {
@@ -713,10 +737,78 @@ public partial class LibraryViewModel : ObservableObject
             return;
         }
 
+        // Reading a folder means counting everything below each of its subfolders, which can take a while
+        // in a big library. A folder seen before is therefore shown at once from memory, then read again
+        // behind it; the page is only rebuilt if something changed.
+        string key = $"{path}|{(office ? 1 : 0)}{(all ? 1 : 0)}";
+        bool seenBefore = _folderCache.TryGetValue(key, out var cached);
+        if (seenBefore)
+        {
+            _listedPath = path;
+            ApplyFolderListing(cached.Files, cached.Subs, office, all, ct);
+            PageContentShown?.Invoke();
+        }
+        else if (!LibraryScanner.SamePath(_listedPath ?? "", path))
+        {
+            // A different folder than the one on screen, not read yet: don't leave the old one's cards under
+            // the new title while it loads.
+            Folders.Clear();
+            Files.Clear();
+            HasFolders = false;
+            HasFiles = false;
+            EmptyText = "";
+        }
+
         var (files, subs) = await Task.Run(
             () => (LibraryScanner.ScanFiles(path, office, all), LibraryScanner.ScanSubfolders(path, office, ct)), ct);
         ct.ThrowIfCancellationRequested();
 
+        if (_folderCache.Count > 80) _folderCache.Clear();
+        _folderCache[key] = (files, subs);
+        if (seenBefore && files.SequenceEqual(cached.Files) && subs.SequenceEqual(cached.Subs)) return;
+
+        _listedPath = path;
+        ApplyFolderListing(files, subs, office, all, ct);
+    }
+
+    private string? _listedPath;             // the folder whose cards are on screen
+
+    /// <summary>Read a folder in the background ahead of time (the pointer is resting on its card), so that
+    /// opening it shows its page at once.</summary>
+    public void Prefetch(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || SearchText.Trim().Length > 0) return;
+        bool office = IncludeOffice, all = ShowAllTypes;
+        string key = $"{path}|{(office ? 1 : 0)}{(all ? 1 : 0)}";
+        if (_folderCache.ContainsKey(key) || !_prefetching.Add(key)) return;
+        _ = PrefetchAsync(path, key, office, all);
+    }
+
+    private readonly HashSet<string> _prefetching = new(StringComparer.OrdinalIgnoreCase);
+
+    private async Task PrefetchAsync(string path, string key, bool office, bool all)
+    {
+        try
+        {
+            var listing = await Task.Run(() => (LibraryScanner.ScanFiles(path, office, all),
+                                                LibraryScanner.ScanSubfolders(path, office, CancellationToken.None)));
+            if (_folderCache.Count > 80) _folderCache.Clear();
+            _folderCache[key] = listing;
+        }
+        catch (Exception ex) { Debug.WriteLine($"Prefetch failed: {ex.Message}"); }
+        finally { _prefetching.Remove(key); }
+    }
+
+    /// <summary>What each folder page looked like when it was last read (see <see cref="LoadFolderAsync"/>).</summary>
+    private readonly Dictionary<string, (List<LibraryFile> Files, List<LibraryFolder> Subs)> _folderCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Raised when a page's content is on screen before its loading has finished (a folder shown
+    /// from memory), so the view can start its transition without waiting for the re-read.</summary>
+    public event Action? PageContentShown;
+
+    private void ApplyFolderListing(List<LibraryFile> files, List<LibraryFolder> subs, bool office, bool all, CancellationToken ct)
+    {
         Folders.Clear();
         foreach (var f in subs) Folders.Add(new FolderCardViewModel(f, ct));
         HasFolders = Folders.Count > 0;

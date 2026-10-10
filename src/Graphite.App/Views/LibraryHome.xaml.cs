@@ -177,15 +177,32 @@ public partial class LibraryHome : UserControl
             _ = file.LoadThumbnailAsync();
     }
 
-    private void FileCard_Loaded(object sender, RoutedEventArgs e)
+    // Thumbnails are asked for when the UI has nothing better to do, so a page's cards appear (and animate in)
+    // first and their pictures follow.
+    private void FileCard_Loaded(object sender, RoutedEventArgs e) =>
+        Dispatcher.InvokeAsync(() => LoadPreview(sender), DispatcherPriority.ContextIdle);
+
+    // Resting the pointer on a folder card reads that folder in the background, so opening it is instant.
+    private DispatcherTimer? _hoverTimer;
+    private string? _hoverPath;
+
+    private void FolderTile_MouseEnter(object sender, MouseEventArgs e)
     {
-        LoadPreview(sender);
-        if (sender is FrameworkElement card) AnimateTileIn(card);
+        if (sender is not FrameworkElement { DataContext: FolderCardViewModel folder }) return;
+        _hoverPath = folder.Path;
+        _hoverTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _hoverTimer.Tick -= HoverTimer_Tick;
+        _hoverTimer.Tick += HoverTimer_Tick;
+        _hoverTimer.Stop();
+        _hoverTimer.Start();
     }
 
-    private void FolderTile_Loaded(object sender, RoutedEventArgs e)
+    private void FolderTile_MouseLeave(object sender, MouseEventArgs e) => _hoverTimer?.Stop();
+
+    private void HoverTimer_Tick(object? sender, EventArgs e)
     {
-        if (sender is FrameworkElement card) AnimateTileIn(card);
+        _hoverTimer?.Stop();
+        Library?.Prefetch(_hoverPath);
     }
 
     private void ContinueCard_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) =>
@@ -395,17 +412,27 @@ public partial class LibraryHome : UserControl
 
     // ------------------------------------------------------------- page transition
 
-    // Opening a folder (or going back) is one movement: a picture of the page you were on slides away
-    // while the new page slides in from the side you are heading to, and its cards rise into place one
-    // after another. Going deeper moves left, coming back moves right, and a sideways change (recent,
-    // pinned) just fades and lifts. Skipped entirely when motion is reduced.
+    // Opening a folder (or going back) happens in three beats: the page you are on fades out (a quick,
+    // free GPU fade), then, while nothing is visible, the new page is switched in and built, then it slides
+    // and fades in from the side you are heading to. Going deeper moves left, coming back moves right, and
+    // a sideways change (recent, pinned) fades and lifts. Because the heavy work (building cards) happens
+    // while the page is invisible, no animation frame ever has to wait for it. Skipped when motion is reduced.
+
+    private static readonly IEasingFunction QuintOut = Freeze(new QuinticEase { EasingMode = EasingMode.EaseOut });
+    private static readonly IEasingFunction QuadIn = Freeze(new QuadraticEase { EasingMode = EasingMode.EaseIn });
+
+    private static T Freeze<T>(T f) where T : Freezable
+    {
+        f.Freeze();
+        return f;
+    }
 
     private LibraryViewModel? _watched;
-    private int _gen;                        // bumped whenever a transition starts or is cut short
+    private int _gen;                        // bumped whenever a transition starts, ends or is cut short
     private int _direction;                  // +1 deeper, -1 back, 0 sideways
-    private bool _awaitingPage;              // the old page is pictured on top; the new one is still loading
-    private DateTime _staggerUntil = DateTime.MinValue;
-    private int _staggerIndex;
+    private bool _awaitingPage;              // the page has been swapped and is still loading (it is invisible)
+    private bool _playQueued;
+    private Action? _pendingApply;           // the page change that waits for the fade-out to finish
     private DispatcherTimer? _failsafe;
 
     private void LibraryHome_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -413,47 +440,73 @@ public partial class LibraryHome : UserControl
         if (_watched != null)
         {
             _watched.NavigationStarting -= OnNavigationStarting;
+            _watched.PageContentShown -= QueuePageTransition;
             _watched.PropertyChanged -= OnLibraryPropertyChanged;
         }
         _watched = e.NewValue as LibraryViewModel;
         if (_watched != null)
         {
             _watched.NavigationStarting += OnNavigationStarting;
+            _watched.PageContentShown += QueuePageTransition;
             _watched.PropertyChanged += OnLibraryPropertyChanged;
         }
     }
 
-    private void OnNavigationStarting(int direction)
+    private static void Animate(IAnimatable target, DependencyProperty property, double from, double to,
+        double ms, IEasingFunction ease) =>
+        target.BeginAnimation(property, new DoubleAnimation(from, to, Motion.Ms(ms))
+        {
+            EasingFunction = ease,
+            FillBehavior = FillBehavior.HoldEnd,
+        });
+
+    /// <summary>Step 1: the page you are leaving fades out and drifts a little. Nothing is photographed and
+    /// nothing is built yet, so these frames cost nothing. Step 2 (<see cref="SwapPage"/>) happens once it is
+    /// invisible.</summary>
+    private void OnNavigationStarting(int direction, Action apply)
     {
-        EndTransition();
+        EndTransition();   // an earlier change still waiting for its fade-out is applied right now
         if (!Motion.Enabled || !IsLoaded || !IsVisible || PageHost.ActualWidth < 16 || PageHost.ActualHeight < 16)
+        {
+            apply();
             return;
+        }
 
-        var picture = Picture(PageContent);
-        if (picture == null) return;
-
-        _gen++;
+        int gen = ++_gen;
         _direction = direction;
+        _pendingApply = apply;
+
+        // A page that is one cached picture fades and moves on the graphics card alone.
+        PageContent.CacheMode = new BitmapCache();
+        var move = (TranslateTransform)PageContent.RenderTransform;
+        Animate(PageContent, OpacityProperty, 1, 0, 100, QuadIn);
+        Animate(move, TranslateTransform.XProperty, 0, -direction * 12, 100, QuadIn);
+
+        // a few milliseconds after the fade has finished, so its last frame has been drawn
+        Motion.After(120, () =>
+        {
+            if (gen == _gen) SwapPage();
+        });
+    }
+
+    /// <summary>Step 2: with the page invisible, switch to the new one and let it load.</summary>
+    private void SwapPage()
+    {
+        var apply = _pendingApply;
+        _pendingApply = null;
+        if (apply == null) return;
+
         _awaitingPage = true;
+        _playQueued = false;
 
-        SnapshotImage.Source = picture;
-        SnapshotImage.Width = PageHost.ActualWidth;
-        SnapshotImage.Height = PageHost.ActualHeight;
-        SnapshotImage.Opacity = 1;
-        SnapshotImage.Visibility = Visibility.Visible;
-
-        // The new page stays out of sight until it is ready, so nothing flashes under the picture.
-        PageContent.Opacity = 0;
-
-        // Instant feedback for the click: the old page dims a little while the folder is read.
-        SnapshotImage.BeginAnimation(OpacityProperty,
-            new DoubleAnimation(1, 0.55, Motion.Ms(140)) { EasingFunction = Motion.EaseOut, FillBehavior = FillBehavior.HoldEnd });
-
-        // A folder that is slow to read must not leave the page blank for good.
-        _failsafe ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+        // A folder that is very slow to read must not leave the page blank for long.
+        _failsafe ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
         _failsafe.Tick -= Failsafe_Tick;
         _failsafe.Tick += Failsafe_Tick;
         _failsafe.Start();
+
+        // Pages that are ready at once (home, recent, pinned, a folder seen before) announce it while this runs.
+        apply();
     }
 
     private void Failsafe_Tick(object? sender, EventArgs e)
@@ -465,96 +518,64 @@ public partial class LibraryHome : UserControl
     private void OnLibraryPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(LibraryViewModel.IsLoading) && _awaitingPage && _watched is { IsLoading: false })
-            PlayPageTransition();
+            QueuePageTransition();
     }
 
-    /// <summary>The new page is ready: slide the old picture away and the new page in.</summary>
+    /// <summary>The new page has its content. Wait until it has been laid out (Input priority runs after
+    /// layout and render work) so the movement starts on a free UI thread.</summary>
+    private void QueuePageTransition()
+    {
+        if (!_awaitingPage || _playQueued) return;
+        _playQueued = true;
+        int gen = _gen;
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (gen == _gen && _awaitingPage) PlayPageTransition();
+        }, DispatcherPriority.Input);
+    }
+
+    /// <summary>Step 3: the new page arrives from the side you are heading to and settles with a long, soft stop.</summary>
     private void PlayPageTransition()
     {
         _failsafe?.Stop();
         _awaitingPage = false;
         int gen = _gen;
-        _staggerIndex = 0;
-        _staggerUntil = DateTime.UtcNow.AddMilliseconds(1000);
-
-        var pageMove = (TranslateTransform)PageContent.RenderTransform;
-        var picMove = (TranslateTransform)SnapshotImage.RenderTransform;
         double dir = _direction;
 
-        // the old page: slides one way and fades out
-        double outX = -dir * 40, outY = dir == 0 ? -10 : 0;
-        var fade = new DoubleAnimation(0, Motion.Ms(230)) { EasingFunction = Motion.EaseIn, FillBehavior = FillBehavior.HoldEnd };
-        fade.Completed += (_, _) => { if (gen == _gen) EndTransition(); };
-        SnapshotImage.BeginAnimation(OpacityProperty, fade);
-        picMove.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(outX, Motion.Ms(260)) { EasingFunction = Motion.EaseIn, FillBehavior = FillBehavior.HoldEnd });
-        picMove.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(outY, Motion.Ms(260)) { EasingFunction = Motion.EaseIn, FillBehavior = FillBehavior.HoldEnd });
+        if (PageContent.CacheMode == null) PageContent.CacheMode = new BitmapCache();
+        var move = (TranslateTransform)PageContent.RenderTransform;
+        Animate(PageContent, OpacityProperty, 0, 1, 240, QuintOut);
+        Animate(move, TranslateTransform.XProperty, dir * 30, 0, 400, QuintOut);
+        Animate(move, TranslateTransform.YProperty, dir == 0 ? 12 : 0, 0, 400, QuintOut);
 
-        // the new page: arrives from the other side
-        Motion.Tween(PageContent, OpacityProperty, 0, 1, 280, 40);
-        Motion.Tween(pageMove, TranslateTransform.XProperty, dir * 46, 0, 380, 20);
-        Motion.Tween(pageMove, TranslateTransform.YProperty, dir == 0 ? 18 : 0, 0, 380, 20);
+        // once everything has come to rest, the page goes back to being live content
+        Motion.After(440, () =>
+        {
+            if (gen == _gen) EndTransition();
+        });
     }
 
-    /// <summary>Put everything back to rest: no picture, the page fully shown, no animation running.</summary>
+    /// <summary>Put everything back to rest: the page fully shown and live, no animation running. A page
+    /// change still waiting for the fade-out is applied here, so a navigation is never lost.</summary>
     private void EndTransition()
     {
+        var pending = _pendingApply;
+        _pendingApply = null;
+
         _gen++;
         _awaitingPage = false;
+        _playQueued = false;
         _failsafe?.Stop();
 
         PageContent.BeginAnimation(OpacityProperty, null);
         PageContent.Opacity = 1;
-        var pageMove = (TranslateTransform)PageContent.RenderTransform;
-        pageMove.BeginAnimation(TranslateTransform.XProperty, null);
-        pageMove.BeginAnimation(TranslateTransform.YProperty, null);
-        pageMove.X = 0;
-        pageMove.Y = 0;
+        PageContent.CacheMode = null;
+        var move = (TranslateTransform)PageContent.RenderTransform;
+        move.BeginAnimation(TranslateTransform.XProperty, null);
+        move.BeginAnimation(TranslateTransform.YProperty, null);
+        move.X = 0;
+        move.Y = 0;
 
-        SnapshotImage.BeginAnimation(OpacityProperty, null);
-        var picMove = (TranslateTransform)SnapshotImage.RenderTransform;
-        picMove.BeginAnimation(TranslateTransform.XProperty, null);
-        picMove.BeginAnimation(TranslateTransform.YProperty, null);
-        picMove.X = 0;
-        picMove.Y = 0;
-        SnapshotImage.Visibility = Visibility.Collapsed;
-        SnapshotImage.Source = null;
-    }
-
-    /// <summary>A picture of an element as it looks right now.</summary>
-    private BitmapSource? Picture(FrameworkElement element)
-    {
-        try
-        {
-            var dpi = VisualTreeHelper.GetDpi(element);
-            int w = (int)Math.Ceiling(element.ActualWidth * dpi.DpiScaleX);
-            int h = (int)Math.Ceiling(element.ActualHeight * dpi.DpiScaleY);
-            if (w < 1 || h < 1) return null;
-
-            var bitmap = new RenderTargetBitmap(w, h, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
-            var visual = new DrawingVisual();
-            using (var dc = visual.RenderOpen())
-                dc.DrawRectangle(new VisualBrush(element), null, new Rect(0, 0, element.ActualWidth, element.ActualHeight));
-            bitmap.Render(visual);
-            bitmap.Freeze();
-            return bitmap;
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Page picture failed: {ex.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>While a page is arriving, its cards rise into place one after another.</summary>
-    private void AnimateTileIn(FrameworkElement tile)
-    {
-        if (!Motion.Enabled || DateTime.UtcNow > _staggerUntil) return;
-        double delay = 60 + Math.Min(_staggerIndex++, 18) * 26;
-        Motion.FadeIn(tile, 240, delay, 16);
-        if (Motion.RigOf(tile) is { } rig)
-        {
-            Motion.Tween(rig.Scale, ScaleTransform.ScaleXProperty, 0.94, 1, 320, delay);
-            Motion.Tween(rig.Scale, ScaleTransform.ScaleYProperty, 0.94, 1, 320, delay);
-        }
+        pending?.Invoke();
     }
 }
