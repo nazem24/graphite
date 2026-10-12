@@ -24,6 +24,9 @@ jobs:
         shell: pwsh
         run: pwsh -File tools/get-tessdata.ps1
 
+      # Not a single-file publish: Tesseract locates its native DLLs (x64\tesseract50.dll,
+      # x64\leptonica-*.dll) relative to Tesseract.dll on disk. Inside a single-file exe
+      # Assembly.Location is empty and OCR fails with "Value cannot be null (path1)".
       - name: Publish self-contained win-x64 build
         shell: pwsh
         run: >
@@ -31,11 +34,22 @@ jobs:
           -c Release
           -r win-x64
           --self-contained true
-          -p:PublishSingleFile=true
           -p:PublishReadyToRun=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
           -p:Version="$("${{ github.ref_name }}".TrimStart('v'))"
           -o publish
+
+      - name: Verify OCR files are in the package
+        shell: pwsh
+        run: |
+          $required = @(
+            'Tesseract.dll',
+            'x64\tesseract50.dll',
+            'x64\leptonica-1.82.0.dll',
+            'tessdata\eng.traineddata',
+            'tessdata\deu.traineddata'
+          )
+          $missing = $required | Where-Object { -not (Test-Path (Join-Path 'publish' $_)) }
+          if ($missing) { throw "OCR files missing from publish output: $($missing -join ', ')" }
 
       - name: Zip the published output
         shell: pwsh

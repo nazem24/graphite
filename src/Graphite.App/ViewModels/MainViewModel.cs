@@ -167,7 +167,19 @@ public partial class MainViewModel : ObservableObject
     private static void Error(Exception ex)
     {
         App.LogError("Operation failed", ex);
-        MessageDialog.Show(Owner, ex.Message, "Graphite", DialogButtons.OK, DialogIcon.Warning);
+        MessageDialog.Show(Owner, Describe(ex), "Graphite", DialogButtons.OK, DialogIcon.Warning);
+    }
+
+    /// <summary>The message of the innermost exception. Reflection-based libraries (Tesseract,
+    /// PdfSharp font setup) wrap the real failure in a TargetInvocationException whose own
+    /// message — "Exception has been thrown by the target of an invocation" — says nothing.</summary>
+    private static string Describe(Exception ex)
+    {
+        var inner = ex;
+        while (inner.InnerException is { } next) inner = next;
+        return ReferenceEquals(inner, ex)
+            ? ex.Message
+            : $"{inner.Message}{Environment.NewLine}{Environment.NewLine}({inner.GetType().Name})";
     }
 
     // ------------------------------------------------------------- open / close
