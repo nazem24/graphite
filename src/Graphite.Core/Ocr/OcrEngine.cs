@@ -7,7 +7,9 @@ public sealed record OcrPageResult(string FullText, IReadOnlyList<OcrWord> Words
 
 /// <summary>
 /// Tesseract-backed OCR. Requires a "tessdata" folder next to the executable
-/// containing at least eng.traineddata (see tools/get-tessdata.ps1).
+/// containing at least one *.traineddata file (see tools/get-tessdata.ps1).
+/// By default every installed language is loaded together (e.g. "eng+deu"), so
+/// mixed English/German documents are recognized in one pass.
 /// </summary>
 public sealed class OcrEngine : IDisposable
 {
@@ -16,11 +18,27 @@ public sealed class OcrEngine : IDisposable
     public static string DefaultDataPath =>
         Path.Combine(AppContext.BaseDirectory, "tessdata");
 
-    public static bool IsAvailable(string? dataPath = null, string language = "eng") =>
-        File.Exists(Path.Combine(dataPath ?? DefaultDataPath, $"{language}.traineddata"));
-
-    public OcrEngine(string? dataPath = null, string language = "eng")
+    /// <summary>Language codes of all *.traineddata files in the data folder
+    /// (English first, then alphabetical). The orientation-detection file "osd" is excluded.</summary>
+    public static IReadOnlyList<string> InstalledLanguages(string? dataPath = null)
     {
+        string dir = dataPath ?? DefaultDataPath;
+        if (!Directory.Exists(dir)) return Array.Empty<string>();
+        return Directory.GetFiles(dir, "*.traineddata")
+            .Select(f => Path.GetFileNameWithoutExtension(f))
+            .Where(l => !string.Equals(l, "osd", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(l => l == "eng" ? 0 : 1)
+            .ThenBy(l => l, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static bool IsAvailable(string? dataPath = null) =>
+        InstalledLanguages(dataPath).Count > 0;
+
+    /// <param name="language">Tesseract language string such as "eng+deu"; null = all installed languages.</param>
+    public OcrEngine(string? dataPath = null, string? language = null)
+    {
+        language ??= string.Join("+", InstalledLanguages(dataPath));
         _engine = new TesseractEngine(dataPath ?? DefaultDataPath, language, EngineMode.Default);
     }
 

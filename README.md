@@ -106,9 +106,9 @@ tagging `v*` publishes a release zip automatically.
 
 ### Optional setup
 
-- **OCR data** — `powershell -File tools\get-tessdata.ps1` downloads `eng.traineddata`
-  into `src/Graphite.App/tessdata` (copied next to the exe on build). Pass
-  `-Languages eng,deu,...` for more languages.
+- **OCR data** — `powershell -File tools\get-tessdata.ps1` downloads English and German
+  (`eng`, `deu`) into `src/Graphite.App/tessdata` (copied next to the exe on build). All
+  languages found there are used together. Pass `-Languages eng,deu,fra,...` for more.
 - **File association** — after building:
   `powershell -File tools\register-file-association.ps1 -ExePath <path>\Graphite.exe`,
   then choose Graphite for `.pdf` in Settings → Default apps (Windows requires that

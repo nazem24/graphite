@@ -1,7 +1,7 @@
 # Downloads Tesseract OCR language data used by Graphite's OCR feature.
 # Run once from the repository root (or anywhere):  powershell -File tools\get-tessdata.ps1
 param(
-    [string[]]$Languages = @("eng")
+    [string[]]$Languages = @("eng", "deu")
 )
 
 $target = Join-Path $PSScriptRoot "..\src\Graphite.App\tessdata"

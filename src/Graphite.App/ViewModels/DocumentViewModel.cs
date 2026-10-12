@@ -1071,7 +1071,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     {
         if (!OcrEngine.IsAvailable())
             throw new InvalidOperationException(
-                "OCR language data not found.\n\nRun tools\\get-tessdata.ps1 (or place eng.traineddata " +
+                "OCR language data not found.\n\nRun tools\\get-tessdata.ps1 (or place eng.traineddata and deu.traineddata " +
                 $"in {OcrEngine.DefaultDataPath}) and try again.");
 
         IsBusy = true;
