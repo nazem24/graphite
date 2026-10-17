@@ -78,8 +78,17 @@ public static class ThemeService
     /// <summary>The window materials the settings page offers, in display order.</summary>
     public static readonly string[] Materials = { "Mica", "Blur", "Frosted", "Glass" };
 
-    /// <summary>Current window material (always one of <see cref="Materials"/>).</summary>
-    public static string Material => _settings.Material;
+    /// <summary>The material the person chose (always one of <see cref="Materials"/>), whether or not it is
+    /// showing right now.</summary>
+    public static string SavedMaterial => _settings.Material;
+
+    /// <summary>True while Windows' Energy Saver is on. Acrylic is drawn as a flat colour then, so the
+    /// glass materials are off and the window shows Mica until Energy Saver ends.</summary>
+    public static bool EnergySaverActive => EnergySaver.IsOn;
+
+    /// <summary>The material actually showing (always one of <see cref="Materials"/>): the chosen one, or
+    /// Mica while Energy Saver is on. The chosen one is kept and comes back by itself.</summary>
+    public static string Material => EnergySaver.IsOn ? "Mica" : _settings.Material;
 
     /// <summary>Raised after the light/dark mode or the material changed and was applied.</summary>
     public static event Action? AppearanceChanged;
@@ -158,6 +167,7 @@ public static class ThemeService
     public static void SetMaterial(string material)
     {
         if (!Materials.Contains(material) || material == _settings.Material) return;
+        if (EnergySaver.IsOn && material != "Mica") return;   // the glass materials are off under Energy Saver
         _settings.Material = material;
         ApplyTheme(_settings.DarkTheme);
     }
@@ -200,6 +210,8 @@ public static class ThemeService
         if (_settings.SidebarCollapse is not ("Rail" or "Hidden")) _settings.SidebarCollapse = "Rail";
         _settings.ToolDefaults ??= new();
         Motion.UserReduced = _settings.ReduceMotion;
+        EnergySaver.Start();
+        EnergySaver.Changed += () => ApplyTheme(_settings.DarkTheme);   // swap to / from Mica, refresh the page
         ApplyTheme(_settings.DarkTheme);
     }
 
@@ -234,7 +246,7 @@ public static class ThemeService
     /// over the plain translucent surfaces of Colors.*.xaml.</summary>
     private static void ApplyMaterialDictionary(bool dark)
     {
-        var dict = new ResourceDictionary { Source = MaterialUri(_settings.Material, dark) };
+        var dict = new ResourceDictionary { Source = MaterialUri(Material, dark) };
         var merged = Application.Current.Resources.MergedDictionaries;
         for (int i = 0; i < merged.Count; i++)
             if (merged[i].Source?.OriginalString.Contains("Materials/") == true) { merged[i] = dict; return; }

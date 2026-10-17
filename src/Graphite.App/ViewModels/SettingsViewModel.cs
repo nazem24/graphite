@@ -37,10 +37,16 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Materials need the Windows 11 backdrop API (build 22621 or newer).</summary>
     public bool MaterialsSupported => Backdrop.IsMicaSupported;
 
+    /// <summary>Blur, Frosted glass and Glass: not offered while Energy Saver is on (Windows draws
+    /// Acrylic flat then, and the window shows Mica instead).</summary>
+    public bool GlassMaterialsAvailable => Backdrop.IsMicaSupported && !ThemeService.EnergySaverActive;
+
     /// <summary>A line under the material cards when Windows will not draw them as intended.</summary>
     public string NoteText =>
         !Backdrop.IsMicaSupported
             ? "Window materials need Windows 11 (version 22H2 or newer). On this PC the window stays flat, but Light and Dark still work."
+            : ThemeService.EnergySaverActive
+                ? "Energy Saver is on, so Windows draws blur and glass as a flat color. The window uses Mica until Energy Saver is turned off; your choice comes back then."
             : !Backdrop.TransparencyEnabled
                 ? "Windows transparency effects are turned off, so every material shows as a flat color. Turn them on in Windows Settings > Personalization > Colors."
                 : "";

@@ -1601,9 +1601,13 @@ public partial class MainViewModel : ObservableObject
     private void FilterPalette()
     {
         string q = PaletteQuery.Trim();
+        // Energy Saver turns the glass materials off: leave their commands out of the list meanwhile.
+        var available = ThemeService.EnergySaverActive
+            ? _paletteCommands.Where(c => !c.Name.StartsWith("Material: ") || c.Name == "Material: Mica").ToList()
+            : _paletteCommands;
         var matches = string.IsNullOrEmpty(q)
-            ? _paletteCommands
-            : _paletteCommands
+            ? available
+            : available
                 .Where(c => c.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(c => c.Name.StartsWith(q, StringComparison.OrdinalIgnoreCase))
                 .ToList();

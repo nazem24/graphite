@@ -187,7 +187,7 @@
                         </RadioButton>
 
                         <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                     IsChecked="{Binding IsBlur, Mode=OneWay}" IsEnabled="{Binding MaterialsSupported}"
+                                     IsChecked="{Binding IsBlur, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
                                      Command="{Binding SetMaterialCommand}" CommandParameter="Blur"
                                      AutomationProperties.Name="Blur material">
                             <StackPanel Width="196">
@@ -199,7 +199,7 @@
                         </RadioButton>
 
                         <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                     IsChecked="{Binding IsFrosted, Mode=OneWay}" IsEnabled="{Binding MaterialsSupported}"
+                                     IsChecked="{Binding IsFrosted, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
                                      Command="{Binding SetMaterialCommand}" CommandParameter="Frosted"
                                      AutomationProperties.Name="Frosted glass material">
                             <StackPanel Width="196">
@@ -211,7 +211,7 @@
                         </RadioButton>
 
                         <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                     IsChecked="{Binding IsGlass, Mode=OneWay}" IsEnabled="{Binding MaterialsSupported}"
+                                     IsChecked="{Binding IsGlass, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
                                      Command="{Binding SetMaterialCommand}" CommandParameter="Glass"
                                      AutomationProperties.Name="Glass material">
                             <StackPanel Width="196">
