@@ -69,6 +69,31 @@ public partial class MainWindow : Window
             await Task.Delay(TimeSpan.FromSeconds(4));
             _ = ViewModel.CheckForUpdatesAsync(silent: true);
         };
+
+        // After a crash: offer the unsaved changes back. After a rolled-back update: say so.
+        Loaded += async (_, _) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(600));
+            if (UpdateService.TakeFailedUpdateNote() is { } note)
+                MessageDialog.Show(this, note, "Update", DialogButtons.OK, DialogIcon.Warning);
+            await ViewModel.OfferRecoveryAsync();
+        };
+
+        // Coming back to Graphite is the moment another program has most likely touched a file.
+        Activated += (_, _) => ViewModel.CheckDiskChanges();
+    }
+
+    /// <summary>Another launch handed us files: restore (keeping a maximized window maximized)
+    /// and bring the window to the front.</summary>
+    public void BringToFront()
+    {
+        if (WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(this);
+        if (!IsVisible) Show();
+        Activate();
+        // Activate alone can leave the window behind the foreground app; a Topmost flip lifts it.
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
 
     // ------------------------------------------------------------- custom caption buttons

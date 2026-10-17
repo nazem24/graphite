@@ -8,7 +8,8 @@ namespace Graphite.Core.Editing;
 /// Direct content edits. PDF has no reflowable text model, so text editing is
 /// implemented the way most editors do it under the hood: the original region is
 /// covered and replacement content is appended to the page's content stream.
-/// All coordinates are PDF points, top-left origin (XGraphics' native space).
+/// All coordinates are PDF points in display space: top-left origin, the page as it is shown
+/// (rotation and CropBox applied — see <see cref="Graphite.Core.Pdf.PageGeometry"/>).
 /// </summary>
 public static class ContentEditor
 {
@@ -21,6 +22,7 @@ public static class ContentEditor
         using var doc = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Modify);
         var page = doc.Pages[pageIndex];
         using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
+        gfx.MultiplyTransform(Graphite.Core.Pdf.PageGeometry.DisplayTransform(page));
 
         gfx.DrawRectangle(new XSolidBrush(ParseX(coverColorHex)),
             new XRect(area.X, area.Y, area.Width, area.Height));
@@ -49,6 +51,7 @@ public static class ContentEditor
         using var doc = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Modify);
         var page = doc.Pages[pageIndex];
         using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
+        gfx.MultiplyTransform(Graphite.Core.Pdf.PageGeometry.DisplayTransform(page));
         using var img = XImage.FromFile(imagePath);
         gfx.DrawImage(img, new XRect(area.X, area.Y, area.Width, area.Height));
 

@@ -6,6 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Graphite.App.Services;
@@ -65,10 +66,31 @@ public partial class MainViewModel : ObservableObject
         Writers.CollectionChanged += (_, e) => MirrorTabs(e);
         Library = new LibraryViewModel(this);
         Library.Initialize();
+
+        // Crash recovery: keep a copy of every document with unsaved changes (see RecoveryService).
+        _journalTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        _journalTimer.Tick += (_, _) => JournalTick();
+        _journalTimer.Start();
+
+        // Files changed on disk by another program (OneDrive sync, another editor).
+        _diskTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        _diskTimer.Tick += (_, _) => CheckDiskChanges();
+        _diskTimer.Start();
     }
 
     private void MirrorTabs(NotifyCollectionChangedEventArgs e)
     {
+        // A reloaded document takes its predecessor's place in the tab strip.
+        if (e.Action == NotifyCollectionChangedAction.Replace && e.OldItems != null && e.NewItems != null)
+        {
+            for (int k = 0; k < e.OldItems.Count && k < e.NewItems.Count; k++)
+            {
+                int at = Tabs.IndexOf(e.OldItems[k]!);
+                if (at >= 0) Tabs[at] = e.NewItems[k]!;
+                else Tabs.Add(e.NewItems[k]!);
+            }
+            return;
+        }
         if (e.OldItems != null)
             foreach (object item in e.OldItems) Tabs.Remove(item);
         if (e.NewItems != null)
@@ -691,6 +713,16 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (doc.FilePath == null) { await SaveAs(); return; }
+            // Someone else changed the file since we read it: don't overwrite their work silently.
+            var (exists, changed) = doc.CheckDisk();
+            if (exists && changed)
+            {
+                var answer = MessageDialog.Show(Owner,
+                    $"\"{doc.Title}\" was changed by another program after you opened it.\n\n" +
+                    "Save anyway and replace those changes with your version?",
+                    "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
+                if (answer != MessageBoxResult.Yes) return;
+            }
             await doc.SaveAsync();
         }
         catch (Exception ex) { Error(ex); }
@@ -708,6 +740,255 @@ public partial class MainViewModel : ObservableObject
         };
         if (dlg.ShowDialog(Owner) != true) return;
         try { await doc.SaveAsync(dlg.FileName); ThemeService.AddRecentFile(dlg.FileName); }
+        catch (Exception ex) { Error(ex); }
+    }
+
+    // ------------------------------------------------------------- file changed on disk
+
+    private readonly DispatcherTimer _diskTimer;
+
+    /// <summary>Look for open PDFs whose file changed on disk. A document without unsaved changes
+    /// simply reloads; one with changes gets a bar offering Reload / Keep mine.</summary>
+    public void CheckDiskChanges()
+    {
+        foreach (var doc in Documents.ToList())
+        {
+            if (doc.FilePath == null || doc.IsBusy) continue;
+            var (exists, changed) = doc.CheckDisk();
+            if (!changed)
+            {
+                // The file came back (OneDrive replaces files by delete + rename while syncing).
+                if (exists && doc.DiskNotice != null && !doc.DiskNoticeCanReload) doc.DiskNotice = null;
+                continue;
+            }
+            if (!exists)
+            {
+                doc.DiskNoticeCanReload = false;
+                doc.DiskNotice = $"\u201C{doc.Title}\u201D was moved or deleted on disk. Save to keep a copy of it.";
+                continue;
+            }
+            if (!doc.IsDirty && !_reloading.Contains(doc))
+            {
+                _ = ReloadDocumentAsync(doc, quiet: true);
+                continue;
+            }
+            doc.DiskNoticeCanReload = true;
+            doc.DiskNotice = $"\u201C{doc.Title}\u201D was changed by another program. Reload it (your unsaved changes are lost), " +
+                             "or keep your version — saving will then replace the other changes.";
+        }
+    }
+
+    private readonly HashSet<DocumentViewModel> _reloading = new();
+
+    /// <summary>The bar's Reload button: read the file again, in the same tab and on the same page.</summary>
+    [RelayCommand]
+    private Task ReloadDocument(DocumentViewModel? doc) => doc == null ? Task.CompletedTask : ReloadDocumentAsync(doc, quiet: false);
+
+    /// <summary>The bar's Keep mine button: stop warning about this version of the file.</summary>
+    [RelayCommand]
+    private void KeepMyVersion(DocumentViewModel? doc)
+    {
+        if (doc == null) return;
+        doc.RecordDiskStamp();
+        doc.DiskNotice = null;
+    }
+
+    private async Task ReloadDocumentAsync(DocumentViewModel doc, bool quiet)
+    {
+        if (doc.FilePath is not { } path || !_reloading.Add(doc)) return;
+        try
+        {
+            // A program that is still writing the file: wait until its size settles.
+            long size = -1;
+            for (int i = 0; i < 10; i++)
+            {
+                long now = new FileInfo(path).Length;
+                if (now == size && now > 0) break;
+                size = now;
+                await Task.Delay(400);
+            }
+
+            byte[] bytes = await File.ReadAllBytesAsync(path);
+            string? password = null;
+            if (PdfSecurity.IsPasswordProtected(bytes))
+            {
+                byte[]? decrypted = null;
+                if (doc.SourcePassword is { } known)
+                {
+                    try { decrypted = PdfSecurity.Decrypt(bytes, known); password = known; } catch { /* password changed */ }
+                }
+                if (decrypted == null)
+                {
+                    if (PromptAndDecrypt(bytes, Path.GetFileName(path)) is not { } prompted) return;
+                    decrypted = prompted.Bytes;
+                    password = prompted.Password;
+                }
+                bytes = decrypted;
+            }
+
+            var fresh = await DocumentViewModel.FromBytesAsync(bytes, path);
+            fresh.SourcePassword = password;
+            fresh.Zoom = doc.Zoom;
+            fresh.Layout = doc.Layout;
+            fresh.InvertPages = doc.InvertPages;
+            fresh.CurrentPageIndex = Math.Clamp(doc.CurrentPageIndex, 0, Math.Max(0, fresh.Pages.Count - 1));
+
+            int at = Documents.IndexOf(doc);
+            if (at < 0) { fresh.Dispose(); return; } // closed meanwhile
+            bool wasSelected = ReferenceEquals(SelectedDocument, doc);
+            Documents[at] = fresh;
+            if (wasSelected) SelectedTab = fresh;
+            doc.Dispose();
+            MemoryTrim.Schedule();
+        }
+        catch (Exception ex)
+        {
+            if (!quiet) { Error(ex); return; }
+            App.LogError("Reloading a changed file failed", ex);
+            doc.DiskNoticeCanReload = true;
+            doc.DiskNotice = $"\u201C{doc.Title}\u201D changed on disk but couldn't be reloaded ({ex.Message}).";
+        }
+        finally { _reloading.Remove(doc); }
+    }
+
+    // ------------------------------------------------------------- crash recovery
+
+    private readonly DispatcherTimer _journalTimer;
+
+    /// <summary>Write a recovery copy of every document whose unsaved changes moved on since the
+    /// last copy; drop the copy of documents that no longer have unsaved changes.</summary>
+    private void JournalTick()
+    {
+        foreach (var doc in Documents.ToList())
+        {
+            if (!doc.IsDirty)
+            {
+                if (doc.JournaledCounter >= 0)
+                {
+                    RecoveryService.Remove(doc.RecoveryId);
+                    doc.JournaledCounter = -1;
+                }
+                continue;
+            }
+            if (doc.IsJournaling || doc.IsBusy || doc.EditCounter == doc.JournaledCounter) continue;
+
+            long counter = doc.EditCounter;
+            Func<byte[]> bake;
+            try { bake = doc.CaptureForBake(); }
+            catch (Exception ex) { App.LogError("Recovery snapshot failed", ex); continue; }
+            string? password = doc.SourcePassword;
+            string? path = doc.FilePath;
+            string title = doc.Title;
+            var id = doc.RecoveryId;
+            doc.IsJournaling = true;
+            _ = Task.Run(() =>
+            {
+                byte[] pdf = bake();
+                if (password != null) pdf = PdfSecurity.Encrypt(pdf, password);
+                RecoveryService.Write(id, pdf, path, title, password != null);
+            }).ContinueWith(t =>
+            {
+                doc.IsJournaling = false;
+                if (t.IsFaulted) App.LogError("Writing the recovery copy failed", t.Exception);
+                else doc.JournaledCounter = counter;
+                // Closed while the copy was being written: don't leave it behind.
+                if (!Documents.Contains(doc)) RecoveryService.Remove(id);
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+    }
+
+    /// <summary>At startup: offer back the unsaved changes a crashed session left behind.</summary>
+    public async Task OfferRecoveryAsync()
+    {
+        List<RecoveredDocument> orphans;
+        try { orphans = await Task.Run(RecoveryService.FindOrphans); }
+        catch (Exception ex) { App.LogError("Looking for recovery copies failed", ex); return; }
+        if (orphans.Count == 0) return;
+
+        string list = string.Join("\n", orphans.Take(8).Select(o => $"\u2022 {o.Title} ({o.SavedAt:g})"));
+        if (orphans.Count > 8) list += $"\n\u2022 \u2026 and {orphans.Count - 8} more";
+        var answer = MessageDialog.Show(Owner,
+            "Graphite didn't close properly last time, but your unsaved changes were kept:\n\n" + list +
+            "\n\nYes = reopen them with the changes \u00B7 No = discard them \u00B7 Cancel = ask again next time.",
+            "Recover unsaved changes", DialogButtons.YesNoCancel, DialogIcon.Info);
+        if (answer == MessageBoxResult.Cancel) return;
+
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (answer == MessageBoxResult.Yes)
+        {
+            foreach (var o in orphans)
+            {
+                try
+                {
+                    byte[] bytes = await File.ReadAllBytesAsync(o.PdfPath);
+                    string? password = null;
+                    if (o.Encrypted)
+                    {
+                        if (PromptAndDecrypt(bytes, o.Title) is not { } r) { keep.Add(o.SessionDir); continue; }
+                        bytes = r.Bytes;
+                        password = r.Password;
+                    }
+                    // Already open (passed on the command line): recover into a separate, unnamed tab.
+                    string? path = o.OriginalPath;
+                    if (path != null && Documents.Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+                        path = null;
+                    var doc = await DocumentViewModel.FromBytesAsync(bytes, path);
+                    doc.SourcePassword = password;
+                    doc.IsDirty = true;
+                    Documents.Add(doc);
+                    SelectedTab = doc;
+                }
+                catch (Exception ex)
+                {
+                    keep.Add(o.SessionDir);
+                    Error(ex);
+                }
+            }
+        }
+        foreach (string dir in orphans.Select(o => o.SessionDir).Distinct(StringComparer.OrdinalIgnoreCase))
+            if (!keep.Contains(dir)) RecoveryService.Discard(dir);
+    }
+
+    // ------------------------------------------------------------- markup → notes
+
+    /// <summary>Collect the document's highlights, comments and text boxes into a new document of
+    /// the built-in editor, saved next to the PDF ("Report – notes.docx"), and open it.</summary>
+    [RelayCommand]
+    private void ExportMarkupNotes()
+    {
+        if (SelectedDocument is not { } doc) return;
+        if (!MarkupNotes.HasContent(doc))
+        {
+            MessageDialog.Show(Owner,
+                "This document has no highlights, comments or text boxes yet — mark something up first.",
+                "Export notes", DialogButtons.OK, DialogIcon.Info);
+            return;
+        }
+        try
+        {
+            string stem = GraphiteDocx.SanitizeFileName(Path.GetFileNameWithoutExtension(doc.Title) + " \u2013 notes");
+            string folder = doc.FilePath is { } p && Path.GetDirectoryName(p) is { Length: > 0 } dir
+                ? dir
+                : Library.NewItemFolder;
+            string path;
+            try
+            {
+                path = GraphiteDocx.UniquePath(folder, stem, ".docx");
+                var page = new PageSettings();
+                DocxCodec.Save(path, MarkupNotes.Build(doc, page), page, Path.GetFileNameWithoutExtension(path));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The PDF's folder isn't writable: fall back to the library folder.
+                folder = Library.NewItemFolder;
+                Directory.CreateDirectory(folder);
+                path = GraphiteDocx.UniquePath(folder, stem, ".docx");
+                var page = new PageSettings();
+                DocxCodec.Save(path, MarkupNotes.Build(doc, page), page, Path.GetFileNameWithoutExtension(path));
+            }
+            OpenWriter(path, true);
+            Library.RefreshCommand.Execute(null);
+        }
         catch (Exception ex) { Error(ex); }
     }
 
@@ -1262,6 +1543,7 @@ public partial class MainViewModel : ObservableObject
                 new("Export to Excel (.xlsx)…", null, () => _ = ExportExcel()),
                 new("Export to PowerPoint (.pptx)…", null, () => _ = ExportPowerPoint()),
                 new("Export pages as images…", null, () => _ = ExportImages()),
+                new("Export highlights & comments to notes", null, ExportMarkupNotes),
                 new("Paste image from clipboard", "Ctrl+V", () => PasteImageRequested?.Invoke()),
                 new("Next tab", "Ctrl+Tab", () => CycleDocument(+1)),
                 new("Previous tab", "Ctrl+Shift+Tab", () => CycleDocument(-1)),

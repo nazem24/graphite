@@ -264,6 +264,8 @@
                                                                 Visibility="{Binding Image, Converter={StaticResource NullToVisInv}}"/>
                                                 <ctrl:FadeImage Source="{Binding Image}" Stretch="Fill"/>
                                                 <ctrl:AnnotationLayer/>
+                                                <!-- Fill-in controls over PDF form fields (Select tool only). -->
+                                                <ctrl:FormLayer/>
                                                 <!-- Inline text editing host: the Text tool drops an empty
                                                      text box and typing happens right here on the page. -->
                                                 <Canvas ClipToBounds="True">
@@ -295,6 +297,27 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+
+                        <!-- The file changed (or vanished) on disk while it was open. -->
+                        <Border Style="{StaticResource GlassCard}" Background="{DynamicResource App.GlassSolidBrush}"
+                                VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,14,0,0" Padding="14,9"
+                                MaxWidth="560"
+                                Visibility="{Binding DiskNotice, Converter={StaticResource NullToVis}}">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <Button Style="{StaticResource AccentButton}" Content="Reload"
+                                            Visibility="{Binding DiskNoticeCanReload, Converter={StaticResource BoolToVis}}"
+                                            Command="{Binding DataContext.ReloadDocumentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Style="{StaticResource GhostButton}" Margin="6,0,0,0" BorderThickness="0"
+                                            Background="Transparent" Content="Keep mine"
+                                            Command="{Binding DataContext.KeepMyVersionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding DiskNotice}" TextWrapping="Wrap" VerticalAlignment="Center"
+                                           FontSize="12.5" Foreground="{DynamicResource App.TextBrush}"/>
+                            </DockPanel>
+                        </Border>
 
                         <!-- floating page controls -->
                         <Border Style="{StaticResource GlassPill}" VerticalAlignment="Bottom" Tag="PageBar"
@@ -1143,6 +1166,10 @@
                                     </MenuItem>
                                     <MenuItem Header="Export pages as images…" Command="{Binding ExportImagesCommand}">
                                         <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Image}" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Highlights &amp; comments to notes" Command="{Binding ExportMarkupNotesCommand}"
+                                              ToolTip="A new document next to the PDF with every highlighted passage, comment and text box, page by page">
+                                        <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Export}" Width="14" Height="14"/></MenuItem.Icon>
                                     </MenuItem>
                                     <Separator/>
                                     <MenuItem Header="Recognize text (OCR)…" Command="{Binding RunOcrCommand}">

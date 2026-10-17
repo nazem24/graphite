@@ -36,3 +36,6 @@ Thumbs.db
 
 ## Logs
 *.log
+
+## Test output for eyeballing (tools/verify.bat sets GRAPHITE_DUMP)
+verify-out/

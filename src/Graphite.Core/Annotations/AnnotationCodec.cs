@@ -1,3 +1,4 @@
+using Graphite.Core.Pdf;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.Advanced;
 using PdfSharp.Pdf.IO;
@@ -10,6 +11,11 @@ namespace Graphite.Core.Annotations;
 ///
 /// Strategy: on save, all annotations of the subtypes Graphite manages are removed
 /// and rewritten from the in-memory model. Links and unknown subtypes are untouched.
+///
+/// Coordinates go through <see cref="PageGeometry"/>: the model works in the page as displayed
+/// (CropBox, /Rotate applied, top-left origin), the file in PDF user space. Every annotation is
+/// written with an appearance stream (<see cref="AppearanceBuilder"/>) so it renders the same in
+/// every viewer.
 /// </summary>
 public static class AnnotationCodec
 {
@@ -29,7 +35,7 @@ public static class AnnotationCodec
         for (int p = 0; p < doc.PageCount; p++)
         {
             var page = doc.Pages[p];
-            double pageH = page.Height.Point;
+            var geo = PageGeometry.Of(page);
             var annots = page.Elements.GetArray("/Annots");
             if (annots == null) continue;
 
@@ -81,12 +87,11 @@ public static class AnnotationCodec
                 if (dict.Elements.GetArray("/C") is { } c && c.Elements.Count >= 3)
                     ann.ColorHex = Annotation.ToHex(ToDouble(c.Elements[0]), ToDouble(c.Elements[1]), ToDouble(c.Elements[2]));
 
-                if (dict.Elements.GetArray("/Rect") is { } r && r.Elements.Count == 4)
-                {
-                    double x1 = ToDouble(r.Elements[0]), y1 = ToDouble(r.Elements[1]);
-                    double x2 = ToDouble(r.Elements[2]), y2 = ToDouble(r.Elements[3]);
-                    ann.Bounds = RectD.FromCorners(x1, pageH - y1, x2, pageH - y2);
-                }
+                // Graphite pads /Rect so the appearance has room for stroke widths and arrow
+                // heads; the model's own bounds travel in a private key. Other apps' annotations
+                // only have /Rect.
+                if ((PdfValues.Box(dict.Elements["/Grph:Rect"]) ?? PdfValues.Box(dict.Elements["/Rect"])) is { } r)
+                    ann.Bounds = geo.ToDisplayRect(r.X1, r.Y1, r.X2, r.Y2);
 
                 if (dict.Elements.GetDictionary("/BS") is { } bs)
                 {
@@ -97,18 +102,23 @@ public static class AnnotationCodec
                 if (dict.Elements.GetArray("/QuadPoints") is { } q)
                     for (int i = 0; i + 7 < q.Elements.Count; i += 8)
                     {
-                        double left = ToDouble(q.Elements[i]);
-                        double top = pageH - ToDouble(q.Elements[i + 1]);
-                        double right = ToDouble(q.Elements[i + 2]);
-                        double bottom = pageH - ToDouble(q.Elements[i + 5]);
-                        ann.Quads.Add(RectD.FromCorners(left, top, right, bottom));
+                        // Writers disagree on the corner order inside a quad, so take the
+                        // bounding box of all four corners (in display space).
+                        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+                        for (int k = 0; k < 8; k += 2)
+                        {
+                            var pt = geo.ToDisplay(ToDouble(q.Elements[i + k]), ToDouble(q.Elements[i + k + 1]));
+                            minX = Math.Min(minX, pt.X); maxX = Math.Max(maxX, pt.X);
+                            minY = Math.Min(minY, pt.Y); maxY = Math.Max(maxY, pt.Y);
+                        }
+                        ann.Quads.Add(RectD.FromCorners(minX, minY, maxX, maxY));
                     }
 
                 if (kind == AnnotationKind.Line &&
                     dict.Elements.GetArray("/L") is { } line && line.Elements.Count >= 4)
                 {
-                    ann.LineStart = new PointD(ToDouble(line.Elements[0]), pageH - ToDouble(line.Elements[1]));
-                    ann.LineEnd = new PointD(ToDouble(line.Elements[2]), pageH - ToDouble(line.Elements[3]));
+                    ann.LineStart = geo.ToDisplay(ToDouble(line.Elements[0]), ToDouble(line.Elements[1]));
+                    ann.LineEnd = geo.ToDisplay(ToDouble(line.Elements[2]), ToDouble(line.Elements[3]));
                 }
 
                 if (kind == AnnotationKind.FreeText)
@@ -161,7 +171,7 @@ public static class AnnotationCodec
                         {
                             var pts = new List<PointD>();
                             for (int i = 0; i + 1 < stroke.Elements.Count; i += 2)
-                                pts.Add(new PointD(ToDouble(stroke.Elements[i]), pageH - ToDouble(stroke.Elements[i + 1])));
+                                pts.Add(geo.ToDisplay(ToDouble(stroke.Elements[i]), ToDouble(stroke.Elements[i + 1])));
                             ann.Strokes.Add(pts);
                         }
 
@@ -199,17 +209,26 @@ public static class AnnotationCodec
             }
         }
 
+        // Standard fonts for FreeText appearances, registered once in the AcroForm resources
+        // (where the /DA strings expect them) and shared by every appearance stream.
+        PdfDictionary? fontDicts = null;
+        PdfDictionary fonts(string name)
+        {
+            fontDicts ??= EnsureDefaultFontResources(doc);
+            return PdfValues.Dict(fontDicts.Elements[name]) ?? throw new InvalidOperationException($"Font {name} missing.");
+        }
+
         // 2. Rewrite from model.
         foreach (var group in annotations.GroupBy(a => a.PageIndex))
         {
             if (group.Key < 0 || group.Key >= doc.PageCount) continue;
             var page = doc.Pages[group.Key];
-            double pageH = page.Height.Point;
+            var geo = PageGeometry.Of(page);
             var annots = GetOrCreateAnnots(doc, page);
 
             foreach (var ann in group)
             {
-                var dict = BuildDict(doc, ann, pageH);
+                var dict = BuildDict(doc, ann, geo, fonts);
                 doc.Internals.AddObject(dict);
                 annots.Elements.Add(dict.Reference!);
 
@@ -218,8 +237,8 @@ public static class AnnotationCodec
                     var rd = new PdfDictionary(doc);
                     rd.Elements.SetName("/Type", "/Annot");
                     rd.Elements.SetName("/Subtype", "/Text");
-                    rd.Elements["/Rect"] = NumArray(doc, ann.Bounds.Left, pageH - ann.Bounds.Bottom,
-                                                        ann.Bounds.Left + 18, pageH - ann.Bounds.Bottom + 18);
+                    var (rx1, ry1, rx2, ry2) = geo.ToUserRect(new RectD(ann.Bounds.Left, ann.Bounds.Bottom - 18, 18, 18));
+                    rd.Elements["/Rect"] = NumArray(doc, rx1, ry1, rx2, ry2);
                     rd.Elements.SetString("/Contents", reply.Text);
                     rd.Elements.SetString("/T", reply.Author);
                     rd.Elements.SetString("/M", FormatDate(reply.Modified));
@@ -232,17 +251,18 @@ public static class AnnotationCodec
         }
 
         // FreeText /DA strings reference font resource names (/Helv etc.) — those names
-        // must resolve to real font dictionaries or strict viewers can't build an
+        // must resolve to real font dictionaries or strict viewers can't rebuild an
         // appearance for the text boxes.
         if (annotations.Any(a => a.Kind == AnnotationKind.FreeText))
-            EnsureDefaultFontResources(doc);
+            fontDicts ??= EnsureDefaultFontResources(doc);
 
         using var ms = new MemoryStream();
         doc.Save(ms, closeStream: false);
         return ms.ToArray();
     }
 
-    private static PdfDictionary BuildDict(PdfDocument doc, Annotation ann, double pageH)
+    private static PdfDictionary BuildDict(PdfDocument doc, Annotation ann, PageGeometry geo,
+        Func<string, PdfDictionary> fonts)
     {
         // A freehand highlight has no word quads to snap to, so it's written as an
         // Ink annotation (valid, well-supported everywhere) tagged with a private
@@ -264,8 +284,26 @@ public static class AnnotationCodec
             _ => "/Text",
         });
 
-        var b = ann.Bounds;
-        dict.Elements["/Rect"] = NumArray(doc, b.Left, pageH - b.Bottom, b.Right, pageH - b.Top);
+        // /Rect covers everything the appearance draws (stroke widths, arrow heads); the
+        // model's exact bounds are kept alongside so reading the file back is lossless.
+        var extent = AppearanceBuilder.Extent(ann);
+        int apRotation = geo.Rotation;
+        if (ann.Kind == AnnotationKind.Note)
+        {
+            // Viewers keep sticky-note icons upright (no rotation, no zoom) and pin them by the
+            // /Rect's upper-left corner in user space. Put that corner where the icon's top-left
+            // shows on the displayed page, and draw the icon unrotated.
+            var (px, py) = geo.ToUser(extent.Left, extent.Top);
+            dict.Elements["/Rect"] = NumArray(doc, px, py - extent.Height, px + extent.Width, py);
+            apRotation = 0;
+        }
+        else
+        {
+            var (ex1, ey1, ex2, ey2) = geo.ToUserRect(extent);
+            dict.Elements["/Rect"] = NumArray(doc, ex1, ey1, ex2, ey2);
+        }
+        var (bx1, by1, bx2, by2) = geo.ToUserRect(ann.Bounds);
+        dict.Elements["/Grph:Rect"] = NumArray(doc, bx1, by1, bx2, by2);
 
         var (r, g, bl) = Annotation.ParseColor(ann.ColorHex);
         dict.Elements["/C"] = NumArray(doc, r, g, bl);
@@ -283,13 +321,18 @@ public static class AnnotationCodec
             var quads = new PdfArray(doc);
             foreach (var qd in ann.Quads)
             {
-                // PDF order: TL TR BL BR, y-up.
-                foreach (double v in new[]
+                // Corner order as the reader sees the text: top-left, top-right, bottom-left,
+                // bottom-right (Acrobat's order), each mapped into user space.
+                foreach (var corner in new[]
                 {
-                    qd.Left, pageH - qd.Top, qd.Right, pageH - qd.Top,
-                    qd.Left, pageH - qd.Bottom, qd.Right, pageH - qd.Bottom
+                    new PointD(qd.Left, qd.Top), new PointD(qd.Right, qd.Top),
+                    new PointD(qd.Left, qd.Bottom), new PointD(qd.Right, qd.Bottom),
                 })
-                    quads.Elements.Add(new PdfReal(v));
+                {
+                    var (ux, uy) = geo.ToUser(corner);
+                    quads.Elements.Add(new PdfReal(ux));
+                    quads.Elements.Add(new PdfReal(uy));
+                }
             }
             dict.Elements["/QuadPoints"] = quads;
         }
@@ -302,8 +345,9 @@ public static class AnnotationCodec
                 var arr = new PdfArray(doc);
                 foreach (var pt in stroke)
                 {
-                    arr.Elements.Add(new PdfReal(pt.X));
-                    arr.Elements.Add(new PdfReal(pageH - pt.Y));
+                    var (ux, uy) = geo.ToUser(pt);
+                    arr.Elements.Add(new PdfReal(ux));
+                    arr.Elements.Add(new PdfReal(uy));
                 }
                 ink.Elements.Add(arr);
             }
@@ -331,13 +375,7 @@ public static class AnnotationCodec
         {
             var (fr, fg, fb) = Annotation.ParseColor(ann.ColorHex);
             // Pick the closest standard-14 base font for other viewers' default appearance.
-            string baseFont = (ann.Bold, ann.Italic) switch
-            {
-                (true, true) => "/HeBO",
-                (true, false) => "/HeBo",
-                (false, true) => "/HeOb",
-                _ => "/Helv",
-            };
+            string baseFont = AppearanceBuilder.FreeTextFontName(ann.Bold, ann.Italic);
             string da = string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"{baseFont} {ann.FontSize:0.##} Tf {fr:0.###} {fg:0.###} {fb:0.###} rg");
             dict.Elements.SetString("/DA", da);
@@ -367,9 +405,9 @@ public static class AnnotationCodec
 
         if (ann.Kind == AnnotationKind.Line)
         {
-            dict.Elements["/L"] = NumArray(doc,
-                ann.LineStart.X, pageH - ann.LineStart.Y,
-                ann.LineEnd.X, pageH - ann.LineEnd.Y);
+            var (lx1, ly1) = geo.ToUser(ann.LineStart);
+            var (lx2, ly2) = geo.ToUser(ann.LineEnd);
+            dict.Elements["/L"] = NumArray(doc, lx1, ly1, lx2, ly2);
             var le = new PdfArray(doc);
             le.Elements.Add(new PdfName("/None"));
             le.Elements.Add(new PdfName("/OpenArrow"));
@@ -379,6 +417,10 @@ public static class AnnotationCodec
             dict.Elements["/BS"] = bs;
         }
 
+        // Appearance stream: the markup looks the same in every viewer (and prints through PDFium).
+        if (AppearanceBuilder.Build(doc, ann, extent, apRotation, fonts) is { } ap)
+            dict.Elements["/AP"] = ap;
+
         return dict;
     }
 
@@ -387,7 +429,8 @@ public static class AnnotationCodec
     /// <summary>Register the base-14 Helvetica faces under the resource names our
     /// FreeText /DA strings use (/Helv, /HeBo, /HeOb, /HeBO) in the document's
     /// AcroForm default resources, so every viewer can resolve them.</summary>
-    private static void EnsureDefaultFontResources(PdfDocument doc)
+    /// <returns>The /DR /Font dictionary.</returns>
+    internal static PdfDictionary EnsureDefaultFontResources(PdfDocument doc)
     {
         var catalog = doc.Internals.Catalog;
 
@@ -433,6 +476,7 @@ public static class AnnotationCodec
             doc.Internals.AddObject(font);
             fonts.Elements[name] = font.Reference;
         }
+        return fonts;
     }
 
     private static PdfArray GetOrCreateAnnots(PdfDocument doc, PdfPage page)

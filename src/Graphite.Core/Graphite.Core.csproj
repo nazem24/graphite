@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Graphite.Core</RootNamespace>
     <AssemblyName>Graphite.Core</AssemblyName>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -11,14 +11,17 @@
     <!-- PDFium-based rasterizer (rendering) -->
     <PackageReference Include="PDFtoImage" Version="4.1.1" />
     <!-- Page-level document surgery: merge, split, rotate, annotations, content append -->
-    <PackageReference Include="PdfSharp" Version="6.1.1" />
+    <PackageReference Include="PdfSharp" Version="6.2.4" />
     <!-- Text extraction with glyph coordinates, bookmarks/outline -->
-    <PackageReference Include="PdfPig" Version="0.1.9" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
     <!-- Office export -->
-    <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.0" />
-    <PackageReference Include="ClosedXML" Version="0.104.1" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.4.1" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
     <!-- OCR -->
     <PackageReference Include="Tesseract" Version="5.2.0" />
+    <!-- Pinned above the 8.0.1 that ClosedXML/OpenXml pull in transitively: that one carries
+         known security advisories (NU1902/NU1903). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
 </Project>

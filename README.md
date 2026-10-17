@@ -2,7 +2,7 @@
 
 **Read, mark up, and edit PDFs — a fast, native Windows app.**
 
-Graphite is a WPF (.NET 8) PDF viewer and editor with an original liquid-glass design:
+Graphite is a WPF (.NET 10) PDF viewer and editor with an original liquid-glass design:
 a floating command bar, a pill-shaped page bar, and translucent panels over the
 Windows 11 Mica backdrop. No Electron, no browser engine — PDFium rendering and a
 pure managed core keep it quick and small.
@@ -17,7 +17,10 @@ It's a single self-contained executable — no installer, no .NET runtime needed
 
 Graphite **updates itself**: it checks for new releases at startup (quietly — it only
 speaks up when there's something new) and from *File → Check for updates…*. Accepting
-an update downloads the package, swaps the files, and restarts the app.
+an update downloads the package, checks it against the SHA-256 published with the release
+(a damaged download is never installed), swaps the files and restarts the app. The swap is
+transactional: everything it replaces is backed up first and restored if anything goes wrong,
+and it only ever removes files a previous Graphite installed (listed in `Graphite.files`).
 
 ## Features
 
@@ -41,6 +44,12 @@ snapping. Plus rectangles, ellipses, arrows, text boxes (click and type right on
 the page; double-click later for font, size and colors), sticky notes, and an
 eraser that splits strokes exactly where you drag.
 
+**Forms** — interactive PDF forms can be filled in right on the page: text fields (single
+and multi-line, comb and password fields), check boxes, radio buttons, drop-downs and list
+boxes. Fillable fields are tinted with the Select tool; values are written with proper
+appearance streams, so the filled form looks right in every viewer, and every change is
+undoable. Combine it with the signature tool to fill and sign.
+
 **Signature** — draw your signature once and stamp it onto any page; it's kept
 between sessions. Click the signature tool again (or right-click it) to redraw.
 
@@ -57,6 +66,10 @@ for per-page operations. Annotations travel with their pages through every opera
 the region is covered and re-typeset, how most PDF editors work under the hood since
 PDF has no reflowable text) and an Insert Image tool; images can also be pasted
 straight from the clipboard (Ctrl+V).
+
+**Notes from markup** — *Export → Highlights & comments to notes* collects every highlighted
+passage (quoted, in its highlight colour), comment, reply and text box into a new document of
+the built-in editor next to the PDF, page by page — a ready-made summary to keep studying from.
 
 **Command palette** — Ctrl+K opens a searchable palette with every command in the
 app; type a few letters, Enter runs it.
@@ -75,13 +88,21 @@ PDF so it stays searchable after saving, in any viewer.
 when you save; any document can be saved as an encrypted copy. A properties dialog
 shows title, author, dates, producer, PDF version, page size and file size.
 
-**Platform** — dark/light themes (persisted), Windows 11 Mica backdrop, per-monitor
+**Safety net** — while a PDF has unsaved changes, a recovery copy is kept in
+`%LOCALAPPDATA%\Graphite\Recovery` (re-encrypted for password-protected files); after a crash
+or power loss Graphite offers the changes back at the next start. If an open file is changed
+by another program (OneDrive sync, another editor), an unmodified tab reloads by itself and a
+modified one asks whether to reload or keep your version — saving never silently overwrites
+someone else's changes.
+
+**Platform** — single instance (opening another PDF from Explorer adds a tab to the running
+window), dark/light themes (persisted), Windows 11 Mica backdrop, per-monitor
 DPI awareness, drag-and-drop, recent files, OneDrive quick-open, printing at 300 dpi
 with annotations included, and a script to register the .pdf file association.
 
 ## Building
 
-Requirements: **Windows 10/11** and the **.NET 8 SDK** (or Visual Studio 2022 with
+Requirements: **Windows 10/11** and the **.NET 10 SDK** (or Visual Studio 2026 with
 the ".NET desktop development" workload).
 
 ```
@@ -120,19 +141,24 @@ tagging `v*` publishes a release zip automatically.
 
 ```
 Graphite.sln
-├─ src/Graphite.Core     ── UI-independent engine (net8.0)
+├─ src/Graphite.Core     ── UI-independent engine (net10.0)
 │   ├─ Rendering/        PDFium rasterizer (PDFtoImage), thread-safe
 │   ├─ Text/             PdfPig text index: word geometry, search, outline, selection
-│   ├─ Pdf/              PdfSharp page surgery: merge, split, extract, rotate, reorder
-│   ├─ Annotations/      model + codec that reads/writes real PDF annotations
+│   ├─ Pdf/              PdfSharp page surgery: merge, split, extract, rotate, reorder;
+│   │                    PageGeometry (display ↔ PDF space: /Rotate, CropBox)
+│   ├─ Annotations/      model + codec that reads/writes real PDF annotations,
+│   │                    appearance streams for every annotation type
+│   ├─ Forms/            AcroForm fields: read, fill, appearance streams
 │   ├─ Editing/          cover-and-replace text edits, image placement
 │   ├─ Ocr/              Tesseract engine + invisible-text-layer writer
 │   └─ Export/           docx / xlsx / pptx / image exporters, Office→PDF via COM
-└─ src/Graphite.App      ── WPF shell (net8.0-windows)
+└─ src/Graphite.App      ── WPF shell (net10.0-windows)
     ├─ Themes/           light/dark palettes, styles, original icon geometry
     ├─ ViewModels/       Main / Document / Page / Annotation (CommunityToolkit.Mvvm)
-    ├─ Controls/         AnnotationLayer (per-page overlay) + StrokeSmoothing (pen input)
-    ├─ Services/         theme/settings, signature store, printing, self-updater
+    ├─ Controls/         AnnotationLayer (per-page overlay), FormLayer (form filling),
+    │                    StrokeSmoothing (pen input)
+    ├─ Services/         theme/settings, signature store, printing, self-updater,
+    │                    single instance, crash recovery, markup → notes
     ├─ Views/            MainWindow + dialogs (input, edit-text, password, signature, properties)
     └─ Interop/          Mica backdrop + dark title bar (DWM)
 
@@ -149,6 +175,10 @@ Design decisions worth knowing:
   feels instant.
 - **The viewer virtualizes.** Pages render lazily as they scroll into view; thumbnails
   likewise.
+- **One coordinate space.** Everything above the Core works in the page *as displayed*
+  (CropBox, `/Rotate` applied, top-left origin, points) — what PDFium renders and PdfPig
+  reports. `PageGeometry` converts to PDF user space at the file boundary, so markup, form
+  fields and content edits land correctly on rotated and cropped pages.
 - **Pen input keeps every sample.** Stylus hardware reports faster than the UI
   dispatches; Graphite drains the coalesced point queue instead of dropping it, then
   fits a midpoint-quadratic curve that can't overshoot into loops.
@@ -171,9 +201,8 @@ stroke it just drew.
 - Word/Excel export reconstructs layout heuristically from text geometry; complex
   layouts and tables degrade gracefully but imperfectly.
 - Creating PDFs *from* Office files requires Microsoft Office to be installed.
-- Annotations on pages rotated via `/Rotate` metadata (rather than upright content)
-  can be offset; upright documents — the overwhelming majority — behave correctly.
-- Graphite writes annotations without appearance streams; virtually all viewers
-  (Acrobat, browsers, SumatraPDF) regenerate them automatically.
+- Text-box and form-field appearances use the standard Helvetica faces (no font embedding),
+  so characters outside Western European (WinAnsi) text show as "?" in those appearances;
+  the form values themselves keep full Unicode.
 - The self-updater needs write access to the install folder; if it can't swap the
   files it falls back to opening the release page.

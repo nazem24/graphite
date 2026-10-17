@@ -6,12 +6,12 @@
     <SolidColorBrush x:Key="App.BackgroundBrush" Color="#1F1F21"/>
     <SolidColorBrush x:Key="App.PanelBrush" Color="#8C1B1B1D"/>
     <SolidColorBrush x:Key="App.CardBrush" Color="#29292B"/>
-    <SolidColorBrush x:Key="App.ViewerBrush" Color="#4D0E0E10"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#2E0E0E10"/>
 
     <!-- glass surfaces -->
     <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#C22E2E33" Offset="0"/>
-        <GradientStop Color="#A6232327" Offset="1"/>
+        <GradientStop Color="#9E2E2E33" Offset="0"/>
+        <GradientStop Color="#85232327" Offset="1"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#4DFFFFFF" Offset="0"/>

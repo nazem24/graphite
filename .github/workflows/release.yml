@@ -15,10 +15,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Download OCR data (English + German)
         shell: pwsh
@@ -51,14 +51,35 @@ jobs:
           $missing = $required | Where-Object { -not (Test-Path (Join-Path 'publish' $_)) }
           if ($missing) { throw "OCR files missing from publish output: $($missing -join ', ')" }
 
+      # The self-updater removes files an old version shipped but the new one doesn't — only
+      # files listed in the old version's manifest, never anything else in the install folder.
+      - name: Write the file manifest
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path publish).Path.TrimEnd('\')
+          Get-ChildItem publish -Recurse -File |
+            ForEach-Object { $_.FullName.Substring($root.Length + 1) } |
+            Sort-Object |
+            Set-Content -Path publish\Graphite.files -Encoding utf8
+
       - name: Zip the published output
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}"
           Compress-Archive -Path publish\* -DestinationPath "Graphite-$version-win-x64.zip"
 
+      # The updater refuses to install a package whose SHA-256 doesn't match this file.
+      - name: Checksum the package
+        shell: pwsh
+        run: |
+          $zip = "Graphite-${{ github.ref_name }}-win-x64.zip"
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$zip.sha256" -Value "$hash  $zip" -Encoding ascii -NoNewline
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Graphite-*-win-x64.zip
+          files: |
+            Graphite-*-win-x64.zip
+            Graphite-*-win-x64.zip.sha256
           generate_release_notes: true

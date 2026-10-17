@@ -27,6 +27,9 @@ public static class SearchablePdfWriter
             if (pageIndex < 0 || pageIndex >= doc.PageCount || words.Count == 0) continue;
             var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
+            // OCR word boxes are in display space (the rendered page); map them onto rotated /
+            // cropped pages correctly.
+            gfx.MultiplyTransform(Graphite.Core.Pdf.PageGeometry.DisplayTransform(page));
 
             foreach (var w in words)
             {

@@ -4,9 +4,11 @@ using System.IO;
 using System.Windows.Data;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Graphite.App.Services;
 using Graphite.Core;
 using Graphite.Core.Annotations;
 using Graphite.Core.Editing;
+using Graphite.Core.Forms;
 using Graphite.Core.Ocr;
 using Graphite.Core.Rendering;
 using Graphite.Core.Text;
@@ -312,6 +314,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     /// <summary>Capture the current state; call BEFORE any mutation.</summary>
     public void PushUndo()
     {
+        MarkEdited();
         _undo.Add((_bytes, Annotations.Select(a => a.Model.Clone()).ToList(), CloneImages()));
         TrimStack(_undo);
         _redo.Clear();
@@ -380,7 +383,9 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
                 RefreshVisiblePages();
                 OnPropertyChanged(nameof(PageStatus));
                 PagesReset?.Invoke();
+                await RefreshFormFieldsAsync();
             }
+            MarkEdited();
             ClearLasso();
             Annotations.Clear();
             foreach (var a in annots) Annotations.Add(new AnnotationViewModel(this, a.Clone()));
@@ -427,7 +432,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public bool IsContinuous => Layout == PageLayout.Continuous;
 
     private DocumentViewModel(byte[] bytes, string? path, PdfRenderer renderer, TextIndex index,
-        List<Annotation> annotations, IReadOnlyList<OutlineNode> outline)
+        List<Annotation> annotations, IReadOnlyList<OutlineNode> outline, List<FormField> formFields)
     {
         _bytes = bytes;
         filePath = path;
@@ -437,8 +442,10 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             Pages.Add(new PageViewModel(this, i));
         foreach (var node in outline) Outline.Add(node);
         foreach (var a in annotations) Annotations.Add(new AnnotationViewModel(this, a));
+        SetFormFields(formFields);
         Annotations.CollectionChanged += (_, _) => RefreshMarkupCounts();
         RefreshVisiblePages();
+        RecordDiskStamp();
     }
 
     /// <summary>Replace every page view-model after the PDF changed structurally. The old
@@ -487,9 +494,10 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         var rendererTask = Task.Run(() => new PdfRenderer(bytes));
         var indexTask = Task.Run(() => new TextIndex(bytes));
         var annotationsTask = Task.Run(() => AnnotationCodec.Read(bytes));
+        var formTask = Task.Run(() => ReadFormFields(bytes));
         try
         {
-            await Task.WhenAll(rendererTask, indexTask, annotationsTask).ConfigureAwait(false);
+            await Task.WhenAll(rendererTask, indexTask, annotationsTask, formTask).ConfigureAwait(false);
         }
         catch
         {
@@ -500,7 +508,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
         var index = indexTask.Result;
         var outline = index.GetOutline();
-        return new DocumentViewModel(bytes, path, rendererTask.Result, index, annotationsTask.Result, outline);
+        return new DocumentViewModel(bytes, path, rendererTask.Result, index, annotationsTask.Result, outline, formTask.Result);
     }
 
     // ------------------------------------------------------------- render priority
@@ -794,6 +802,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             IsDirty = true;
             OnPropertyChanged(nameof(PageStatus));
             PagesReset?.Invoke();
+            await RefreshFormFieldsAsync();
 
             if (hint.Kind != PageOpKind.None)
                 PageOperationApplied?.Invoke(hint with { Count = Math.Max(1, Math.Abs(Pages.Count - pagesBefore)) });
@@ -854,6 +863,8 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
             FilePath = path;
             IsDirty = false;
+            RecordDiskStamp();
+            DiskNotice = null;
             OnPropertyChanged(nameof(Title));
             Saved?.Invoke();
         }
@@ -886,6 +897,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     internal void NotifyAnnotationChanged()
     {
+        MarkEdited();
         IsDirty = true;
         AnnotationsVisualChanged?.Invoke();
     }
@@ -1119,6 +1131,176 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         finally { IsBusy = false; }
     }
 
+    // ------------------------------------------------------------- forms
+
+    /// <summary>Fillable fields of an interactive PDF form (empty for ordinary PDFs).</summary>
+    public ObservableCollection<FormFieldViewModel> FormFields { get; } = new();
+
+    /// <summary>The document has fields the person can fill in.</summary>
+    public bool HasForm => FormFields.Count > 0;
+
+    /// <summary>Raised when the field list was rebuilt (open, undo/redo, page operations): the
+    /// pages' form layers rebuild their controls.</summary>
+    public event Action? FormFieldsReset;
+
+    private static List<FormField> ReadFormFields(byte[] bytes)
+    {
+        try { return FormCodec.Read(bytes).Where(f => f.IsFillable).ToList(); }
+        catch (Exception ex)
+        {
+            // A malformed form must never stop the document from opening.
+            App.LogError("Reading form fields failed", ex);
+            return new List<FormField>();
+        }
+    }
+
+    private void SetFormFields(IEnumerable<FormField> fields)
+    {
+        FormFields.Clear();
+        foreach (var f in fields) FormFields.Add(new FormFieldViewModel(this, f));
+        OnPropertyChanged(nameof(HasForm));
+        FormFieldsReset?.Invoke();
+    }
+
+    private async Task RefreshFormFieldsAsync()
+    {
+        var bytes = _bytes;
+        bool had = HasForm;
+        var fields = await Task.Run(() => ReadFormFields(bytes));
+        if (had || fields.Count > 0) SetFormFields(fields);
+    }
+
+    /// <summary>The widgets on one page (what that page's form layer shows).</summary>
+    public IEnumerable<(FormFieldViewModel Field, FormWidget Widget)> FormWidgetsOn(int pageIndex) =>
+        FormFields.SelectMany(f => f.Model.Widgets.Where(w => w.PageIndex == pageIndex).Select(w => (f, w)));
+
+    private readonly SemaphoreSlim _formGate = new(1, 1);
+
+    /// <summary>Write a field's new value into the PDF (value + appearance), then re-render the
+    /// pages it appears on. Undoable like any other edit.</summary>
+    public async Task SetFormValueAsync(FormFieldViewModel field, string value)
+    {
+        await _formGate.WaitAsync();
+        try
+        {
+            if (_disposed || field.Value == value) return;
+            var before = _bytes;
+            string name = field.Name;
+            byte[] after = await Task.Run(() => FormCodec.Fill(before, new Dictionary<string, string> { [name] = value }));
+            if (!ReferenceEquals(before, _bytes)) // the document changed meanwhile: fill the current one
+            {
+                var current = _bytes;
+                after = await Task.Run(() => FormCodec.Fill(current, new Dictionary<string, string> { [name] = value }));
+            }
+
+            PushUndo();
+            _bytes = after;
+            await Task.Run(() => Renderer.Reload(after));
+            field.ApplyValue(value);
+            IsDirty = true;
+            await RerenderPagesAsync(field.Model.Widgets.Select(w => w.PageIndex));
+        }
+        finally { _formGate.Release(); }
+    }
+
+    /// <summary>Re-render specific pages now (their old bitmap stays up until the new one is ready).</summary>
+    private Task RerenderPagesAsync(IEnumerable<int> pageIndices)
+    {
+        var tasks = new List<Task>();
+        foreach (int i in pageIndices.Distinct())
+        {
+            if (i < 0 || i >= Pages.Count) continue;
+            var p = Pages[i];
+            p.InvalidateBitmaps();
+            if (p.Image != null || IsShownPage(i)) tasks.Add(p.EnsureRenderedAsync(force: true));
+        }
+        return Task.WhenAll(tasks);
+    }
+
+    // ------------------------------------------------------------- crash recovery
+
+    /// <summary>Identifies this document's recovery copy (see RecoveryService).</summary>
+    public Guid RecoveryId { get; } = Guid.NewGuid();
+
+    private long _editCounter;
+
+    /// <summary>Bumped by every edit; the journal timer compares it with what it last wrote.</summary>
+    public long EditCounter => Interlocked.Read(ref _editCounter);
+
+    /// <summary>The <see cref="EditCounter"/> value the last recovery copy was written at (-1 = none).</summary>
+    public long JournaledCounter { get; set; } = -1;
+
+    /// <summary>A recovery copy is being written right now.</summary>
+    public bool IsJournaling { get; set; }
+
+    private void MarkEdited() => Interlocked.Increment(ref _editCounter);
+
+    partial void OnIsDirtyChanged(bool value)
+    {
+        if (value) MarkEdited();
+    }
+
+    /// <summary>Freeze the current state (on the UI thread) and return the work that turns it into
+    /// a complete PDF — markup and placed images baked in — to run on a background thread.</summary>
+    public Func<byte[]> CaptureForBake()
+    {
+        var bytes = _bytes;
+        var models = Annotations.Select(a => a.Model.Clone()).ToList();
+        var images = PlacedImages.Select(i => (i.PageIndex, i.Rect, i.Path)).ToList();
+        return () =>
+        {
+            byte[] result = AnnotationCodec.Write(bytes, models);
+            foreach (var (page, rect, path) in images)
+                if (File.Exists(path)) result = ContentEditor.PlaceImage(result, page, rect, path);
+            return result;
+        };
+    }
+
+    // ------------------------------------------------------------- file changed on disk
+
+    private DateTime _diskWriteUtc;
+    private long _diskLength = -1;
+
+    /// <summary>Set when the file changed (or vanished) on disk behind Graphite's back; the viewer
+    /// shows it in a bar with Reload / Keep mine.</summary>
+    [ObservableProperty] private string? diskNotice;
+
+    /// <summary>The file still exists, so Reload can offer the version on disk.</summary>
+    [ObservableProperty] private bool diskNoticeCanReload;
+
+    /// <summary>Remember what the file on disk looks like now (after open, save, or "keep mine").</summary>
+    public void RecordDiskStamp()
+    {
+        try
+        {
+            if (FilePath is { } path && File.Exists(path))
+            {
+                var info = new FileInfo(path);
+                _diskWriteUtc = info.LastWriteTimeUtc;
+                _diskLength = info.Length;
+                return;
+            }
+        }
+        catch { /* treat as unknown */ }
+        _diskWriteUtc = default;
+        _diskLength = -1;
+    }
+
+    /// <summary>Compare the file on disk with the remembered stamp: whether it still exists and
+    /// whether it differs from what Graphite last read or wrote.</summary>
+    public (bool Exists, bool Changed) CheckDisk()
+    {
+        if (FilePath is not { } path || _diskLength < 0) return (true, false);
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return (false, true);
+            bool changed = info.LastWriteTimeUtc != _diskWriteUtc || info.Length != _diskLength;
+            return (true, changed);
+        }
+        catch { return (true, false); }
+    }
+
     // ------------------------------------------------------------- lifetime
 
     private bool _disposed;
@@ -1135,6 +1317,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         _searchCts = null;
         _undo.Clear();
         _redo.Clear();
+        RecoveryService.Remove(RecoveryId);
         foreach (var p in Pages) p.ReleaseBitmaps();
         PlacedImages.Clear();
         Index.Dispose();

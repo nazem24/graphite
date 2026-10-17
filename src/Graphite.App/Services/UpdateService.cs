@@ -3,19 +3,30 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
 
 namespace Graphite.App.Services;
 
-public sealed record UpdateInfo(string Tag, Version Version, string? ZipUrl, string ReleaseUrl);
+/// <param name="ZipUrl">The release package; null when the release has none (or no checksum
+/// to verify it against), in which case updating falls back to the release page.</param>
+/// <param name="ChecksumUrl">The package's published SHA-256 (<c>….zip.sha256</c>).</param>
+public sealed record UpdateInfo(string Tag, Version Version, string? ZipUrl, string? ChecksumUrl, string ReleaseUrl);
 
 /// <summary>
 /// Checks GitHub Releases for a newer Graphite build and can self-update in place.
-/// The release workflow publishes a Graphite-vX.Y.Z-win-x64.zip asset per tag; the
-/// updater downloads that zip, extracts it to a temp folder, and hands off to a tiny
-/// PowerShell script that waits for this process to exit, copies the new files over
-/// the install directory, and relaunches the app (a running exe can't overwrite itself).
+/// The release workflow publishes a Graphite-vX.Y.Z-win-x64.zip asset per tag, its SHA-256
+/// (….zip.sha256) and, inside the zip, a manifest of the files it contains (Graphite.files).
+///
+/// Updating: download the zip, verify it against the published checksum (a damaged or
+/// truncated download is never installed), check it really is a Graphite package, extract it,
+/// and hand off to a small PowerShell script that waits for this process to exit and then
+/// installs transactionally — every file it will overwrite or remove is backed up first, files
+/// the previous version shipped but the new one doesn't are removed (only those: the install
+/// folder may hold unrelated files), and any failure restores the backup so the old version
+/// keeps working. The script relaunches the app either way and leaves a note for it when the
+/// update failed (<see cref="TakeFailedUpdateNote"/>).
 /// </summary>
 public static class UpdateService
 {
@@ -70,18 +81,15 @@ public static class UpdateService
         if (!Version.TryParse(tag.TrimStart('v', 'V'), out var latest)) return null;
         if (latest <= CurrentVersion) return null;
 
-        string? zip = null;
+        string? zip = null, checksum = null;
         if (root.TryGetProperty("assets", out var assets))
         {
             foreach (var asset in assets.EnumerateArray())
             {
                 string? url = asset.GetProperty("browser_download_url").GetString();
-                if (url != null && url.Contains("win-x64", StringComparison.OrdinalIgnoreCase)
-                                && url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                {
-                    zip = url;
-                    break;
-                }
+                if (url == null || !url.Contains("win-x64", StringComparison.OrdinalIgnoreCase)) continue;
+                if (url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) zip ??= url;
+                else if (url.EndsWith(".zip.sha256", StringComparison.OrdinalIgnoreCase)) checksum ??= url;
             }
         }
 
@@ -89,18 +97,26 @@ public static class UpdateService
             ? page
             : $"https://github.com/{Repo}/releases/latest";
 
-        return new UpdateInfo(tag, latest, zip, releaseUrl);
+        // Without a checksum the package can't be verified: don't install it in place, send the
+        // person to the release page instead.
+        return new UpdateInfo(tag, latest, checksum != null ? zip : null, checksum, releaseUrl);
     }
 
-    /// <summary>Downloads the release zip, stages the updater script, and shuts the app
-    /// down so the script can swap the files and relaunch.</summary>
+    /// <summary>Downloads and verifies the release zip, stages the installer script, and shuts the
+    /// app down so the script can swap the files and relaunch.</summary>
     public static async Task DownloadAndRestartAsync(UpdateInfo info)
     {
-        if (info.ZipUrl == null)
-            throw new InvalidOperationException("This release has no downloadable package.");
+        if (info.ZipUrl == null || info.ChecksumUrl == null)
+            throw new InvalidOperationException("This release has no verifiable package.");
 
         string stageDir = Path.Combine(Path.GetTempPath(), $"graphite-update-{info.Tag}");
         string zipPath = stageDir + ".zip";
+
+        // The published checksum: "<64 hex digits>  Graphite-vX.Y.Z-win-x64.zip".
+        string checksumText = await Http.GetStringAsync(info.ChecksumUrl);
+        string expected = checksumText.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+        if (expected.Length != 64 || !expected.All(Uri.IsHexDigit))
+            throw new InvalidDataException("The release's checksum file is malformed.");
 
         // Stream the package to disk. GetByteArrayAsync buffered the whole ~70 MB zip in
         // memory and ran under the 20-second API timeout, so the update failed on any
@@ -114,26 +130,28 @@ public static class UpdateService
             await source.CopyToAsync(target, cts.Token);
         }
 
+        string actual;
+        await using (var file = File.OpenRead(zipPath))
+            actual = Convert.ToHexString(await SHA256.HashDataAsync(file));
+        if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+        {
+            TryDelete(zipPath);
+            throw new InvalidDataException(
+                "The downloaded update is damaged (its checksum doesn't match the published one), so it wasn't installed.");
+        }
+
         if (Directory.Exists(stageDir)) Directory.Delete(stageDir, recursive: true);
         ZipFile.ExtractToDirectory(zipPath, stageDir);
+        if (!File.Exists(Path.Combine(stageDir, "Graphite.exe")))
+        {
+            TryDelete(zipPath);
+            try { Directory.Delete(stageDir, recursive: true); } catch { /* best effort */ }
+            throw new InvalidDataException("The downloaded package doesn't contain Graphite.exe.");
+        }
 
-        string appDir = AppContext.BaseDirectory;
-        string exe = Path.Combine(appDir, "Graphite.exe");
+        string appDir = AppContext.BaseDirectory.TrimEnd('\\', '/');
         string scriptPath = Path.Combine(Path.GetTempPath(), $"graphite-update-{info.Tag}.ps1");
-
-        // Single quotes in PowerShell are literal — escape any embedded ones by doubling.
-        string Ps(string s) => s.Replace("'", "''");
-
-        await File.WriteAllTextAsync(scriptPath, $$"""
-            $appPid = {{Environment.ProcessId}}
-            while (Get-Process -Id $appPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }
-            Start-Sleep -Milliseconds 500
-            Copy-Item -Path '{{Ps(stageDir)}}\*' -Destination '{{Ps(appDir)}}' -Recurse -Force
-            Start-Process -FilePath '{{Ps(exe)}}'
-            Remove-Item -Path '{{Ps(stageDir)}}' -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path '{{Ps(zipPath)}}' -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
-            """);
+        await File.WriteAllTextAsync(scriptPath, InstallScript(Environment.ProcessId, appDir, stageDir, zipPath, info.Tag));
 
         Process.Start(new ProcessStartInfo
         {
@@ -144,6 +162,118 @@ public static class UpdateService
         });
 
         Application.Current.Dispatcher.Invoke(Application.Current.Shutdown);
+    }
+
+    /// <summary>File (in %LOCALAPPDATA%\Graphite) the install script writes when it had to roll back.</summary>
+    private static string FailedUpdateNotePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Graphite", "update-failed.txt");
+
+    /// <summary>The reason the last update was rolled back, if it was (read once, then cleared).</summary>
+    public static string? TakeFailedUpdateNote()
+    {
+        try
+        {
+            if (!File.Exists(FailedUpdateNotePath)) return null;
+            string text = File.ReadAllText(FailedUpdateNotePath).Trim();
+            File.Delete(FailedUpdateNotePath);
+            return text.Length > 0 ? text : "The update couldn't be installed.";
+        }
+        catch { return null; }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); } catch { /* best effort */ }
+    }
+
+    /// <summary>The PowerShell installer (Windows PowerShell 5.1 compatible). Runs after Graphite exits.</summary>
+    internal static string InstallScript(int pid, string appDir, string stageDir, string zipPath, string tag)
+    {
+        // Single quotes in PowerShell are literal — escape any embedded ones by doubling.
+        static string Ps(string s) => s.Replace("'", "''");
+
+        return $$"""
+            $ErrorActionPreference = 'Stop'
+            $appPid = {{pid}}
+            $appDir = '{{Ps(appDir)}}'
+            $stage = '{{Ps(stageDir)}}'
+            $zip = '{{Ps(zipPath)}}'
+            $exe = Join-Path $appDir 'Graphite.exe'
+            $dataDir = Join-Path $env:LOCALAPPDATA 'Graphite'
+            $log = Join-Path $dataDir 'update.log'
+            $failNote = Join-Path $dataDir 'update-failed.txt'
+            New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+            function Log($message) { try { Add-Content -LiteralPath $log -Value ('[' + (Get-Date -Format s) + '] ' + $message) } catch { } }
+
+            # Wait for Graphite to exit (at most a minute).
+            $deadline = (Get-Date).AddSeconds(60)
+            while ((Get-Process -Id $appPid -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Milliseconds 300 }
+            Start-Sleep -Milliseconds 500
+
+            # Files of the new version, and of the old one when it shipped a manifest. Only files the
+            # old version itself installed are ever removed: the folder may hold unrelated things.
+            # Normalise the folder paths the way Get-ChildItem reports children (8.3 short names in
+            # %TEMP% otherwise make the relative-path arithmetic below come out wrong).
+            $stage = (Get-Item -LiteralPath $stage).FullName.TrimEnd('\')
+            $newFiles = @(Get-ChildItem -LiteralPath $stage -Recurse -File | ForEach-Object { $_.FullName.Substring($stage.Length).TrimStart('\') })
+            $manifest = Join-Path $appDir 'Graphite.files'
+            $oldFiles = @()
+            if (Test-Path -LiteralPath $manifest) {
+                $oldFiles = @(Get-Content -LiteralPath $manifest | Where-Object { $_ -and -not $_.Contains('..') -and -not [System.IO.Path]::IsPathRooted($_) })
+            }
+            $stale = @($oldFiles | Where-Object { ($newFiles -notcontains $_) -and ($_ -notlike 'tessdata\*') })
+
+            $backup = Join-Path $env:TEMP ('graphite-backup-' + [guid]::NewGuid().ToString('N'))
+            $created = New-Object System.Collections.Generic.List[string]
+            $ok = $false
+            try {
+                New-Item -ItemType Directory -Path $backup | Out-Null
+                foreach ($rel in ($newFiles + $stale)) {
+                    $target = Join-Path $appDir $rel
+                    if (Test-Path -LiteralPath $target -PathType Leaf) {
+                        $dest = Join-Path $backup $rel
+                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+                        Copy-Item -LiteralPath $target -Destination $dest -Force
+                    }
+                }
+                foreach ($rel in $newFiles) {
+                    $src = Join-Path $stage $rel
+                    $target = Join-Path $appDir $rel
+                    if (-not (Test-Path -LiteralPath $target)) { $created.Add($rel) }
+                    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+                    $tries = 0
+                    while ($true) {
+                        try { Copy-Item -LiteralPath $src -Destination $target -Force; break }
+                        catch { $tries++; if ($tries -ge 20) { throw }; Start-Sleep -Milliseconds 250 }
+                    }
+                }
+                foreach ($rel in $stale) { Remove-Item -LiteralPath (Join-Path $appDir $rel) -Force -ErrorAction SilentlyContinue }
+                $newFiles | Set-Content -LiteralPath $manifest -Encoding UTF8
+                $ok = $true
+                Log 'Updated to {{Ps(tag)}}'
+            }
+            catch {
+                $reason = "$_"
+                Log ('Update to {{Ps(tag)}} failed, restoring the previous version: ' + $reason)
+                foreach ($rel in $created) { Remove-Item -LiteralPath (Join-Path $appDir $rel) -Force -ErrorAction SilentlyContinue }
+                if (Test-Path -LiteralPath $backup) {
+                    $backupRoot = (Get-Item -LiteralPath $backup).FullName.TrimEnd('\')
+                    Get-ChildItem -LiteralPath $backup -Recurse -File | ForEach-Object {
+                        $rel = $_.FullName.Substring($backupRoot.Length).TrimStart('\')
+                        $target = Join-Path $appDir $rel
+                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) -ErrorAction SilentlyContinue | Out-Null
+                        Copy-Item -LiteralPath $_.FullName -Destination $target -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                try { Set-Content -LiteralPath $failNote -Value ('Graphite {{Ps(tag)}} could not be installed (' + $reason + '). The previous version was kept.') } catch { }
+            }
+
+            Start-Process -FilePath $exe
+            Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+            """;
     }
 
     /// <summary>Opens the release page in the default browser (fallback when the

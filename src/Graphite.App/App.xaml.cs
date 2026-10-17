@@ -15,9 +15,25 @@ public partial class App : Application
     private static readonly string LogPath = Path.Combine(LogDir, "graphite.log");
     private static readonly object LogGate = new();
 
+    /// <summary>Owns the per-session "one Graphite" mutex and pipe for the app's lifetime.</summary>
+    private static SingleInstance? _instance;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Files passed on the command line (file association / "Open with"), as full paths —
+        // they may be handed to another process whose working directory differs.
+        var pdfArgs = e.Args.Where(File.Exists).Select(Path.GetFullPath).ToArray();
+
+        // Graphite is already running: give it the files and bow out. (If it doesn't answer,
+        // carry on as a normal window instead of dropping the files.)
+        _instance = new SingleInstance();
+        if (!_instance.IsFirst && _instance.Forward(pdfArgs))
+        {
+            Shutdown();
+            return;
+        }
 
         DispatcherUnhandledException += (_, args) =>
         {
@@ -48,6 +64,7 @@ public partial class App : Application
         Warmup.Start();
 
         CleanupStalePasteFiles();
+        RecoveryService.StartSession();
         ThemeService.Initialize();
         IconMotion.Register();
 
@@ -63,8 +80,13 @@ public partial class App : Application
         MainWindow = window;
         window.Show();
 
-        // Files passed on the command line (file association / "Open with").
-        var pdfArgs = e.Args.Where(File.Exists).ToArray();
+        // Later launches hand their files over the pipe: open them here and come to the front.
+        _instance.Listen(paths => window.Dispatcher.BeginInvoke(() =>
+        {
+            window.BringToFront();
+            if (paths.Length > 0) _ = window.ViewModel.OpenFilesAsync(paths);
+        }));
+
         if (pdfArgs.Length > 0)
             _ = window.ViewModel.OpenFilesAsync(pdfArgs);
         else
@@ -90,6 +112,9 @@ public partial class App : Application
     {
         foreach (var f in PasteTempFiles)
             try { File.Delete(f); } catch { /* best effort */ }
+        // A clean exit: nothing to recover next time (the person already chose to save or discard).
+        RecoveryService.EndSession();
+        _instance?.Dispose();
         base.OnExit(e);
     }
 
