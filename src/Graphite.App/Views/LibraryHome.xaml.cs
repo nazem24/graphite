@@ -191,7 +191,8 @@ public partial class LibraryHome : UserControl
     {
         if (sender is not FrameworkElement { DataContext: FolderCardViewModel folder }) return;
         _hoverPath = folder.Path;
-        _hoverTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        // the folder is read ahead only once the hover animation (about 340 ms) is over, so the disk work never competes with it
+        _hoverTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(380) };
         _hoverTimer.Tick -= HoverTimer_Tick;
         _hoverTimer.Tick += HoverTimer_Tick;
         _hoverTimer.Stop();

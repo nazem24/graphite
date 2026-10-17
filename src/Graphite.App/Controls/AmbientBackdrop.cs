@@ -40,6 +40,8 @@ public sealed class AmbientBackdrop : FrameworkElement
         {
             Motion.InteractingChanged -= UpdateDrift;
             Motion.InteractingChanged += UpdateDrift;
+            Motion.ScrollingChanged -= UpdateDrift;
+            Motion.ScrollingChanged += UpdateDrift;
             ThemeService.AppearanceChanged -= InvalidateVisual;
             ThemeService.AppearanceChanged += InvalidateVisual;
             UpdateDrift();
@@ -47,6 +49,7 @@ public sealed class AmbientBackdrop : FrameworkElement
         Unloaded += (_, _) =>
         {
             Motion.InteractingChanged -= UpdateDrift;
+            Motion.ScrollingChanged -= UpdateDrift;
             ThemeService.AppearanceChanged -= InvalidateVisual;
             StopDrift();
         };
@@ -77,13 +80,14 @@ public sealed class AmbientBackdrop : FrameworkElement
             ApplyAnimationClock(PhaseProperty, _clock);
         }
 
-        // Hold still while the window is dragged, then carry on from the same spot.
-        if (Motion.Interacting && !_paused)
+        // Hold still while the window is dragged or a list is gliding, then carry on from the same spot.
+        bool hold = Motion.Interacting || Motion.Scrolling;
+        if (hold && !_paused)
         {
             _clock.Controller?.Pause();
             _paused = true;
         }
-        else if (!Motion.Interacting && _paused)
+        else if (!hold && _paused)
         {
             _clock.Controller?.Resume();
             _paused = false;

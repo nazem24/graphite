@@ -22,23 +22,18 @@ public sealed class FolderSwatch
     public bool IsCurrent { get; }
 }
 
-/// <summary>Every brush a folder card needs, all derived from the single colour the person picked:
-/// the colour of the front pocket. The back of the folder is a darker shade of it, and the
-/// coloured bars on the top sheet follow its hue.</summary>
+/// <summary>The two brushes a folder needs, both derived from the single colour the person picked:
+/// the colour of the folder's back panel, and a slightly deeper shade of it for the small folder
+/// icon in list view. The front flap of a folder card is not here: it is the same colour tinted by
+/// the current theme and material (see the Folder.* resources in Themes\Materials).</summary>
 public sealed class FolderLook
 {
     public required SolidColorBrush Back { get; init; }
     public required SolidColorBrush Front { get; init; }
-    public required SolidColorBrush Text { get; init; }
-    public required SolidColorBrush SubText { get; init; }
-    public required SolidColorBrush Badge { get; init; }
-    public required SolidColorBrush BadgeText { get; init; }
-    public required SolidColorBrush Bar { get; init; }
-    public required SolidColorBrush BarLight { get; init; }
 }
 
 /// <summary>The colours folder cards can have, and the maths that turns one chosen colour into a
-/// whole folder (back, pocket, text, badge, paper bars).</summary>
+/// folder's brushes.</summary>
 public static class FolderPalette
 {
     /// <summary>The teal of the original design.</summary>
@@ -77,37 +72,14 @@ public static class FolderPalette
 
     public static string ToHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
-    /// <summary>Build the folder's brushes from its pocket colour.</summary>
-    public static FolderLook Look(Color front)
+    /// <summary>Build the folder's brushes from the colour of its back panel.</summary>
+    public static FolderLook Look(Color back)
     {
-        var (h, s, l) = ToHsl(front);
-
-        // The back of the folder is the same hue, about a third darker.
-        var back = FromHsl(h, s, l * 0.655);
-
-        // The sheet's bars lean toward green (as in the original design) and fade to grey when the
-        // folder itself is grey, so a graphite folder does not carry a bright green sheet.
-        double barHue = (h - 28 + 360) % 360;
-        double sat = Math.Clamp(s / 0.417, 0, 1);
-        var bar = FromHsl(barHue, 0.55 * sat, 0.27);
-        var barLight = FromHsl(barHue, 0.27 * sat, 0.69);
-
-        var white = Colors.White;
-        var ink = Color.FromRgb(0x14, 0x18, 0x1B);
-        var text = Contrast(front, white) >= Contrast(front, ink) ? white : ink;
-        var sub = Color.FromArgb(0xD8, text.R, text.G, text.B);
-        var badgeText = Contrast(back, white) >= Contrast(back, ink) ? white : ink;
-
+        var (h, sat, l) = ToHsl(back);
         return new FolderLook
         {
             Back = Brush(back),
-            Front = Brush(front),
-            Text = Brush(text),
-            SubText = Brush(sub),
-            Badge = Brush(back),
-            BadgeText = Brush(badgeText),
-            Bar = Brush(bar),
-            BarLight = Brush(barLight),
+            Front = Brush(FromHsl(h, sat, l * 0.78)),
         };
     }
 
@@ -119,23 +91,6 @@ public static class FolderPalette
     }
 
     // ------------------------------------------------------------- colour maths
-
-    private static double Luminance(Color c)
-    {
-        static double Lin(byte v)
-        {
-            double x = v / 255.0;
-            return x <= 0.03928 ? x / 12.92 : Math.Pow((x + 0.055) / 1.055, 2.4);
-        }
-        return 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
-    }
-
-    /// <summary>WCAG contrast ratio between two colours (1 = identical, 21 = black on white).</summary>
-    private static double Contrast(Color a, Color b)
-    {
-        double la = Luminance(a), lb = Luminance(b);
-        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
-    }
 
     private static (double H, double S, double L) ToHsl(Color c)
     {

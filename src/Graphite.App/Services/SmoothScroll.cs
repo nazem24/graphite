@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 
 namespace Graphite.App.Services;
 
@@ -35,6 +36,24 @@ public static class SmoothScroll
     private const double GlideMs = 300;
 
     private static readonly IEasingFunction Ease = Make(new QuinticEase { EasingMode = EasingMode.EaseOut });
+
+    // While a glide runs, the page's decorative loops hold still (see Motion.Scrolling); this ends that shortly after the last glide.
+    private static DispatcherTimer? _idle;
+    private static void MarkScrolling(double glideMs)
+    {
+        Motion.SetScrolling(true);
+        _idle ??= new DispatcherTimer();
+        _idle.Stop();
+        _idle.Interval = TimeSpan.FromMilliseconds(glideMs + 80);
+        _idle.Tick -= IdleTick;
+        _idle.Tick += IdleTick;
+        _idle.Start();
+    }
+    private static void IdleTick(object? sender, EventArgs e)
+    {
+        _idle?.Stop();
+        Motion.SetScrolling(false);
+    }
 
     private static IEasingFunction Make(IEasingFunction f)
     {
@@ -73,6 +92,7 @@ public static class SmoothScroll
         double ms = Math.Clamp(Math.Abs(target - current) * 3 + 120, 120, GlideMs);
         sv.SetValue(TargetProperty, target);
         sv.SetValue(ArriveProperty, now + (long)ms);
+        MarkScrolling(ms);
         sv.BeginAnimation(OffsetProperty, new DoubleAnimation(current, target, Motion.Ms(ms))
         {
             EasingFunction = Ease,

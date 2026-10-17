@@ -21,4 +21,29 @@
     <!-- how strongly the start page's accent glows show (AmbientBackdrop) -->
     <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">1.0</sys:Double>
 
+    <!-- Folder cards on the start page (LibraryHome, style FolderTile). Numbers from the design sheet
+         "Folder flap across every material": the back panel is the folder colour at BackOpacity; the front flap
+         is the same colour pushed dark or light by FlapTint, shown at FlapOpacity over the papers (at GhostOpacity, not blurred). -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.BackOpacity">0.95</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.FlapOpacity">0.82</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.ShadowOpacity">0.16</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.GhostBlur">0</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.GhostOpacity">0.15</sys:Double>
+    <Visibility x:Key="Folder.GhostVisibility">Visible</Visibility>
+    <RectangleGeometry x:Key="Folder.PapersClip" Rect="-60,-80,342,166"/>
+    <Thickness x:Key="Folder.FlapRimThickness">1.5</Thickness>
+    <LinearGradientBrush x:Key="Folder.FlapTint" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFFFF" Offset="0"/>
+        <GradientStop Color="#FFFFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Folder.FlapSheen" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#00FFFFFF" Offset="0.3"/>
+        <GradientStop Color="#4DFFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Folder.FlapRim" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFFFF" Offset="0"/>
+        <GradientStop Color="#E6FFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="Folder.FlapHover" Color="#0F000000"/>
+
 </ResourceDictionary>

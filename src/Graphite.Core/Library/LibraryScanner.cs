@@ -6,7 +6,9 @@ namespace Graphite.Core.Library;
 /// <param name="PdfCount">Supported files in the folder, including everything below it.</param>
 /// <param name="NewestWriteUtc">Most recent change to any supported file inside (folder time as a fallback).</param>
 /// <param name="PreviewFile">A local (not online-only) PDF that can stand in as the folder's page preview.</param>
-public sealed record LibraryFolder(string Path, string Name, int PdfCount, DateTime NewestWriteUtc, string? PreviewFile);
+/// <param name="SubfolderCount">Direct sub-folders (what the folder card says under its name).</param>
+public sealed record LibraryFolder(string Path, string Name, int PdfCount, DateTime NewestWriteUtc, string? PreviewFile,
+    int SubfolderCount = 0);
 
 /// <summary>One document in a library folder.</summary>
 public sealed record LibraryFile(string Path, string Name, string FolderPath, long Size,
@@ -153,28 +155,50 @@ public static class LibraryScanner
     /// and a preview file of each, sorted by name.</summary>
     public static List<LibraryFolder> ScanSubfolders(string folder, bool includeOffice, CancellationToken ct = default)
     {
-        var result = new List<LibraryFolder>();
+        var dirs = new List<DirectoryInfo>();
         try
         {
             foreach (var dir in new DirectoryInfo(folder).EnumerateDirectories("*", Options))
             {
                 ct.ThrowIfCancellationRequested();
-                if (SkipFolder(dir.Name)) continue;
-                var (count, newest, preview) = Summarize(dir.FullName, includeOffice, ct);
-                result.Add(new LibraryFolder(dir.FullName, dir.Name, count,
-                    count > 0 ? newest : dir.LastWriteTimeUtc, preview));
+                if (!SkipFolder(dir.Name)) dirs.Add(dir);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+
+        // Each folder is summarized by walking everything below it, which is mostly waiting on
+        // the disk (or OneDrive). Doing a few at a time makes the cards fill in much sooner;
+        // the list is sorted by name afterwards, so the order never depends on who finishes first.
+        var found = new LibraryFolder?[dirs.Count];
+        try
+        {
+            Parallel.For(0, dirs.Count,
+                new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 4) },
+                i =>
+                {
+                    var dir = dirs[i];
+                    var (count, newest, preview, subs) = Summarize(dir.FullName, includeOffice, ct);
+                    found[i] = new LibraryFolder(dir.FullName, dir.Name, count,
+                        count > 0 ? newest : dir.LastWriteTimeUtc, preview, subs);
+                });
+        }
+        catch (AggregateException ex) when (ex.InnerExceptions.Count > 0 && ex.InnerExceptions.All(e => e is OperationCanceledException))
+        {
+            throw new OperationCanceledException(ct);
+        }
+
+        var result = new List<LibraryFolder>(dirs.Count);
+        foreach (var f in found) if (f != null) result.Add(f);
         result.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase));
         return result;
     }
 
     /// <summary>Count supported files below a folder, the newest change among them, and the
     /// newest local PDF (the preview). Bounded by <see cref="MaxEntries"/>.</summary>
-    private static (int Count, DateTime Newest, string? Preview) Summarize(string root, bool includeOffice, CancellationToken ct)
+    private static (int Count, DateTime Newest, string? Preview, int DirectSubfolders) Summarize(
+        string root, bool includeOffice, CancellationToken ct)
     {
-        int count = 0, visited = 0;
+        int count = 0, visited = 0, directSubs = 0;
         DateTime newest = DateTime.MinValue, previewTime = DateTime.MinValue;
         string? preview = null;
         var pending = new Stack<string>();
@@ -200,15 +224,18 @@ public static class LibraryScanner
                         preview = f.FullName;
                     }
                 }
+                bool isRoot = string.Equals(dir, root, StringComparison.Ordinal);
                 foreach (var d in info.EnumerateDirectories("*", Options))
                 {
                     visited++;
-                    if (!SkipFolder(d.Name)) pending.Push(d.FullName);
+                    if (SkipFolder(d.Name)) continue;
+                    pending.Push(d.FullName);
+                    if (isRoot) directSubs++; // the card's sub-folder count comes from this same pass
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* skip unreadable folders */ }
         }
-        return (count, newest, preview);
+        return (count, newest, preview, directSubs);
     }
 
     /// <summary>Direct sub-folder count and total supported files below <paramref name="folder"/>

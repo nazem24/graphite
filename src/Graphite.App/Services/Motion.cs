@@ -37,6 +37,21 @@ public static class Motion
         InteractingChanged?.Invoke();
     }
 
+    /// <summary>True while the mouse wheel is gliding a list. Endless decorative loops (the start page's drifting
+    /// glows) hold still meanwhile, so the scroll gets every frame. Unlike <see cref="Interacting"/> this does not
+    /// turn <see cref="Enabled"/> off, so the glide itself keeps going.</summary>
+    public static bool Scrolling { get; private set; }
+
+    /// <summary>Raised when <see cref="Scrolling"/> changes.</summary>
+    public static event Action? ScrollingChanged;
+
+    public static void SetScrolling(bool on)
+    {
+        if (Scrolling == on) return;
+        Scrolling = on;
+        ScrollingChanged?.Invoke();
+    }
+
     public static readonly IEasingFunction EaseOut = Freeze(new CubicEase { EasingMode = EasingMode.EaseOut });
     public static readonly IEasingFunction EaseInOut = Freeze(new CubicEase { EasingMode = EasingMode.EaseInOut });
     public static readonly IEasingFunction EaseIn = Freeze(new CubicEase { EasingMode = EasingMode.EaseIn });

@@ -852,7 +852,8 @@ public partial class LibraryViewModel : ObservableObject
         string noun = office || all ? "file" : "PDF";
         Subtitle = $"{LibraryScanner.Plural(files.Count, noun)} · {LibraryScanner.Plural(subs.Count, "subfolder")}" +
                    (online > 0 ? $" · {online} online only" : "");
-        EmptyText = subs.Count > 0 ? "No files directly in this folder — open one of the folders above."
+        // A folder that only holds other folders says nothing: its folder cards are the content.
+        EmptyText = subs.Count > 0 ? ""
                                    : all ? "Nothing in this folder yet." : "No PDFs in this folder yet.";
     }
 

@@ -1134,8 +1134,9 @@ public sealed class AnnotationLayer : FrameworkElement
             {
                 double p = Pulse;
                 var accent = (Color)FindResource("App.AccentSystemColor");
-                var fill = new SolidColorBrush(Color.FromArgb((byte)(70 * p), accent.R, accent.G, accent.B));
-                var ring = new Pen(new SolidColorBrush(Color.FromArgb((byte)(230 * p), accent.R, accent.G, accent.B)), 1.6);
+                // Frozen: the pulse repaints every frame, and unfrozen brushes/pens are change-tracked.
+                var fill = Frozen(Color.FromArgb((byte)(70 * p), accent.R, accent.G, accent.B));
+                var ring = FrozenPen(new Pen(Frozen(Color.FromArgb((byte)(230 * p), accent.R, accent.G, accent.B)), 1.6));
                 foreach (var r in _doc.SearchResults[_doc.CurrentMatchIndex].Rects)
                     dc.DrawRoundedRectangle(fill, ring, ToRect(r.Inflate(1 + 7 * p), s), 4, 4);
             }
@@ -1275,22 +1276,7 @@ public sealed class AnnotationLayer : FrameworkElement
                         Math.Max(1.0, a.StrokeWidth * s))), ftRect);
                 if (!string.IsNullOrEmpty(a.Contents))
                 {
-                    var typeface = new Typeface(new FontFamily(a.FontFamily),
-                        a.Italic ? FontStyles.Italic : FontStyles.Normal,
-                        a.Bold ? FontWeights.Bold : FontWeights.Normal,
-                        FontStretches.Normal);
-                    var ft = new FormattedText(a.Contents,
-                        System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                        typeface, a.FontSize * s,
-                        Brush(a.ColorHex, a.Opacity),
-                        VisualTreeHelper.GetDpi(this).PixelsPerDip)
-                    {
-                        MaxTextWidth = Math.Max(10, a.Bounds.Width * s),
-                        MaxTextHeight = Math.Max(10, a.Bounds.Height * s),
-                        Trimming = TextTrimming.None,
-                    };
-                    if (a.Underline)
-                        ft.SetTextDecorations(TextDecorations.Underline);
+                    var ft = FreeTextLayout(a, s, VisualTreeHelper.GetDpi(this).PixelsPerDip);
                     dc.DrawText(ft, new Point(a.Bounds.X * s, a.Bounds.Y * s));
                 }
                 break;
@@ -1364,6 +1350,40 @@ public sealed class AnnotationLayer : FrameworkElement
     }
 
     private static Pen DashPen() => CachedDashPen;
+
+    /// <summary>Text layout is the expensive part of drawing a text box, and the box is redrawn on every
+    /// mouse-move while anything on the page is hovered, dragged or erased. The laid-out text is kept per
+    /// annotation and rebuilt only when what it depends on (text, font, size, colour, box, zoom) changes.</summary>
+    private static FormattedText FreeTextLayout(Annotation a, double s, double dpi)
+    {
+        var key = (a.Contents, a.FontFamily, a.FontSize, a.Bold, a.Italic, a.Underline, a.ColorHex, a.Opacity,
+            a.Bounds.Width, a.Bounds.Height, s, dpi);
+        if (FreeTextCache.TryGetValue(a, out var hit) && hit.Key.Equals(key)) return hit.Text;
+
+        var typeface = new Typeface(new FontFamily(a.FontFamily),
+            a.Italic ? FontStyles.Italic : FontStyles.Normal,
+            a.Bold ? FontWeights.Bold : FontWeights.Normal,
+            FontStretches.Normal);
+        var ft = new FormattedText(a.Contents,
+            System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            typeface, a.FontSize * s,
+            Brush(a.ColorHex, a.Opacity),
+            dpi)
+        {
+            MaxTextWidth = Math.Max(10, a.Bounds.Width * s),
+            MaxTextHeight = Math.Max(10, a.Bounds.Height * s),
+            Trimming = TextTrimming.None,
+        };
+        if (a.Underline)
+            ft.SetTextDecorations(TextDecorations.Underline);
+        FreeTextCache.AddOrUpdate(a, new CachedText(key, ft));
+        return ft;
+    }
+
+    private sealed record CachedText(
+        (string, string, double, bool, bool, bool, string, double, double, double, double, double) Key, FormattedText Text);
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Annotation, CachedText> FreeTextCache = new();
 
     private static Rect ToRect(RectD r, double s) => new(r.X * s, r.Y * s, r.Width * s, r.Height * s);
 

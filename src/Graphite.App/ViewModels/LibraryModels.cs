@@ -44,22 +44,26 @@ public sealed partial class FolderCardViewModel : ObservableObject
         ? "No files yet"
         : $"{CountText} · changed {LibraryScanner.Changed(_folder.NewestWriteUtc)}";
 
-    /// <summary>The number in the round badge on the pocket.</summary>
-    public bool ShowBadge => PdfCount > 0;
-    public string BadgeText => PdfCount > 99 ? "99+" : PdfCount.ToString();
+    /// <summary>The big number on the front flap, and the word after it ("31 files", "1 file").</summary>
+    public string CountNumber => PdfCount.ToString("N0");
+    public string CountLabel => PdfCount == 1 ? "file" : "files";
+
+    /// <summary>Under the folder's name: "5 subfolders", "1 subfolder" or "No subfolders".</summary>
+    public string SubfolderLine => _folder.SubfolderCount switch
+    {
+        0 => "No subfolders",
+        1 => "1 subfolder",
+        var n => $"{n:N0} subfolders",
+    };
 
     // ---- colour
 
+    /// <summary>The folder colour: the solid back panel of a card.</summary>
     public Brush BackBrush => _look.Back;
+    /// <summary>A deeper shade of it, for the pocket of the small icon in list view.</summary>
     public Brush FrontBrush => _look.Front;
-    public Brush TextBrush => _look.Text;
-    public Brush SubTextBrush => _look.SubText;
-    public Brush BadgeBrush => _look.Badge;
-    public Brush BadgeTextBrush => _look.BadgeText;
-    public Brush BarBrush => _look.Bar;
-    public Brush BarLightBrush => _look.BarLight;
 
-    /// <summary>The pocket colour as "#RRGGBB" (what the colour picker shows as current).</summary>
+    /// <summary>The folder colour as "#RRGGBB" (what the colour picker shows as current).</summary>
     public string ColorHex => FolderPalette.ToHex(ReadColor());
 
     /// <summary>The folder's own colour, else the all-folders colour, else the built-in teal.</summary>

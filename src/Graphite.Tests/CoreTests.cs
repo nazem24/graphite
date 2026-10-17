@@ -376,6 +376,14 @@ public sealed class LibraryScannerTests : IDisposable
     }
 
     [Fact]
+    public void SubfolderCardsKnowHowManyFoldersAreDirectlyInside()
+    {
+        var subs = LibraryScanner.ScanSubfolders(_root, includeOffice: false);
+        Assert.Equal(1, subs.Single(s => s.Name == "CPE").SubfolderCount);   // Slides
+        Assert.Equal(0, subs.Single(s => s.Name == ".Hidden").SubfolderCount);
+    }
+
+    [Fact]
     public void AllTypesListsEveryOrdinaryFileButNotLockFiles()
     {
         string cpe = Path.Combine(_root, "CPE");
