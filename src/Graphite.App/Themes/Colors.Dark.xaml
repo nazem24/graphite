@@ -20,8 +20,10 @@
     <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#F02A2A2E"/>
     <Color x:Key="App.ShadowColor">#000000</Color>
 
-    <SolidColorBrush x:Key="App.StrokeBrush" Color="#3B3B3E"/>
-    <SolidColorBrush x:Key="App.StrokeSoftBrush" Color="#303033"/>
+    <!-- Outlines are white at low alpha, not a fixed grey: they pick up whatever sits behind them,
+         so they read as a soft edge on a blurred or glass backdrop instead of a dark ring. -->
+    <SolidColorBrush x:Key="App.StrokeBrush" Color="#24FFFFFF"/>
+    <SolidColorBrush x:Key="App.StrokeSoftBrush" Color="#16FFFFFF"/>
 
     <SolidColorBrush x:Key="App.TextBrush" Color="#ECECE8"/>
     <SolidColorBrush x:Key="App.TextSecondaryBrush" Color="#9C9C97"/>

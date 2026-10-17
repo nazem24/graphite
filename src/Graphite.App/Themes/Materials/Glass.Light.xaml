@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Material "Glass" (light): only the translucent surfaces. ThemeService merges this after
+         Colors.Light.xaml, so text, strokes and accents stay the theme's own.
+         Clear glass with some depth: a bright sheen across the top-left that fades into a cool tint, a white
+         rim on the lit corner and a soft blue-grey edge on the shaded one. -->
+
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#66FFFFFF"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#14C9C9C4"/>
+
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#99FFFFFF" Offset="0"/>
+        <GradientStop Color="#55FFFFFF" Offset="0.5"/>
+        <GradientStop Color="#66EAF0FF" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#FFFFFFFF" Offset="0"/>
+        <GradientStop Color="#99FFFFFF" Offset="0.38"/>
+        <GradientStop Color="#40A9B6D6" Offset="0.72"/>
+        <GradientStop Color="#664F6190" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#EBFFFFFF"/>
+
+    <!-- how strongly the start page's accent glows show (AmbientBackdrop) -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">1.6</sys:Double>
+
+</ResourceDictionary>

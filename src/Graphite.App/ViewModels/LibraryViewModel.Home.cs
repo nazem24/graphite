@@ -116,6 +116,9 @@ public partial class LibraryViewModel
     private void NewDocument() => _main.NewDocument();
 
     [RelayCommand]
+    private void MergePdfs() => _main.MergeCommand.Execute(null);
+
+    [RelayCommand]
     private void NewFolder()
     {
         var owner = Application.Current?.MainWindow;
@@ -207,12 +210,28 @@ public partial class LibraryViewModel
 
     // ------------------------------------------------------------- left pane
 
+    /// <summary>True: the sidebar is open. False: it is collapsed (to an icon rail or out of sight,
+    /// whichever the setting says).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RailColumnWidth))]
+    [NotifyPropertyChangedFor(nameof(IsRailCompact))]
+    [NotifyPropertyChangedFor(nameof(RailTargetWidth))]
     private bool isRailVisible = true;
 
-    /// <summary>The rail column includes the gap to the content, so hiding it leaves no seam.</summary>
-    public GridLength RailColumnWidth => IsRailVisible ? new GridLength(286) : new GridLength(0);
+    /// <summary>Collapsed, and shown as a narrow strip of icons.</summary>
+    public bool IsRailCompact => !IsRailVisible && ThemeService.CollapseToRail;
+
+    public const double RailOpenWidth = 252, RailCompactWidth = 66, RailGap = 18;
+
+    /// <summary>How wide the sidebar column wants to be. It includes the gap to the content, so a
+    /// hidden sidebar leaves no seam. The view glides to this number (see LibraryHome.xaml.cs).</summary>
+    public double RailTargetWidth =>
+        IsRailVisible ? RailOpenWidth + RailGap : ThemeService.CollapseToRail ? RailCompactWidth + RailGap : 0;
+
+    private void RaiseRailState()
+    {
+        OnPropertyChanged(nameof(IsRailCompact));
+        OnPropertyChanged(nameof(RailTargetWidth));
+    }
 
     [RelayCommand]
     private void ToggleRailPane() => IsRailVisible = !IsRailVisible;

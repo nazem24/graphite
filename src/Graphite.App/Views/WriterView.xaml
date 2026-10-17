@@ -260,7 +260,7 @@
             <Grid Grid.Column="1">
                 <ScrollViewer x:Name="Surface" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                               PreviewMouseWheel="Surface_PreviewMouseWheel" Focusable="False">
-                    <Border x:Name="Sheet" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="28,12,28,96"
+                    <Border x:Name="Sheet" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="28,12,28,40"
                             Background="White" CornerRadius="2">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="26" ShadowDepth="4" Direction="270" Opacity="0.28"/>
@@ -281,36 +281,39 @@
 
                 <!-- where it lives -->
                 <StackPanel HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="30,0,0,22" IsHitTestVisible="False">
-                    <TextBlock Text="Autosave on" Style="{StaticResource Caption}" FontSize="11.5"/>
+                    <TextBlock Text="{Binding AutosaveText}" Style="{StaticResource Caption}" FontSize="11.5"/>
                     <TextBlock Text="{Binding StoredAsText}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,1,0,0"/>
                 </StackPanel>
 
-                <!-- page · words · zoom -->
-                <Border Style="{StaticResource GlassCard}" CornerRadius="18" HorizontalAlignment="Center"
-                        VerticalAlignment="Bottom" Margin="0,0,0,18" Padding="14,4">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="20" ShadowDepth="3" Direction="270" Opacity="0.2"/>
-                    </Border.Effect>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="PageInfo" Text="Page 1 of 1" Style="{StaticResource Caption}" FontSize="12"
-                                   VerticalAlignment="Center"/>
-                        <Rectangle Style="{StaticResource ToolSep}" Margin="12,0"/>
-                        <TextBlock Text="{Binding WordCountText}" Style="{StaticResource Caption}" FontSize="12"
-                                   VerticalAlignment="Center"/>
-                        <Rectangle Style="{StaticResource ToolSep}" Margin="12,0"/>
-                        <Button Style="{StaticResource IconButton}" Padding="6" Focusable="False" ToolTip="Zoom out"
-                                Click="ZoomOut_Click">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomOut}" Width="13" Height="13"
+                <!-- page, words, zoom: a slim pill down the right-hand side, in the theme's own glass. -->
+                <Border Style="{StaticResource GlassPill}" CornerRadius="16" HorizontalAlignment="Right"
+                        VerticalAlignment="Center" Margin="0,0,22,0" Padding="2,8" Width="46">
+                    <StackPanel>
+                        <TextBlock x:Name="PageInfo" Text="1 / 1" Foreground="{DynamicResource App.TextBrush}"
+                                   FontSize="12" FontWeight="SemiBold" TextAlignment="Center"/>
+                        <TextBlock Text="page" Style="{StaticResource Caption}" FontSize="10.5" TextAlignment="Center"/>
+
+                        <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="8,8"/>
+
+                        <TextBlock Text="{Binding WordCount}" Foreground="{DynamicResource App.TextBrush}"
+                                   FontSize="12" FontWeight="SemiBold" TextAlignment="Center"/>
+                        <TextBlock Text="words" Style="{StaticResource Caption}" FontSize="10.5" TextAlignment="Center"/>
+
+                        <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="8,8"/>
+
+                        <Button Style="{StaticResource IconButton}" Padding="6" Focusable="False" ToolTip="Zoom in"
+                                HorizontalAlignment="Center" Click="ZoomIn_Click">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomIn}" Width="14" Height="14"
                                   Stretch="Uniform"/>
                         </Button>
-                        <Button Style="{StaticResource IconButton}" Padding="6,4" Focusable="False" ToolTip="Reset zoom"
-                                Click="ZoomReset_Click">
-                            <TextBlock Text="{Binding ZoomText}" Style="{StaticResource Caption}" FontSize="12" MinWidth="34"
-                                       TextAlignment="Center"/>
+                        <Button Style="{StaticResource IconButton}" Padding="2,4" Focusable="False" ToolTip="Reset zoom"
+                                HorizontalAlignment="Center" Click="ZoomReset_Click">
+                            <TextBlock Text="{Binding ZoomText}" Foreground="{DynamicResource App.TextBrush}" FontSize="11"
+                                       MinWidth="34" TextAlignment="Center"/>
                         </Button>
-                        <Button Style="{StaticResource IconButton}" Padding="6" Focusable="False" ToolTip="Zoom in"
-                                Click="ZoomIn_Click">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomIn}" Width="13" Height="13"
+                        <Button Style="{StaticResource IconButton}" Padding="6" Focusable="False" ToolTip="Zoom out"
+                                HorizontalAlignment="Center" Click="ZoomOut_Click">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomOut}" Width="14" Height="14"
                                   Stretch="Uniform"/>
                         </Button>
                     </StackPanel>

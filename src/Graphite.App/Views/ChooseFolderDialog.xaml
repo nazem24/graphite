@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Graphite.App.ViewModels"
         xmlns:conv="clr-namespace:Graphite.App.Converters"
-        Title="Choose your main folder" Width="660" Height="660" MinHeight="540"
-        WindowStartupLocation="CenterOwner" WindowStyle="ToolWindow" ResizeMode="NoResize" ShowInTaskbar="False"
+        Title="Choose your main folder" Width="660" Height="706" MinHeight="586"
+        WindowStartupLocation="CenterOwner" Style="{StaticResource DialogWindow}" WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource App.BackgroundBrush}"
         TextElement.Foreground="{DynamicResource App.TextBrush}"
         FontFamily="Segoe UI Variable, Segoe UI" FontSize="12.5">

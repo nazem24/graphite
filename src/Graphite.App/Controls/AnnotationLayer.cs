@@ -593,7 +593,7 @@ public sealed class AnnotationLayer : FrameworkElement
                 // starts immediately, inline on the page — no dialog. Double-click the
                 // text (with the Select tool) to open the full formatting popup.
                 _doc.StartInlineFreeText(_page.Index,
-                    moved ? rect : new RectD(_start.X, _start.Y, 180, 14));
+                    moved ? rect : new RectD(_start.X, _start.Y, 180, 14), autoWidth: !moved);
                 break;
 
             case ToolKind.Arrow when moved:

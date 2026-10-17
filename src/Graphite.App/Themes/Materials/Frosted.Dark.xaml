@@ -1,0 +1,29 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Material "Frosted" (dark): only the translucent surfaces. ThemeService merges this after
+         Colors.Dark.xaml, so text, strokes and accents stay the theme's own.
+         The same blur with a heavy milky tint. Panels are more opaque and calm, text stays easy to read. -->
+
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#C21E1E22"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#4A121216"/>
+
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#D0383840" Offset="0"/>
+        <GradientStop Color="#C22C2C33" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#66FFFFFF" Offset="0"/>
+        <GradientStop Color="#1FFFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#F02A2A2E"/>
+
+    <!-- Outlines on a see-through surface: a touch brighter than the opaque dark theme's, so
+         controls keep a crisp edge against the lighter backdrop. -->
+    <SolidColorBrush x:Key="App.StrokeBrush" Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="App.StrokeSoftBrush" Color="#1FFFFFFF"/>
+
+    <!-- how strongly the start page's accent glows show (AmbientBackdrop) -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">0.6</sys:Double>
+
+</ResourceDictionary>

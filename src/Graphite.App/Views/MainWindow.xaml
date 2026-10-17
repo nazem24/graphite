@@ -32,6 +32,16 @@
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Command bar groups that make no sense on the settings page: it keeps only the logo and,
+             on the right, the library panel and settings buttons. -->
+        <Style x:Key="HideInSettings" TargetType="FrameworkElement">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSettingsOpen}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
         <conv:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
         <conv:ZeroToVisibilityConverter x:Key="ZeroToVis"/>
         <conv:ZeroToVisibilityConverter x:Key="NonZeroToVis" Invert="True"/>
@@ -270,10 +280,11 @@
                                                      text box and typing happens right here on the page. -->
                                                 <Canvas ClipToBounds="True">
                                                     <TextBox x:Name="InlineEditor" Visibility="Collapsed"
+                                                             Style="{StaticResource InlineTextEditor}"
                                                              Loaded="InlineEditor_Loaded" DataContextChanged="InlineEditor_DataContextChanged"
                                                              LostFocus="InlineEditor_LostFocus" PreviewKeyDown="InlineEditor_KeyDown"
-                                                             Background="Transparent" BorderThickness="0" Padding="0"
-                                                             AcceptsReturn="False" VerticalContentAlignment="Top"/>
+                                                             AcceptsReturn="True" TextWrapping="Wrap" MinWidth="26"
+                                                             VerticalContentAlignment="Top"/>
                                                 </Canvas>
                                                 <!-- "you landed here" flash (jumps, history, markup cards) -->
                                                 <Border x:Name="FlashRing" IsHitTestVisible="False" Opacity="0"
@@ -785,6 +796,7 @@
         <KeyBinding Modifiers="Ctrl+Shift" Key="S" Command="{Binding SaveAsCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="P" Command="{Binding PrintCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="K" Command="{Binding OpenPaletteCommand}"/>
+        <KeyBinding Modifiers="Ctrl" Key="OemComma" Command="{Binding ToggleSettingsCommand}"/>
         <KeyBinding Modifiers="Ctrl" Key="W" Command="{Binding CloseDocumentCommand}"
                     CommandParameter="{Binding SelectedTab}"/>
         <KeyBinding Modifiers="Ctrl" Key="N" Command="{Binding NewDocumentCommand}"/>
@@ -901,6 +913,7 @@
 
                 <!-- right side: command search, then the far-right groups (which fold into "…" when narrow) -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Style="{StaticResource HideInSettings}">
                     <!-- an editor-only button: exports (documents) -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                                 Visibility="{Binding IsWriterSelected, Converter={StaticResource BoolToVis}}">
@@ -943,12 +956,14 @@
                             </DockPanel>
                         </Button>
                     </Grid>
+                    </StackPanel>
                     <StackPanel x:Name="BarFarRight" Orientation="Horizontal" Margin="6,0,0,0" VerticalAlignment="Center">
                         <ToggleButton Style="{StaticResource BarButton}" IsChecked="{Binding Library.IsRailVisible}"
-                                      Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}"
-                                      ToolTip="Library panel||Show or hide the folders on the left">
+                                      Visibility="{Binding ShowLibraryToggle, Converter={StaticResource BoolToVis}}"
+                                      ToolTip="Sidebar||Expand or collapse the library sidebar">
                             <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Sidebar}"/>
                         </ToggleButton>
+                        <StackPanel Orientation="Horizontal" Style="{StaticResource HideInSettings}">
                         <ToggleButton Style="{StaticResource BarButton}" IsChecked="{Binding ShowSidebar}"
                                       Visibility="{Binding IsPdfSelected, Converter={StaticResource BoolToVis}}"
                                       ToolTip="Pages panel||Show or hide thumbnails and outline">
@@ -959,9 +974,12 @@
                                       ToolTip="Markup panel||Show or hide markup and search">
                             <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Inspector}"/>
                         </ToggleButton>
-                        <Button Style="{StaticResource BarButton}" Command="{Binding ToggleThemeCommand}"
-                                ToolTip="Theme||Switch between light and dark">
-                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Theme}"
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource BarButton}" Command="{Binding ToggleSettingsCommand}"
+                                      IsChecked="{Binding IsSettingsOpen, Mode=OneWay}"
+                                      ToolTip="Settings|Ctrl ,|Light or dark, window material and motion"
+                                      AutomationProperties.Name="Settings">
+                            <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.Settings}"
                                   RenderTransformOrigin="0.5,0.5">
                                 <Path.RenderTransform>
                                     <RotateTransform/>
@@ -977,11 +995,11 @@
                                     </EventTrigger>
                                 </Path.Triggers>
                             </Path>
-                        </Button>
+                        </ToggleButton>
                     </StackPanel>
                     <!-- narrow windows: the far-right groups live here instead -->
                     <Button x:Name="BarOverflow" Style="{StaticResource BarButton}" Visibility="Collapsed"
-                            Click="OrganizeMenu_Click" ToolTip="More||Panels and theme">
+                            Click="OrganizeMenu_Click" ToolTip="More||Panels and settings">
                         <Path Style="{StaticResource BarIcon}" Data="{StaticResource Icon.More}"/>
                         <Button.ContextMenu>
                             <ContextMenu MinWidth="200">
@@ -992,8 +1010,8 @@
                                 <MenuItem Header="Markup panel" IsCheckable="True" IsChecked="{Binding ShowInspector, Mode=TwoWay}"
                                           Visibility="{Binding IsPdfSelected, Converter={StaticResource BoolToVis}}"/>
                                 <Separator/>
-                                <MenuItem Header="Switch theme" Command="{Binding ToggleThemeCommand}">
-                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}" Width="14" Height="14"/></MenuItem.Icon>
+                                <MenuItem Header="Settings" InputGestureText="Ctrl+," Command="{Binding ToggleSettingsCommand}">
+                                    <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Settings}" Width="14" Height="14"/></MenuItem.Icon>
                                 </MenuItem>
                             </ContextMenu>
                         </Button.ContextMenu>
@@ -1001,7 +1019,7 @@
                 </StackPanel>
 
                 <!-- center: file + tools -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Style="{StaticResource HideInSettings}">
                     <!-- File: grouped by task — open, save, print/properties, about -->
                     <Button Style="{StaticResource BarButton}" Padding="9,0" Click="OrganizeMenu_Click"
                             Visibility="{Binding IsHomeSelected, Converter={StaticResource InvBoolToVis}}"
@@ -1075,6 +1093,7 @@
                     <!-- Selection pill: one shared highlight that glides to whichever tool is active
                          (MainWindow.UpdateToolPill): accent 22 % fill and a 1 px accent ring. -->
                     <Border x:Name="ToolPill" Width="32" Height="32" CornerRadius="9" Opacity="0"
+                            Visibility="{Binding Visibility, ElementName=ToolsPanel}"
                             HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
                             Background="{DynamicResource App.AccentSoftBrush}"
                             BorderBrush="{DynamicResource App.AccentSystemBrush}" BorderThickness="1">
@@ -1116,7 +1135,7 @@
                             </StackPanel>
                             <Button.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="Merge PDFs…" Command="{Binding MergeCommand}">
+                                    <MenuItem Header="Merge with other PDFs…" Command="{Binding MergeWithCurrentCommand}">
                                         <MenuItem.Icon><Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Merge}" Width="14" Height="14"/></MenuItem.Icon>
                                     </MenuItem>
                                     <MenuItem Header="Split into single pages…" Command="{Binding SplitCommand}">
@@ -1278,11 +1297,14 @@
                             <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.EditText}"/>
                         </RadioButton>
 
-                        <Rectangle Style="{StaticResource ToolSep}"/>
+                        <Rectangle Style="{StaticResource ToolSep}"
+                                   Visibility="{Binding SelectedDocument.HasToolOptions, Converter={StaticResource BoolToVis}}"/>
 
-                        <!-- Options for the active tool, in one popover. The chip shows the current colour. -->
+                        <!-- Options for the active tool, in one popover. The chip shows the current colour.
+                             It only appears for tools that have options (not Select, Lasso, Note, ...). -->
                         <Border CornerRadius="11" BorderThickness="1" Margin="3,0,0,0"
-                                BorderBrush="{DynamicResource App.StrokeBrush}" VerticalAlignment="Center">
+                                BorderBrush="{DynamicResource App.StrokeBrush}" VerticalAlignment="Center"
+                                Visibility="{Binding SelectedDocument.HasToolOptions, Converter={StaticResource BoolToVis}}">
                             <StackPanel Orientation="Horizontal">
                                 <ToggleButton x:Name="ColorToggle" Style="{StaticResource BarButton}" Margin="0"
                                               MinHeight="30" Padding="9,0"
@@ -1782,7 +1804,17 @@
              visible. Switching tabs is therefore a visibility flip (the scroll position, the
              realized pages and their bitmaps all stay put) instead of re-pointing one shared
              viewer at a different page list, which rebuilt every page on every switch. -->
-        <ItemsControl x:Name="DocHost" Grid.Row="2" Focusable="False" IsTabStop="False"
+        <Grid x:Name="DocsLayer" Grid.Row="2">
+          <Grid.Style>
+            <Style TargetType="Grid">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSettingsOpen}" Value="True">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Grid.Style>
+        <ItemsControl x:Name="DocHost" Focusable="False" IsTabStop="False"
                       ItemsSource="{Binding Documents}"
                       ItemTemplate="{StaticResource DocTemplate}"
                       Visibility="{Binding Documents.Count, Converter={StaticResource NonZeroToVis}}">
@@ -1808,7 +1840,7 @@
         </ItemsControl>
 
         <!-- ======================= documents of the built-in editor ======================= -->
-        <ItemsControl x:Name="WriterHost" Grid.Row="2" Focusable="False" IsTabStop="False"
+        <ItemsControl x:Name="WriterHost" Focusable="False" IsTabStop="False"
                       ItemsSource="{Binding Writers}"
                       ItemTemplate="{StaticResource WriterTemplate}"
                       Visibility="{Binding Writers.Count, Converter={StaticResource NonZeroToVis}}">
@@ -1832,13 +1864,24 @@
                 </Style>
             </ItemsControl.ItemContainerStyle>
         </ItemsControl>
+        </Grid>
 
         <!-- ======================= start screen (Home tab) ======================= -->
         <!-- The library: pick a folder once (OneDrive, say) and browse its subfolders and PDFs
              here. Shown whenever no document tab is selected. -->
-        <Grid x:Name="HomeHost" Grid.Row="2" Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}">
+        <Grid x:Name="HomeHost" Grid.Row="2" Visibility="{Binding IsHomeVisible, Converter={StaticResource BoolToVis}}">
             <ctrl:AmbientBackdrop/>
             <views:LibraryHome x:Name="HomeView" DataContext="{Binding Library}"/>
+        </Grid>
+
+        <!-- ======================= settings page ======================= -->
+        <!-- Full page, like the start screen: mode, window material and motion. Documents and the
+             start screen are hidden while it is open (DocsLayer / HomeHost). -->
+        <!-- Shown and hidden from code (MainWindow.xaml.cs, OnSettingsOpenChanged) so the page can slide
+             and fade like a folder page does: it stays visible until its fade-out has finished. -->
+        <Grid x:Name="SettingsHost" Grid.Row="2" Visibility="Collapsed">
+            <ctrl:AmbientBackdrop/>
+            <views:SettingsView x:Name="SettingsPage" DataContext="{Binding Settings}"/>
         </Grid>
 
         <!-- ======================= drop target ======================= -->

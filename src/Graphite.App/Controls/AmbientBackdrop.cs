@@ -29,6 +29,7 @@ public sealed class AmbientBackdrop : FrameworkElement
 
     // The two glow brushes only change with the accent colour — not once per frame.
     private Color _brushAccent;
+    private double _brushStrength = 1;
     private Brush? _glowA, _glowB;
 
     public AmbientBackdrop()
@@ -39,11 +40,14 @@ public sealed class AmbientBackdrop : FrameworkElement
         {
             Motion.InteractingChanged -= UpdateDrift;
             Motion.InteractingChanged += UpdateDrift;
+            ThemeService.AppearanceChanged -= InvalidateVisual;
+            ThemeService.AppearanceChanged += InvalidateVisual;
             UpdateDrift();
         };
         Unloaded += (_, _) =>
         {
             Motion.InteractingChanged -= UpdateDrift;
+            ThemeService.AppearanceChanged -= InvalidateVisual;
             StopDrift();
         };
     }
@@ -101,11 +105,15 @@ public sealed class AmbientBackdrop : FrameworkElement
 
         double t = Phase * Math.PI * 2;
         var accent = TryFindResource("App.AccentSystemColor") as Color? ?? Color.FromRgb(0x3E, 0x6D, 0xB5);
-        if (_glowA == null || _glowB == null || accent != _brushAccent)
+        // The material (Themes/Materials) says how strongly the glows show: faint behind Frosted,
+        // livelier behind Glass.
+        double strength = TryFindResource("App.AmbientStrength") as double? ?? 1.0;
+        if (_glowA == null || _glowB == null || accent != _brushAccent || strength != _brushStrength)
         {
             _brushAccent = accent;
-            _glowA = Glow(accent, 0x2A);
-            _glowB = Glow(accent, 0x1E);
+            _brushStrength = strength;
+            _glowA = Glow(accent, Scale(0x2A, strength));
+            _glowB = Glow(accent, Scale(0x1E, strength));
         }
         double size = Math.Max(w, h);
 
@@ -116,6 +124,8 @@ public sealed class AmbientBackdrop : FrameworkElement
             new Point(w * (0.76 + 0.09 * Math.Cos(t * 0.9)), h * (0.68 + 0.10 * Math.Sin(t * 1.1))),
             size * 0.36, size * 0.36);
     }
+
+    private static byte Scale(byte alpha, double strength) => (byte)Math.Clamp(alpha * strength, 0, 255);
 
     private static Brush Glow(Color accent, byte alpha)
     {

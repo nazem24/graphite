@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Graphite.App.Services;
 using Graphite.App.ViewModels;
+using Graphite.Core.Library;
 
 namespace Graphite.App.Views;
 
@@ -21,6 +22,8 @@ public partial class LibraryHome : UserControl
     {
         InitializeComponent();
         DataContextChanged += LibraryHome_DataContextChanged;
+        SizeChanged += (_, _) => AutoCollapseRail();
+        Loaded += (_, _) => ApplyRailWidth(animate: false);
         // The card hangs just under the button, right edges lined up, so it can grow out of it.
         NewPopup.CustomPopupPlacementCallback = (popupSize, targetSize, _) => new[]
         {
@@ -57,7 +60,7 @@ public partial class LibraryHome : UserControl
 
     private void NewItem_Click(object sender, RoutedEventArgs e) => NewPopup.IsOpen = false;
 
-    private const double NewCardWidth = 308, NewCardHeight = 162, NewPopupPad = 40, NewGap = 6;
+    private const double NewCardWidth = 308, NewCardHeight = 212, NewPopupPad = 40, NewGap = 6;
 
     /// <summary>The card opens just under the button and grows out of it: it starts as wide as the
     /// button, flat, hugging the button's right edge, and unfolds down and to the left while the
@@ -178,9 +181,7 @@ public partial class LibraryHome : UserControl
     }
 
     // Thumbnails are asked for when the UI has nothing better to do, so a page's cards appear (and animate in)
-    // first and their pictures follow.
-    private void FileCard_Loaded(object sender, RoutedEventArgs e) =>
-        Dispatcher.InvokeAsync(() => LoadPreview(sender), DispatcherPriority.ContextIdle);
+    // first and their pictures follow. (FileCard_Loaded is with the page transition code below.)
 
     // Resting the pointer on a folder card reads that folder in the background, so opening it is instant.
     private DispatcherTimer? _hoverTimer;
@@ -220,9 +221,92 @@ public partial class LibraryHome : UserControl
         menu.IsOpen = true;
     }
 
+    /// <summary>The library switcher: every library folder (the current one ticked), then add / remove /
+    /// refresh. Built when it opens, because the list of folders changes.</summary>
     private void LibraryMenu_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement fe) OpenMenuBelow(fe, DataContext);
+        if (sender is not FrameworkElement fe || Library is not { } lib) return;
+        var menu = fe.ContextMenu ?? new ContextMenu();
+        menu.Items.Clear();
+        foreach (var item in lib.RailItems.Where(i => i.IsRoot))
+        {
+            menu.Items.Add(new MenuItem
+            {
+                Header = item.Name,
+                IsCheckable = true,
+                IsChecked = lib.RootPath != null && LibraryScanner.SamePath(item.Path, lib.RootPath),
+                Command = lib.OpenRailItemCommand,
+                CommandParameter = item,
+                ToolTip = item.Path,
+            });
+        }
+        if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = "Add another folder…", Command = lib.AddFolderCommand });
+        menu.Items.Add(new MenuItem { Header = "Change folder…", Command = lib.ChooseFolderCommand });
+        menu.Items.Add(new MenuItem { Header = "Remove from library", Command = lib.RemoveFolderCommand, IsEnabled = lib.HasRoot });
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = "Refresh", Command = lib.RefreshCommand });
+        OpenMenuBelow(fe, DataContext);
+    }
+
+    // ------------------------------------------------------------- sidebar width
+
+    // The sidebar column is open (270 with its gap), a 66 px icon rail (84) or gone (0). A grid column cannot be
+    // animated directly, so RailWidth is an animatable stand-in that writes the column width as it moves.
+    public static readonly DependencyProperty RailWidthProperty = DependencyProperty.Register(
+        nameof(RailWidth), typeof(double), typeof(LibraryHome),
+        new PropertyMetadata(270.0, (d, e) =>
+            ((LibraryHome)d).RailColumn.Width = new GridLength(Math.Max(0, (double)e.NewValue))));
+
+    public double RailWidth
+    {
+        get => (double)GetValue(RailWidthProperty);
+        set => SetValue(RailWidthProperty, value);
+    }
+
+    private const double RailGlideMs = 260;
+    private const double AutoCollapseBelow = 1000, AutoExpandAbove = 1060;
+    private bool _autoCollapsed;     // the sidebar was folded because the window is narrow (so widening unfolds it)
+    private bool _changingRail;      // we are the ones changing IsRailVisible
+
+    private void ApplyRailWidth(bool animate)
+    {
+        double to = Library?.RailTargetWidth ?? 270;
+        double from = RailWidth;
+        if (!animate || !Motion.Enabled || !IsLoaded || !IsVisible || Math.Abs(from - to) < 0.5)
+        {
+            BeginAnimation(RailWidthProperty, null);
+            RailWidth = to;
+            return;
+        }
+        // The resting value is set first; the animation (which stops at its end) only draws the way there.
+        RailWidth = to;
+        BeginAnimation(RailWidthProperty, new DoubleAnimation(from, to, Motion.Ms(RailGlideMs))
+        {
+            EasingFunction = Motion.PageFadeEase,
+            FillBehavior = FillBehavior.Stop,
+        });
+    }
+
+    /// <summary>Under about 1000 px the page needs the room: fold the sidebar by itself, and open it again
+    /// when the window grows, unless the person has already chosen otherwise.</summary>
+    private void AutoCollapseRail()
+    {
+        if (Library is not { } lib) return;
+        if (!_autoCollapsed && lib.IsRailVisible && ActualWidth > 0 && ActualWidth < AutoCollapseBelow)
+        {
+            _autoCollapsed = true;
+            _changingRail = true;
+            lib.IsRailVisible = false;
+            _changingRail = false;
+        }
+        else if (_autoCollapsed && ActualWidth >= AutoExpandAbove)
+        {
+            _autoCollapsed = false;
+            _changingRail = true;
+            lib.IsRailVisible = true;
+            _changingRail = false;
+        }
     }
 
     private void SortMenu_Click(object sender, RoutedEventArgs e)
@@ -418,19 +502,12 @@ public partial class LibraryHome : UserControl
     // a sideways change (recent, pinned) fades and lifts. Because the heavy work (building cards) happens
     // while the page is invisible, no animation frame ever has to wait for it. Skipped when motion is reduced.
 
-    private static readonly IEasingFunction QuintOut = Freeze(new QuinticEase { EasingMode = EasingMode.EaseOut });
-    private static readonly IEasingFunction QuadIn = Freeze(new QuadraticEase { EasingMode = EasingMode.EaseIn });
-
-    private static T Freeze<T>(T f) where T : Freezable
-    {
-        f.Freeze();
-        return f;
-    }
-
     private LibraryViewModel? _watched;
     private int _gen;                        // bumped whenever a transition starts, ends or is cut short
     private int _direction;                  // +1 deeper, -1 back, 0 sideways
     private bool _awaitingPage;              // the page has been swapped and is still loading (it is invisible)
+    private bool _playing;                   // the new page is sliding in (its picture is cached; see FileCard_Loaded)
+    private readonly List<FrameworkElement> _deferredPreviews = new();   // cards that appeared mid-transition
     private bool _playQueued;
     private Action? _pendingApply;           // the page change that waits for the fade-out to finish
     private DispatcherTimer? _failsafe;
@@ -444,6 +521,7 @@ public partial class LibraryHome : UserControl
             _watched.PropertyChanged -= OnLibraryPropertyChanged;
         }
         _watched = e.NewValue as LibraryViewModel;
+        ApplyRailWidth(animate: false);
         if (_watched != null)
         {
             _watched.NavigationStarting += OnNavigationStarting;
@@ -452,13 +530,18 @@ public partial class LibraryHome : UserControl
         }
     }
 
+    // A Completed handler must be attached before the animation starts (BeginAnimation copies it).
     private static void Animate(IAnimatable target, DependencyProperty property, double from, double to,
-        double ms, IEasingFunction ease) =>
-        target.BeginAnimation(property, new DoubleAnimation(from, to, Motion.Ms(ms))
+        double ms, IEasingFunction ease, EventHandler? completed = null)
+    {
+        var anim = new DoubleAnimation(from, to, Motion.Ms(ms))
         {
             EasingFunction = ease,
             FillBehavior = FillBehavior.HoldEnd,
-        });
+        };
+        if (completed != null) anim.Completed += completed;
+        target.BeginAnimation(property, anim);
+    }
 
     /// <summary>Step 1: the page you are leaving fades out and drifts a little. Nothing is photographed and
     /// nothing is built yet, so these frames cost nothing. Step 2 (<see cref="SwapPage"/>) happens once it is
@@ -479,11 +562,18 @@ public partial class LibraryHome : UserControl
         // A page that is one cached picture fades and moves on the graphics card alone.
         PageContent.CacheMode = new BitmapCache();
         var move = (TranslateTransform)PageContent.RenderTransform;
-        Animate(PageContent, OpacityProperty, 1, 0, 100, QuadIn);
-        Animate(move, TranslateTransform.XProperty, 0, -direction * 12, 100, QuadIn);
+        // The page is swapped the moment the fade has finished, once its last frame has been drawn.
+        // (A fixed pause after the fade left the page blank for a beat longer than it needed.)
+        Animate(PageContent, OpacityProperty, 1, 0, Motion.PageOutMs, Motion.PageOutEase,
+            completed: (_, _) => Dispatcher.InvokeAsync(() =>
+            {
+                if (gen == _gen) SwapPage();
+            }, DispatcherPriority.Render));
+        Animate(move, TranslateTransform.XProperty, 0, -direction * Motion.PageOutDriftPx, Motion.PageOutMs, Motion.PageOutEase);
 
-        // a few milliseconds after the fade has finished, so its last frame has been drawn
-        Motion.After(120, () =>
+        // Safety net: if the event above never arrives, the page is still swapped (SwapPage runs only once),
+        // so a navigation can never leave the old page faded out and nothing in its place.
+        Motion.After(Motion.PageOutMs + 80, () =>
         {
             if (gen == _gen) SwapPage();
         });
@@ -517,6 +607,12 @@ public partial class LibraryHome : UserControl
 
     private void OnLibraryPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(LibraryViewModel.RailTargetWidth))
+        {
+            ApplyRailWidth(animate: true);
+        }
+        if (e.PropertyName == nameof(LibraryViewModel.IsRailVisible) && !_changingRail) _autoCollapsed = false;
+
         if (e.PropertyName == nameof(LibraryViewModel.IsLoading) && _awaitingPage && _watched is { IsLoading: false })
             QueuePageTransition();
     }
@@ -543,13 +639,14 @@ public partial class LibraryHome : UserControl
         double dir = _direction;
 
         if (PageContent.CacheMode == null) PageContent.CacheMode = new BitmapCache();
+        _playing = true;
         var move = (TranslateTransform)PageContent.RenderTransform;
-        Animate(PageContent, OpacityProperty, 0, 1, 240, QuintOut);
-        Animate(move, TranslateTransform.XProperty, dir * 30, 0, 400, QuintOut);
-        Animate(move, TranslateTransform.YProperty, dir == 0 ? 12 : 0, 0, 400, QuintOut);
+        Animate(PageContent, OpacityProperty, 0, 1, Motion.PageInFadeMs, Motion.PageFadeEase);
+        Animate(move, TranslateTransform.XProperty, dir * Motion.PageInSlidePx, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
+        Animate(move, TranslateTransform.YProperty, dir == 0 ? 12 : 0, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
 
         // once everything has come to rest, the page goes back to being live content
-        Motion.After(440, () =>
+        Motion.After(Motion.PageInSlideMs + 40, () =>
         {
             if (gen == _gen) EndTransition();
         });
@@ -565,6 +662,7 @@ public partial class LibraryHome : UserControl
         _gen++;
         _awaitingPage = false;
         _playQueued = false;
+        _playing = false;
         _failsafe?.Stop();
 
         PageContent.BeginAnimation(OpacityProperty, null);
@@ -576,6 +674,36 @@ public partial class LibraryHome : UserControl
         move.X = 0;
         move.Y = 0;
 
+        FlushDeferredPreviews();
         pending?.Invoke();
+    }
+
+    // ------------------------------------------------------------- previews during a transition
+
+    // While the page slides in it is a single cached picture on the graphics card. A thumbnail that arrives
+    // (and fades in) at that moment changes the picture, so the whole page has to be redrawn on the CPU for
+    // that frame: that was the hitch in the middle of the slide. Cards that appear during a transition
+    // therefore wait, and ask for their pictures as soon as the page is at rest.
+    private bool InTransition => _pendingApply != null || _awaitingPage || _playing;
+
+    private void FileCard_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement card) return;
+        if (InTransition)
+        {
+            if (!_deferredPreviews.Contains(card)) _deferredPreviews.Add(card);
+            return;
+        }
+        Dispatcher.InvokeAsync(() => LoadPreview(card), DispatcherPriority.ContextIdle);
+    }
+
+    private void FlushDeferredPreviews()
+    {
+        if (_deferredPreviews.Count == 0) return;
+        var cards = _deferredPreviews.ToList();
+        _deferredPreviews.Clear();
+        foreach (var card in cards)
+            if (card.IsLoaded)
+                Dispatcher.InvokeAsync(() => LoadPreview(card), DispatcherPriority.ContextIdle);
     }
 }

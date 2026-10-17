@@ -50,6 +50,10 @@ public partial class MainWindow : Window
         // WindowStyle="None" + WindowChrome doesn't clamp maximize to the work area —
         // without this hook the maximized window covers the taskbar.
         Loaded += (_, _) => MaximizeWorkArea.Hook(this);
+        // Sideways trackpad swipes: listen on the whole UI thread rather than on this window's own
+        // message hook, so the message is seen whichever of our windows Windows addresses it to.
+        System.Windows.Interop.ComponentDispatcher.ThreadPreprocessMessage += OnThreadMessage;
+        Closed += (_, _) => System.Windows.Interop.ComponentDispatcher.ThreadPreprocessMessage -= OnThreadMessage;
         Closing += MainWindow_Closing;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         ViewModel.PasteImageRequested += () =>
@@ -139,6 +143,9 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(MainViewModel.SelectedTab))
             OnSelectedTabSwitched();
 
+        if (e.PropertyName == nameof(MainViewModel.IsSettingsOpen))
+            OnSettingsOpenChanged();
+
         if (e.PropertyName == nameof(MainViewModel.IsFullscreen))
             ApplyFullscreen(ViewModel.IsFullscreen);
         else if (e.PropertyName == nameof(MainViewModel.SelectedDocument))
@@ -156,6 +163,48 @@ public partial class MainWindow : Window
                 PaletteBox.SelectAll();
             }, DispatcherPriority.Input);
         }
+    }
+
+    /// <summary>The settings page comes and goes with the same slide-and-fade the folder pages use.</summary>
+    private void OnSettingsOpenChanged()
+    {
+        if (ViewModel.IsSettingsOpen)
+        {
+            SettingsHost.Visibility = Visibility.Visible;
+            SettingsPage.Enter();
+        }
+        else
+        {
+            object? shownAtClose = _shownTab;
+            SettingsPage.Exit(() =>
+            {
+                if (!ViewModel.IsSettingsOpen) SettingsHost.Visibility = Visibility.Collapsed;
+            });
+            // Runs before the next frame is drawn, once any tab change that closed settings has settled.
+            Dispatcher.BeginInvoke(() => RevealUnderSettings(shownAtClose), DispatcherPriority.Normal);
+        }
+    }
+
+    /// <summary>Closing settings makes the start screen or the documents visible again. They used to
+    /// pop in at full strength under the fading settings page, and their first layout pass landed in
+    /// the middle of that fade, which is what made it stutter. Now the page underneath waits a beat
+    /// at zero opacity (the layout cost is paid while nothing moves), then fades up and settles in
+    /// from the left while the settings page fades out to the right. A plain tab switch has its own
+    /// transition (<see cref="AnimateTabSwitch"/>) and is left alone.</summary>
+    private void RevealUnderSettings(object? shownAtClose)
+    {
+        if (ViewModel.IsSettingsOpen || !Motion.Enabled) return;
+        if (!ReferenceEquals(_shownTab, shownAtClose)) return;
+
+        FrameworkElement layer = ViewModel.IsHomeSelected ? HomeHost : DocsLayer;
+        if (layer.Visibility != Visibility.Visible) return;
+
+        const double hold = 90;   // covers the layout pass of the page coming back
+        layer.CacheMode = new BitmapCache();
+        Motion.Keys(layer, OpacityProperty, (0, 0), (hold, 0), (hold + 280, 1));
+        if (Motion.RigOf(layer) is { } rig)
+            Motion.Keys(rig.Move, TranslateTransform.XProperty, (0, -20), (hold, -20), (hold + 420, 0));
+        Motion.After(hold + 460, () => layer.CacheMode = null);
     }
 
     private void ApplyFullscreen(bool on)
@@ -199,6 +248,8 @@ public partial class MainWindow : Window
                 "Graphite", DialogButtons.YesNo, DialogIcon.Warning);
             if (answer != MessageBoxResult.Yes) { e.Cancel = true; return; }
         }
+        // A new document that was never saved is not written by itself: ask about each one.
+        if (!ViewModel.ConfirmUnsavedWriters()) { e.Cancel = true; return; }
         // Documents of the built-in editor save themselves; make sure the last edit made it to disk.
         if (!ViewModel.FlushWriters())
         {
@@ -621,6 +672,87 @@ public partial class MainWindow : Window
     }
 
     // ------------------------------------------------------------- wheel, zoom, touch
+
+    private const int WM_MOUSEHWHEEL = 0x020E;
+
+    /// <summary>A trackpad's sideways two-finger swipe (and a tilt wheel) arrives as WM_MOUSEHWHEEL, which
+    /// WPF doesn't turn into any input event, so scroll viewers never saw it and a zoomed-in page or
+    /// document could only be panned with Shift+wheel or the scroll bar. Catch it here and scroll
+    /// whichever viewer is under the pointer that can actually move sideways.</summary>
+    private void OnThreadMessage(ref System.Windows.Interop.MSG msg, ref bool handled)
+    {
+        if (handled || msg.message != WM_MOUSEHWHEEL || !IsActive || ViewModel.IsSettingsOpen) return;
+        int delta = (short)((msg.wParam.ToInt64() >> 16) & 0xFFFF);   // + is right
+        if (delta == 0) return;
+        try
+        {
+            if (ScrollSideways(new Point(msg.pt_x, msg.pt_y), delta)) handled = true;
+        }
+        catch (Exception ex) { App.LogError("Sideways scroll failed", ex); }
+    }
+
+    private bool ScrollSideways(Point screen, int delta)
+    {
+        Point local = PointFromScreen(screen);
+        if (local.X < 0 || local.Y < 0 || local.X > ActualWidth || local.Y > ActualHeight) return false;
+
+        var hit = VisualTreeHelper.HitTest(this, local)?.VisualHit;
+        ScrollViewer? sv = null;
+        for (DependencyObject? d = hit; d != null;
+             d = d is Visual or System.Windows.Media.Media3D.Visual3D
+                 ? VisualTreeHelper.GetParent(d)
+                 : LogicalTreeHelper.GetParent(d))
+        {
+            if (d is ScrollViewer s && s.ScrollableWidth > 0 &&
+                s.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled)
+            {
+                sv = s;
+                break;
+            }
+        }
+
+        // Over the documents but not over a scrollable part (a margin, an overlay): use the open document's own viewer.
+        if (sv == null && hit is Visual hv && hv.IsDescendantOf(DocsLayer))
+            sv = ActiveDocumentScrollViewer();
+        if (sv == null || sv.ScrollableWidth <= 0) return false;
+
+        // On a PDF: settle any live zoom preview and stop the page-pinning, like the wheel does.
+        if (FindAncestor<ListBox>(sv) is { DataContext: DocumentViewModel doc })
+        {
+            _pinSettleGen++;
+            _pins.Remove(doc);
+            if (_zp != null) CommitZoomPreview();
+        }
+
+        sv.ScrollToHorizontalOffset(Math.Clamp(sv.HorizontalOffset + delta, 0, sv.ScrollableWidth));
+        return true;
+    }
+
+    /// <summary>The scroll viewer of the PDF or document that is showing.</summary>
+    private ScrollViewer? ActiveDocumentScrollViewer()
+    {
+        if (ViewModel.SelectedDocument is { } doc &&
+            DocHost.ItemContainerGenerator.ContainerFromItem(doc) is DependencyObject pdfHost)
+            return FindDescendant<ListBox>(pdfHost) is { } lb ? FindScrollViewer(lb) : null;
+
+        if (ViewModel.SelectedWriter is { } writer &&
+            WriterHost.ItemContainerGenerator.ContainerFromItem(writer) is DependencyObject writerHost)
+            return FindNamedScrollViewer(writerHost, "Surface");
+
+        return null;
+    }
+
+    private static ScrollViewer? FindNamedScrollViewer(DependencyObject root, string name)
+    {
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer { Name: var nm } sv && nm == name) return sv;
+            if (FindNamedScrollViewer(child, name) is { } found) return found;
+        }
+        return null;
+    }
 
     private void PagesHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
@@ -1332,6 +1464,7 @@ public partial class MainWindow : Window
 
     private readonly Dictionary<PageViewModel, TextBox> _inlineEditors = new();
     private (DocumentViewModel Doc, AnnotationViewModel Vm, TextBox Tb)? _inlineEdit;
+    private bool _inlineAutoWidth;   // the box was made by a click: it grows with the text and is fitted when you finish
 
     private void InlineEditor_Loaded(object sender, RoutedEventArgs e) => TrackInlineEditor(sender);
     private void InlineEditor_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) =>
@@ -1373,9 +1506,13 @@ public partial class MainWindow : Window
 
             double s = page.DisplayWidth / Math.Max(page.WidthPt, 1);
             var b = vm.Model.Bounds;
+            _inlineAutoWidth = doc.InlineEditAutoWidth;
             Canvas.SetLeft(tb, b.X * s);
             Canvas.SetTop(tb, b.Y * s);
-            tb.Width = Math.Max(60, b.Width * s);
+            // A dragged box keeps the width you drew; a clicked one starts as a caret and grows with the text
+            // until it reaches the edge of the page, then wraps.
+            tb.Width = _inlineAutoWidth ? double.NaN : Math.Max(30, b.Width * s);
+            tb.MaxWidth = Math.Max(40, page.DisplayWidth - b.X * s - 6);
             tb.FontSize = Math.Max(6, vm.Model.FontSize * s);
             tb.FontFamily = new FontFamily(vm.Model.FontFamily);
             Brush fg;
@@ -1396,7 +1533,7 @@ public partial class MainWindow : Window
         if (_inlineEdit is not { } edit) return;
         _inlineEdit = null;
         edit.Tb.Visibility = Visibility.Collapsed;
-        string text = edit.Tb.Text.Trim();
+        string text = edit.Tb.Text.Replace("\r\n", "\n").Trim();
         if (cancel || text.Length == 0)
         {
             // Nothing written — quietly drop the just-created empty text box (the
@@ -1404,15 +1541,62 @@ public partial class MainWindow : Window
             edit.Doc.DiscardAnnotation(edit.Vm);
             return;
         }
-        edit.Vm.Model.Contents = text;
-        edit.Vm.Model.Modified = DateTime.Now;
+        var m = edit.Vm.Model;
+        m.Contents = text;
+        FitTextBox(edit.Doc, m, text);
+        m.Modified = DateTime.Now;
         edit.Doc.NotifyAnnotationChanged();
+    }
+
+    /// <summary>Size the finished text box to its text, so the box on the page (and in the saved PDF) is exactly
+    /// as big as what was typed: a clicked box gets the width of its text (up to the page edge), and every box is at
+    /// least as tall as its wrapped lines (before, extra lines were cut off).</summary>
+    private void FitTextBox(DocumentViewModel doc, Annotation m, string text)
+    {
+        var b = m.Bounds;
+        double pageWidth = m.PageIndex < doc.Pages.Count ? doc.Pages[m.PageIndex].WidthPt : b.X + b.Width;
+        double width = b.Width;
+        if (_inlineAutoWidth)
+        {
+            double natural = MeasureText(m, text, null).Width;
+            width = Math.Clamp(Math.Ceiling(natural) + 2, 24, Math.Max(24, pageWidth - b.X - 4));
+        }
+        double height = Math.Ceiling(MeasureText(m, text, width).Height) + 1;
+        m.Bounds = new RectD(b.X, b.Y, width, _inlineAutoWidth ? height : Math.Max(height, b.Height));
+    }
+
+    private Size MeasureText(Annotation m, string text, double? maxWidth)
+    {
+        var typeface = new Typeface(new FontFamily(m.FontFamily),
+            m.Italic ? FontStyles.Italic : FontStyles.Normal,
+            m.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
+        var formatted = new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture,
+            FlowDirection.LeftToRight, typeface, m.FontSize, Brushes.Black,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        if (maxWidth is { } w) formatted.MaxTextWidth = Math.Max(10, w);
+        return new Size(formatted.WidthIncludingTrailingWhitespace, formatted.Height);
     }
 
     private void InlineEditor_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) { CommitInlineEdit(); e.Handled = true; }
-        else if (e.Key == Key.Escape) { CommitInlineEdit(cancel: true); e.Handled = true; }
+        if (e.Key == Key.Enter)
+        {
+            // Ctrl+Enter (or Shift+Enter) is a new line inside the box; plain Enter finishes.
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0)
+            {
+                if (sender is TextBox tb)
+                {
+                    int at = tb.SelectionStart;
+                    tb.SelectedText = Environment.NewLine;
+                    tb.CaretIndex = at + Environment.NewLine.Length;
+                    tb.SelectionLength = 0;
+                }
+            }
+            else CommitInlineEdit();
+            e.Handled = true;
+        }
+        // Escape also finishes (what you typed is kept; an empty box just disappears).
+        else if (e.Key == Key.Escape) { CommitInlineEdit(); e.Handled = true; }
     }
 
     private void InlineEditor_LostFocus(object sender, RoutedEventArgs e) => CommitInlineEdit();
@@ -1540,6 +1724,14 @@ public partial class MainWindow : Window
         if (ViewModel.IsPaletteOpen)
         {
             if (e.Key == Key.Escape) { ViewModel.ClosePalette(); e.Handled = true; }
+            return;
+        }
+
+        // Settings page: Esc goes back to where the person was.
+        if (ViewModel.IsSettingsOpen && e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            ViewModel.IsSettingsOpen = false;
+            e.Handled = true;
             return;
         }
 

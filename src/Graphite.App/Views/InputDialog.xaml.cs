@@ -1,4 +1,6 @@
 using System.Windows;
+using Graphite.App.Interop;
+using Graphite.App.Services;
 
 namespace Graphite.App.Views;
 
@@ -7,7 +9,12 @@ public partial class InputDialog : Window
     public InputDialog()
     {
         InitializeComponent();
-        Loaded += (_, _) => { ValueBox.SelectAll(); ValueBox.Focus(); };
+        Loaded += (_, _) =>
+        {
+            Backdrop.Apply(this, ThemeService.IsDark);
+            ValueBox.SelectAll();
+            ValueBox.Focus();
+        };
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e) => DialogResult = true;

@@ -41,6 +41,14 @@ public partial class LibraryViewModel : ObservableObject
         sortMode = ThemeService.LibrarySort is "Modified" or "Size" ? ThemeService.LibrarySort : "Name";
         isGrid = ThemeService.LibraryGrid;
         includeOffice = ThemeService.LibraryIncludeOffice;
+        ThemeService.HomeLayoutChanged += () =>
+        {
+            OnPropertyChanged(nameof(CompactHome));
+            OnPropertyChanged(nameof(ShowHomeHeader));
+            OnPropertyChanged(nameof(ShowTitleHeader));
+            OnPropertyChanged(nameof(ShowFoldersCount));
+            RaiseRailState();
+        };
 
         _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
         _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); _ = ReloadAsync(rescanRail: false); };
@@ -83,6 +91,8 @@ public partial class LibraryViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsPinnedActive))]
     [NotifyPropertyChangedFor(nameof(ShowHomeSections))]
     [NotifyPropertyChangedFor(nameof(ShowFilesBody))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeHeader))]
+    [NotifyPropertyChangedFor(nameof(ShowTitleHeader))]
     [NotifyPropertyChangedFor(nameof(ShowBreadcrumb))]
     [NotifyPropertyChangedFor(nameof(ShowChips))]
     [NotifyPropertyChangedFor(nameof(ShowTypeToggle))]
@@ -97,6 +107,7 @@ public partial class LibraryViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(RootName))]
     [NotifyPropertyChangedFor(nameof(CanSort))]
     [NotifyPropertyChangedFor(nameof(ShowFoldersSection))]
+    [NotifyPropertyChangedFor(nameof(ShowFoldersCount))]
     [NotifyPropertyChangedFor(nameof(SearchPlaceholder))]
     private string? rootPath;
 
@@ -107,6 +118,8 @@ public partial class LibraryViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsSearching))]
     [NotifyPropertyChangedFor(nameof(ShowHomeSections))]
     [NotifyPropertyChangedFor(nameof(ShowFilesBody))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeHeader))]
+    [NotifyPropertyChangedFor(nameof(ShowTitleHeader))]
     [NotifyPropertyChangedFor(nameof(ShowChips))]
     [NotifyPropertyChangedFor(nameof(CanSort))]
     private string searchText = "";
@@ -128,7 +141,9 @@ public partial class LibraryViewModel : ObservableObject
 
     [ObservableProperty] private bool includeOffice;
     [ObservableProperty] private bool isLoading;
-    [ObservableProperty] private string statusText = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RailLibraryStatus))]
+    private string statusText = "";
     [ObservableProperty] private string emptyText = "";
 
     [ObservableProperty]
@@ -141,11 +156,18 @@ public partial class LibraryViewModel : ObservableObject
     [ObservableProperty] private bool hasFiles;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowFoldersSection))]
+    [NotifyPropertyChangedFor(nameof(ShowFoldersCount))]
     [NotifyPropertyChangedFor(nameof(ShowChips))]
     private bool hasFolders;
 
     public bool HasRoot => RootPath != null;
     public string RootName => RootPath == null ? "" : FolderName(RootPath);
+
+    /// <summary>The sidebar's title line: the library folder, or a hint that none is chosen.</summary>
+    public string RailLibraryName => RootPath == null ? "No library yet" : FolderName(RootPath);
+    public string RailLibraryStatus => RootPath == null ? "Choose a folder" : StatusText;
+    public int PinnedCount => ThemeService.PinnedFiles.Count;
+    public bool HasPinned => PinnedCount > 0;
     public bool IsHomeActive => CurrentView == LibraryView.Home;
     public bool IsRecentActive => CurrentView == LibraryView.Recent;
     public bool IsPinnedActive => CurrentView == LibraryView.Pinned;
@@ -154,6 +176,14 @@ public partial class LibraryViewModel : ObservableObject
 
     public bool ShowHomeSections => CurrentView == LibraryView.Home && !IsSearching;
     public bool ShowFilesBody => !ShowHomeSections;
+
+    // The start page can drop its clock, greeting and "continue reading" card (Settings > Start page).
+    // Then the page starts with the library's name as a title, like every folder page does, and the
+    // folders fill the space.
+    public bool CompactHome => ThemeService.CompactHome;
+    public bool ShowHomeHeader => ShowHomeSections && !CompactHome;
+    public bool ShowTitleHeader => ShowFilesBody || (ShowHomeSections && CompactHome);
+    public bool ShowFoldersCount => ShowFoldersSection && !CompactHome;
     public bool ShowBreadcrumb => CurrentView == LibraryView.Folder;
     public bool ShowContinue => ContinueItem != null;
 
@@ -356,6 +386,7 @@ public partial class LibraryViewModel : ObservableObject
     {
         ThemeService.SetFolderColor(card.Path, hex);
         card.RefreshColor();
+        foreach (var item in RailItems) item.RefreshColor();
     }
 
     /// <summary>Use one colour for every folder card.</summary>
@@ -363,6 +394,7 @@ public partial class LibraryViewModel : ObservableObject
     {
         ThemeService.SetAllFolderColors(hex);
         foreach (var folder in Folders) folder.RefreshColor();
+        foreach (var item in RailItems) item.RefreshColor();
     }
 
     /// <summary>A breadcrumb was clicked: the library root is the home page, anything else a folder.</summary>
@@ -562,6 +594,8 @@ public partial class LibraryViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(path)) return;
         bool pinned = ThemeService.TogglePinned(path);
+        OnPropertyChanged(nameof(PinnedCount));
+        OnPropertyChanged(nameof(HasPinned));
         foreach (var card in Files.Concat(Recents).Where(c => LibraryScanner.SamePath(c.Path, path)))
             card.IsPinned = pinned;
         if (CurrentView == LibraryView.Pinned) _ = ReloadAsync(rescanRail: false);
@@ -964,6 +998,10 @@ public partial class LibraryViewModel : ObservableObject
                 RailItems.Add(new RailItem(RailKind.Files, "Files in this folder", root, countText: _rootFileCount.ToString()));
         }
         UpdateRailSelection();
+        OnPropertyChanged(nameof(RailLibraryName));
+        OnPropertyChanged(nameof(RailLibraryStatus));
+        OnPropertyChanged(nameof(PinnedCount));
+        OnPropertyChanged(nameof(HasPinned));
     }
 
     private void UpdateRailSelection()

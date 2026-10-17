@@ -30,9 +30,10 @@ public interface IWriterSurface
 
 /// <summary>
 /// An open document in the built-in editor: the rich-text content, where it lives on disk, and
-/// everything the tab and the editor chrome show about it. Documents are stored as .docx in the
-/// folder they were created in and saved automatically a moment after the last edit, so there
-/// is no "unsaved changes" prompt.
+/// everything the tab and the editor chrome show about it. Documents are stored as .docx. An opened
+/// document is saved automatically a moment after the last edit. A NEW document is not written to disk
+/// at all until the person saves it by hand for the first time (Ctrl+S, which asks for a name); from then
+/// on it autosaves like any other. Until then closing it asks whether to save.
 /// </summary>
 public sealed partial class WriterViewModel : ObservableObject, IDisposable
 {
@@ -44,13 +45,14 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
     private bool _tracking;
     private bool _disposed;
 
-    public WriterViewModel(string path, FlowDocument document, PageSettings page)
+    public WriterViewModel(string path, FlowDocument document, PageSettings page, bool onDisk = true)
     {
         FilePath = path;
         Document = document;
         Page = page;
+        HasFile = onDisk;
         _title = Path.GetFileNameWithoutExtension(path);
-        saveStatus = $"Saved to {FolderName}";
+        saveStatus = onDisk ? $"Saved to {FolderName}" : NotSavedText;
 
         _saveTimer = new DispatcherTimer { Interval = SaveDelay };
         _saveTimer.Tick += (_, _) =>
@@ -67,6 +69,18 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
     public string FilePath { get; private set; }
 
     public string FolderPath => Path.GetDirectoryName(FilePath) ?? "";
+
+    private const string NotSavedText = "Not saved yet — press Ctrl+S";
+
+    /// <summary>False for a new document that was never saved: <see cref="FilePath"/> is then only the
+    /// name and folder it would get, and nothing is written (or autosaved) until the first manual save.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StoredAsText))]
+    [NotifyPropertyChangedFor(nameof(AutosaveText))]
+    private bool hasFile;
+
+    /// <summary>The small note in the corner of the editor.</summary>
+    public string AutosaveText => HasFile ? "Autosave on" : "Not saved yet · Ctrl+S to save";
 
     public string FolderName
     {
@@ -109,7 +123,7 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
 
     public string WordCountText => WordCount == 1 ? "1 word" : $"{WordCount} words";
 
-    public string StoredAsText => $"Stored as .docx in {FolderName}";
+    public string StoredAsText => HasFile ? $"Stored as .docx in {FolderName}" : $"Will be saved in {FolderName}";
 
     partial void OnWordCountChanged(int value) => OnPropertyChanged(nameof(WordCountText));
 
@@ -138,15 +152,17 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
 
     // ------------------------------------------------------------- create / open
 
-    /// <summary>Make "Untitled.docx" (or "Untitled 2.docx"…) in <paramref name="folder"/> and open it.</summary>
-    public static WriterViewModel CreateNew(string folder)
+    /// <summary>A blank "Untitled" document for <paramref name="folder"/>. Nothing is written to disk
+    /// until the person saves it. <paramref name="taken"/> says which paths other open new documents
+    /// already plan to use, so two untitled tabs never share a name.</summary>
+    public static WriterViewModel CreateNew(string folder, Func<string, bool>? taken = null)
     {
-        Directory.CreateDirectory(folder);
         string path = GraphiteDocx.UniquePath(folder, "Untitled", ".docx");
+        for (int n = 2; taken?.Invoke(path) == true; n++)
+            path = GraphiteDocx.UniquePath(folder, $"Untitled {n}", ".docx");
         var page = new PageSettings();
         var document = DocxCodec.NewDocument(page);
-        DocxCodec.Save(path, document, page, Path.GetFileNameWithoutExtension(path));
-        return new WriterViewModel(path, document, page);
+        return new WriterViewModel(path, document, page, onDisk: false);
     }
 
     public static WriterViewModel Open(string path)
@@ -165,20 +181,33 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
         RefreshStats();
     }
 
-    /// <summary>The content changed: schedule an autosave.</summary>
+    /// <summary>The content changed: schedule an autosave (a new, never-saved document just becomes "dirty").</summary>
     public void MarkChanged()
     {
         if (!_tracking || _disposed) return;
+        ScheduleSave();
+    }
+
+    private void ScheduleSave()
+    {
         IsDirty = true;
+        if (!HasFile)
+        {
+            SaveStatus = NotSavedText;
+            return;
+        }
         SaveStatus = "Editing…";
         _saveTimer.Interval = SaveDelay;
         _saveTimer.Stop();
         _saveTimer.Start();
     }
 
+    /// <summary>Write the document to its file. For a new document this is only called once the person
+    /// chose where (<see cref="SaveFirstTime"/>); it never runs by itself before that.</summary>
     public bool Save()
     {
         if (_disposed) return true;
+        if (!HasFile) return false;
         _saveTimer.Stop();
         try
         {
@@ -197,8 +226,34 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Write out anything still waiting for its autosave (closing the tab or the app).</summary>
-    public bool Flush() => !IsDirty || Save();
+    /// <summary>The first manual save of a new document: give it its place on disk and write it. From now
+    /// on it autosaves. False (and nothing changes) if writing failed.</summary>
+    public bool SaveFirstTime(string path)
+    {
+        if (_disposed || HasFile) return HasFile;
+        string oldPath = FilePath, oldTitle = _title;
+        FilePath = path;
+        _title = Path.GetFileNameWithoutExtension(path);
+        HasFile = true;
+        if (!Save())
+        {
+            FilePath = oldPath;
+            _title = oldTitle;
+            HasFile = false;
+            SaveStatus = "Couldn't save — pick another place";
+            return false;
+        }
+        GraphiteDocx.Forget(path);
+        OnPropertyChanged(nameof(FilePath));
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(StoredAsText));
+        PathChanged?.Invoke(oldPath, path);
+        return true;
+    }
+
+    /// <summary>Write out anything still waiting for its autosave (closing the tab or the app). A new
+    /// document that was never saved is left alone: it is not written without the person's say.</summary>
+    public bool Flush() => !HasFile || !IsDirty || Save();
 
     // ------------------------------------------------------------- the editor surface
 
@@ -243,11 +298,7 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
         DocxCodec.Configure(Document, Page);
         PageChanged?.Invoke();
         OnPropertyChanged(nameof(Page));
-        IsDirty = true;
-        SaveStatus = "Editing…";
-        _saveTimer.Interval = SaveDelay;
-        _saveTimer.Stop();
-        _saveTimer.Start();
+        ScheduleSave();
     }
 
     // ------------------------------------------------------------- rename
@@ -256,6 +307,15 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
     {
         string name = GraphiteDocx.SanitizeFileName(requested);
         if (name == _title) return true;
+
+        // Never saved: there is no file to move yet, only the name it will be offered under.
+        if (!HasFile)
+        {
+            _title = name;
+            FilePath = Path.Combine(FolderPath, name + ".docx");
+            OnPropertyChanged(nameof(FilePath));
+            return true;
+        }
 
         string newPath = Path.Combine(FolderPath, name + ".docx");
         bool onlyCaseChanged = string.Equals(newPath, FilePath, StringComparison.OrdinalIgnoreCase);

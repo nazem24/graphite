@@ -14,6 +14,7 @@ using Graphite.App.Views;
 using Graphite.Core.Export;
 using Graphite.Core.Library;
 using Graphite.Core.Pdf;
+using Graphite.Core.Rendering;
 using Microsoft.Win32;
 
 namespace Graphite.App.ViewModels;
@@ -44,6 +45,12 @@ public partial class MainViewModel : ObservableObject
 
     private bool _syncingTabs;
     [ObservableProperty] private bool isDarkTheme;
+
+    /// <summary>The full-page settings view is showing (it covers Home and the open documents).</summary>
+    [ObservableProperty] private bool isSettingsOpen;
+
+    /// <summary>The settings page's state (mode, window material, motion).</summary>
+    public SettingsViewModel Settings { get; }
     [ObservableProperty] private bool showSidebar = true;
     [ObservableProperty] private bool showInspector = true;
     [ObservableProperty] private bool isFullscreen;
@@ -61,6 +68,10 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel()
     {
         IsDarkTheme = ThemeService.IsDark;
+        Settings = new SettingsViewModel(() => IsSettingsOpen = false, AppVersion,
+            () => CheckForUpdatesCommand.Execute(null));
+        ThemeService.AppearanceChanged += () => IsDarkTheme = ThemeService.IsDark;
+        ThemeService.ToolDefaultsChanged += () => { foreach (var doc in Documents) doc.ApplyToolDefaults(); };
         foreach (var f in ThemeService.RecentFiles) RecentFiles.Add(f);
         Documents.CollectionChanged += (_, e) => MirrorTabs(e);
         Writers.CollectionChanged += (_, e) => MirrorTabs(e);
@@ -102,6 +113,23 @@ public partial class MainViewModel : ObservableObject
     /// <summary>True while the Home tab (start screen) is showing instead of a document.</summary>
     public bool IsHomeSelected => SelectedDocument == null && SelectedWriter == null;
 
+    /// <summary>The start screen is actually on screen (Home is selected and settings is not covering it).</summary>
+    public bool IsHomeVisible => IsHomeSelected && !IsSettingsOpen;
+
+    /// <summary>The command bar's library panel button: on the start page, and on the settings page.</summary>
+    public bool ShowLibraryToggle => IsHomeSelected || IsSettingsOpen;
+
+    partial void OnIsSettingsOpenChanged(bool value)
+    {
+        if (value) Settings.Refresh();
+        OnPropertyChanged(nameof(IsHomeVisible));
+        OnPropertyChanged(nameof(ShowLibraryToggle));
+    }
+
+    /// <summary>Open the settings page, or close it again (the command bar's gear button, Ctrl+,).</summary>
+    [RelayCommand]
+    private void ToggleSettings() => IsSettingsOpen = !IsSettingsOpen;
+
     /// <summary>A PDF is showing (the markup tools apply).</summary>
     public bool IsPdfSelected => SelectedDocument != null;
 
@@ -110,17 +138,25 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>Switch to the Home tab. Open documents stay open in their own tabs.</summary>
     [RelayCommand]
-    private void GoHome() => SelectedTab = null;
+    private void GoHome()
+    {
+        IsSettingsOpen = false;
+        SelectedTab = null;
+    }
 
     private void RaiseSelectionKinds()
     {
         OnPropertyChanged(nameof(IsHomeSelected));
+        OnPropertyChanged(nameof(IsHomeVisible));
+        OnPropertyChanged(nameof(ShowLibraryToggle));
         OnPropertyChanged(nameof(IsPdfSelected));
         OnPropertyChanged(nameof(IsWriterSelected));
     }
 
     partial void OnSelectedTabChanged(object? value)
     {
+        // Picking any tab (or a document opening) leaves the settings page.
+        IsSettingsOpen = false;
         if (_syncingTabs) return;
         _syncingTabs = true;
         try
@@ -416,6 +452,15 @@ public partial class MainViewModel : ObservableObject
 
     private async Task CloseWriterAsync(WriterViewModel writer)
     {
+        // A new document that was never saved: keep it, drop it, or stay.
+        if (!writer.HasFile && writer.IsDirty)
+        {
+            var ask = MessageDialog.Show(Owner, $"“{writer.Title}” hasn't been saved yet. Save it?",
+                "Graphite", DialogButtons.YesNoCancel, DialogIcon.Warning);
+            if (ask == MessageBoxResult.Cancel || ask == MessageBoxResult.None) return;
+            if (ask == MessageBoxResult.Yes && !SaveWriterByHand(writer)) return;
+        }
+
         // Documents save themselves; only a failed save needs the person's say.
         if (!writer.Flush())
         {
@@ -462,10 +507,10 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            var writer = WriterViewModel.CreateNew(folder);
+            var writer = WriterViewModel.CreateNew(folder,
+                taken: candidate => Writers.Any(w => string.Equals(w.FilePath, candidate, StringComparison.OrdinalIgnoreCase)));
             AddWriter(writer);
             SelectedTab = writer;
-            Library.RefreshCommand.Execute(null);
         }
         catch (Exception ex) { Error(ex); }
     }
@@ -542,6 +587,8 @@ public partial class MainViewModel : ObservableObject
     {
         writer.PathChanged += OnWriterPathChanged;
         Writers.Add(writer);
+        // A new document is listed under Recent once it has been saved (see OnWriterPathChanged).
+        if (!writer.HasFile) return;
         ThemeService.AddRecentFile(writer.FilePath);
         RecentFiles.Remove(writer.FilePath);
         RecentFiles.Insert(0, writer.FilePath);
@@ -554,7 +601,47 @@ public partial class MainViewModel : ObservableObject
         ThemeService.RenamePath(oldPath, newPath);
         int at = RecentFiles.IndexOf(oldPath);
         if (at >= 0) RecentFiles[at] = newPath;
+        else if (!RecentFiles.Contains(newPath))
+        {
+            // First save of a new document: it joins the recent files now.
+            ThemeService.AddRecentFile(newPath);
+            RecentFiles.Insert(0, newPath);
+            ThemeService.SetReading(newPath, 0, 1);
+        }
         Library.RefreshCommand.Execute(null);
+    }
+
+    /// <summary>Save a document by hand. A new one asks where and under which name (this is the save that
+    /// switches its autosave on); an existing one is simply written. False if the person cancelled or it failed.</summary>
+    public bool SaveWriterByHand(WriterViewModel writer)
+    {
+        if (writer.HasFile) return writer.Save();
+        var dlg = new SaveFileDialog
+        {
+            Filter = "Word document|*.docx",
+            FileName = writer.Title + ".docx",
+            InitialDirectory = writer.FolderPath,
+            OverwritePrompt = true,
+        };
+        if (dlg.ShowDialog(Owner) != true) return false;
+        string path = dlg.FileName;
+        if (!path.EndsWith(".docx", StringComparison.OrdinalIgnoreCase)) path += ".docx";
+        return writer.SaveFirstTime(path);
+    }
+
+    /// <summary>The window is closing: for each new document with edits that was never saved, ask what to do.
+    /// False when the person cancelled (keep the window open).</summary>
+    public bool ConfirmUnsavedWriters()
+    {
+        foreach (var writer in Writers.Where(w => !w.HasFile && w.IsDirty).ToList())
+        {
+            SelectedTab = writer;
+            var answer = MessageDialog.Show(Owner, $"“{writer.Title}” hasn't been saved yet. Save it?",
+                "Graphite", DialogButtons.YesNoCancel, DialogIcon.Warning);
+            if (answer == MessageBoxResult.Cancel || answer == MessageBoxResult.None) return false;
+            if (answer == MessageBoxResult.Yes && !SaveWriterByHand(writer)) return false;
+        }
+        return true;
     }
 
     /// <summary>Save every open document now (the window is closing). False when one could not be saved.</summary>
@@ -569,7 +656,10 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void SaveWriterCopy()
     {
-        if (SelectedWriter is not { } writer || !writer.Flush()) return;
+        if (SelectedWriter is not { } writer) return;
+        // Never saved: "save a copy" is just the first save.
+        if (!writer.HasFile) { SaveWriterByHand(writer); return; }
+        if (!writer.Flush()) return;
         var dlg = new SaveFileDialog
         {
             Filter = "Word document|*.docx",
@@ -587,10 +677,14 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex) { Error(ex); }
     }
 
+    /// <summary>Printing and exporting read the file on disk, so a document never saved has to be saved first.</summary>
+    private bool EnsureWriterOnDisk(WriterViewModel writer) =>
+        writer.HasFile ? writer.Flush() : SaveWriterByHand(writer);
+
     [RelayCommand]
     private void PrintWriter()
     {
-        if (SelectedWriter is not { } writer || !writer.Flush()) return;
+        if (SelectedWriter is not { } writer || !EnsureWriterOnDisk(writer)) return;
         try
         {
             var dialog = new System.Windows.Controls.PrintDialog();
@@ -616,7 +710,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ExportWriterPdf()
     {
-        if (SelectedWriter is not { } writer || !writer.Flush()) return;
+        if (SelectedWriter is not { } writer || !EnsureWriterOnDisk(writer)) return;
         var dlg = new SaveFileDialog
         {
             Filter = "PDF document|*.pdf",
@@ -702,7 +796,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (SelectedWriter is { } writer)
         {
-            writer.Save();
+            SaveWriterByHand(writer);
             return Task.CompletedTask;
         }
         return SelectedDocument == null ? Task.CompletedTask : SaveDocAsync(SelectedDocument);
@@ -1001,12 +1095,38 @@ public partial class MainViewModel : ObservableObject
         {
             Multiselect = true,
             Filter = "PDF documents|*.pdf",
-            Title = "Choose PDFs to merge (in selection order)",
+            Title = "Choose PDFs to merge",
         };
         if (dlg.ShowDialog(Owner) != true || dlg.FileNames.Length == 0) return;
+        // The dialog shows the files with previews so they can be reordered, removed or topped up.
+        var sources = MergeDialog.Show(Owner!, dlg.FileNames);
+        if (sources == null) return;
+        await MergeSourcesAsync(sources);
+    }
+
+    /// <summary>The PDF-view version of Merge: the open document (with its annotations) is already
+    /// the first entry, and the person adds the files to join with it.</summary>
+    [RelayCommand]
+    private async Task MergeWithCurrent()
+    {
+        if (SelectedDocument is not { } doc) { await Merge(); return; }
+        List<MergeSource>? sources;
         try
         {
-            byte[] merged = await Task.Run(() => PageOperations.MergeFiles(dlg.FileNames));
+            byte[] bytes = doc.GetBytesWithAnnotations();
+            sources = MergeDialog.Show(Owner!, null, doc.Title, bytes);
+        }
+        catch (Exception ex) { Error(ex); return; }
+        if (sources == null) return;
+        await MergeSourcesAsync(sources);
+    }
+
+    private async Task MergeSourcesAsync(List<MergeSource> sources)
+    {
+        try
+        {
+            byte[] merged = await Task.Run(() =>
+                PageOperations.Merge(sources.Select(s => s.Bytes ?? File.ReadAllBytes(s.Path!)).ToList()));
             var doc = await DocumentViewModel.FromBytesAsync(merged, null);
             doc.IsDirty = true;
             Documents.Add(doc);
@@ -1038,12 +1158,11 @@ public partial class MainViewModel : ObservableObject
     private async Task DeletePages()
     {
         if (SelectedDocument is not { } doc) return;
-        string? ranges = InputDialog.Show(Owner!, "Delete pages", "Pages to delete (e.g. 2, 5-7):",
-            (doc.CurrentPageIndex + 1).ToString());
-        if (ranges == null) return;
         try
         {
-            var pages = PageOperations.ParsePageRanges(ranges, doc.Pages.Count);
+            var pick = PagePickerDialog.Pick(Owner!, PagePickMode.Delete, doc.Renderer, doc.CurrentPageIndex);
+            if (pick == null) return;
+            var pages = pick.Pages;
             if (pages.Count >= doc.Pages.Count) throw new InvalidOperationException("Cannot delete every page.");
             await doc.ApplyOperationAsync("Deleting pages…", b => PageOperations.DeletePages(b, pages),
                 new PageOpHint(PageOpKind.Delete, pages.Min()));
@@ -1055,14 +1174,17 @@ public partial class MainViewModel : ObservableObject
     private async Task ExtractPages()
     {
         if (SelectedDocument is not { } doc) return;
-        string? ranges = InputDialog.Show(Owner!, "Extract pages", "Pages to extract (e.g. 1, 3-5):",
-            (doc.CurrentPageIndex + 1).ToString());
-        if (ranges == null) return;
-        var dlg = new SaveFileDialog { Filter = "PDF document|*.pdf", FileName = "extracted.pdf" };
+        var pick = PagePickerDialog.Pick(Owner!, PagePickMode.Extract, doc.Renderer, doc.CurrentPageIndex);
+        if (pick == null) return;
+        var dlg = new SaveFileDialog
+        {
+            Filter = "PDF document|*.pdf",
+            FileName = Path.GetFileNameWithoutExtension(doc.Title) + "-extract.pdf",
+        };
         if (dlg.ShowDialog(Owner) != true) return;
         try
         {
-            var pages = PageOperations.ParsePageRanges(ranges, doc.Pages.Count);
+            var pages = pick.Pages;
             byte[] bytes = doc.GetBytesWithAnnotations();
             byte[] extracted = await Task.Run(() => PageOperations.ExtractPages(bytes, pages));
             await File.WriteAllBytesAsync(dlg.FileName, extracted);
@@ -1080,8 +1202,18 @@ public partial class MainViewModel : ObservableObject
         try
         {
             byte[] other = await File.ReadAllBytesAsync(dlg.FileName);
-            int at = doc.CurrentPageIndex + 1;
-            await doc.ApplyOperationAsync("Inserting pages…", b => PageOperations.InsertPdf(b, at, other),
+            var source = await Task.Run(() => new PdfRenderer(other));
+            var pick = PagePickerDialog.PickForInsert(Owner!, source, Path.GetFileName(dlg.FileName),
+                doc.CurrentPageIndex, doc.Pages.Count);
+            if (pick == null) return;
+            int at = Math.Clamp(pick.InsertAt, 0, doc.Pages.Count);
+            var pages = pick.Pages;
+            bool everything = pages.Count == source.PageCount;
+            await doc.ApplyOperationAsync("Inserting pages…", b =>
+                {
+                    byte[] chosen = everything ? other : PageOperations.ExtractPages(other, pages);
+                    return PageOperations.InsertPdf(b, at, chosen);
+                },
                 new PageOpHint(PageOpKind.Insert, at));
         }
         catch (Exception ex) { Error(ex); }
@@ -1490,7 +1622,12 @@ public partial class MainViewModel : ObservableObject
             new("Go to Home (library)", null, GoHome),
             new("Choose library folder…", null, () => Library.ChooseFolderCommand.Execute(null)),
             new("Merge PDFs…", null, () => _ = Merge()),
+            new("Settings…", "Ctrl+,", () => IsSettingsOpen = true),
             new("Toggle theme", null, ToggleTheme),
+            new("Material: Mica", null, () => ThemeService.SetMaterial("Mica")),
+            new("Material: Blur", null, () => ThemeService.SetMaterial("Blur")),
+            new("Material: Frosted glass", null, () => ThemeService.SetMaterial("Frosted")),
+            new("Material: Glass", null, () => ThemeService.SetMaterial("Glass")),
             new("Toggle fullscreen", "F11", ToggleFullscreen),
             new("Edit signature…", null, EditSignature),
             new("Toggle reduced motion", null, () => ThemeService.SetReduceMotion(!ThemeService.ReduceMotion)),
@@ -1534,6 +1671,7 @@ public partial class MainViewModel : ObservableObject
                 new("Rotate page left", null, () => _ = RotatePageLeft(null)),
                 new("Rotate page right", null, () => _ = RotatePageRight(null)),
                 new("Recognize text (OCR)", null, () => _ = RunOcr()),
+                new("Merge with other PDFs…", null, () => _ = MergeWithCurrent()),
                 new("Split into single pages…", null, () => _ = Split()),
                 new("Insert pages from PDF…", null, () => _ = InsertPages()),
                 new("Insert blank page", null, () => _ = InsertBlankPage()),

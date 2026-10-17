@@ -1,0 +1,29 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Material "Blur" (dark): only the translucent surfaces. ThemeService merges this after
+         Colors.Dark.xaml, so text, strokes and accents stay the theme's own.
+         Windows blurs whatever is behind the window. Light tint, so the desktop shows through softly. -->
+
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#661B1B1D"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#260E0E10"/>
+
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#7A2E2E33" Offset="0"/>
+        <GradientStop Color="#66232327" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#55FFFFFF" Offset="0"/>
+        <GradientStop Color="#18FFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#E02A2A2E"/>
+
+    <!-- Outlines on a see-through surface: a touch brighter than the opaque dark theme's, so
+         controls keep a crisp edge against the lighter backdrop. -->
+    <SolidColorBrush x:Key="App.StrokeBrush" Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="App.StrokeSoftBrush" Color="#1FFFFFFF"/>
+
+    <!-- how strongly the start page's accent glows show (AmbientBackdrop) -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">1.3</sys:Double>
+
+</ResourceDictionary>

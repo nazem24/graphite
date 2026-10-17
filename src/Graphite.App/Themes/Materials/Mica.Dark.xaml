@@ -1,0 +1,24 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Material "Mica" (dark): only the translucent surfaces. ThemeService merges this after
+         Colors.Dark.xaml, so text, strokes and accents stay the theme's own.
+         Windows 11 Mica: a soft, nearly solid backdrop tinted by your wallpaper. This is the original look. -->
+
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#8C1B1B1D"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#2E0E0E10"/>
+
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#9E2E2E33" Offset="0"/>
+        <GradientStop Color="#85232327" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#4DFFFFFF" Offset="0"/>
+        <GradientStop Color="#14FFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#F02A2A2E"/>
+
+    <!-- how strongly the start page's accent glows show (AmbientBackdrop) -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">1.0</sys:Double>
+
+</ResourceDictionary>

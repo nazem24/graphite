@@ -14,11 +14,36 @@ public sealed class ReadingInfo
     public DateTime LastOpenedUtc { get; set; }
 }
 
+/// <summary>The person's own starting style for a markup tool. A null part means "the built-in one".</summary>
+public sealed class ToolDefault
+{
+    public string? Color { get; set; }
+    public double? Width { get; set; }
+    public double? Opacity { get; set; }
+}
+
 public static class ThemeService
 {
     private sealed class Settings
     {
         public bool DarkTheme { get; set; }
+
+        /// <summary>Window material: Mica (the original look), Blur, Frosted or Glass.</summary>
+        public string Material { get; set; } = "Mica";
+
+        /// <summary>Start page without the clock, greeting and "continue reading" card: the folder
+        /// name is the title and the folders fill the page.</summary>
+        public bool CompactHome { get; set; }
+
+        /// <summary>What the start page's sidebar becomes when collapsed: "Rail" (a narrow strip of
+        /// icons) or "Hidden" (gone completely).</summary>
+        public string SidebarCollapse { get; set; } = "Rail";
+
+        /// <summary>Tool name ("Highlight", "Ink", "Rect"...) to the person's default style for it.</summary>
+        public Dictionary<string, ToolDefault> ToolDefaults { get; set; } = new();
+
+        /// <summary>Font size (pt) of a new text box.</summary>
+        public double QuickTextSize { get; set; } = 11;
 
         /// <summary>User turned on "Reduce motion" (palette: Toggle reduced motion).</summary>
         public bool ReduceMotion { get; set; }
@@ -49,6 +74,93 @@ public static class ThemeService
     private static Settings _settings = new();
 
     public static bool IsDark => _settings.DarkTheme;
+
+    /// <summary>The window materials the settings page offers, in display order.</summary>
+    public static readonly string[] Materials = { "Mica", "Blur", "Frosted", "Glass" };
+
+    /// <summary>Current window material (always one of <see cref="Materials"/>).</summary>
+    public static string Material => _settings.Material;
+
+    /// <summary>Raised after the light/dark mode or the material changed and was applied.</summary>
+    public static event Action? AppearanceChanged;
+
+    /// <summary>The start page shows only the library title and its folders (no clock, greeting or
+    /// "continue reading" card).</summary>
+    public static bool CompactHome => _settings.CompactHome;
+
+    /// <summary>Raised after <see cref="SetCompactHome"/> changed the start page's layout.</summary>
+    public static event Action? HomeLayoutChanged;
+
+    // ------------------------------------------------------------- tool defaults
+
+    /// <summary>Raised after a tool default (or the default text size) changed. Open documents re-read them.</summary>
+    public static event Action? ToolDefaultsChanged;
+
+    public static ToolDefault? GetToolDefault(string key) =>
+        _settings.ToolDefaults.TryGetValue(key, out var d) ? d : null;
+
+    /// <summary>Remember the person's colour / thickness / opacity for a tool; null parts mean "built-in".</summary>
+    public static void SetToolDefault(string key, string? color, double? width, double? opacity)
+    {
+        if (color == null && width == null && opacity == null) _settings.ToolDefaults.Remove(key);
+        else _settings.ToolDefaults[key] = new ToolDefault { Color = color, Width = width, Opacity = opacity };
+        Save();
+        ToolDefaultsChanged?.Invoke();
+    }
+
+    /// <summary>Font size (pt) a new text box starts with.</summary>
+    public static double QuickTextSize =>
+        _settings.QuickTextSize is >= 6 and <= 96 ? _settings.QuickTextSize : 11;
+
+    public static void SetQuickTextSize(double size)
+    {
+        size = Math.Clamp(Math.Round(size), 6, 96);
+        if (size == _settings.QuickTextSize) return;
+        _settings.QuickTextSize = size;
+        Save();
+        ToolDefaultsChanged?.Invoke();
+    }
+
+    /// <summary>Back to the app's own style for every tool.</summary>
+    public static void ResetToolDefaults()
+    {
+        _settings.ToolDefaults.Clear();
+        _settings.QuickTextSize = 11;
+        Save();
+        ToolDefaultsChanged?.Invoke();
+    }
+
+    /// <summary>True: collapsing the sidebar leaves a narrow icon rail. False: it disappears.</summary>
+    public static bool CollapseToRail => _settings.SidebarCollapse != "Hidden";
+
+    public static void SetCollapseToRail(bool rail)
+    {
+        string mode = rail ? "Rail" : "Hidden";
+        if (_settings.SidebarCollapse == mode) return;
+        _settings.SidebarCollapse = mode;
+        Save();
+        HomeLayoutChanged?.Invoke();
+    }
+
+    public static void SetCompactHome(bool compact)
+    {
+        if (_settings.CompactHome == compact) return;
+        _settings.CompactHome = compact;
+        Save();
+        HomeLayoutChanged?.Invoke();
+    }
+
+    /// <summary>The override dictionary of a material in a mode (surfaces only; text and accents stay).</summary>
+    public static Uri MaterialUri(string material, bool dark) =>
+        new($"Themes/Materials/{material}.{(dark ? "Dark" : "Light")}.xaml", UriKind.Relative);
+
+    /// <summary>Pick a window material, apply it everywhere and remember it.</summary>
+    public static void SetMaterial(string material)
+    {
+        if (!Materials.Contains(material) || material == _settings.Material) return;
+        _settings.Material = material;
+        ApplyTheme(_settings.DarkTheme);
+    }
 
     public static bool ReduceMotion => _settings.ReduceMotion;
 
@@ -84,6 +196,9 @@ public static class ThemeService
         _settings.PinnedFiles ??= new();
         _settings.FolderColors = new Dictionary<string, string>(
             _settings.FolderColors ?? new(), StringComparer.OrdinalIgnoreCase);
+        if (!Materials.Contains(_settings.Material)) _settings.Material = "Mica";
+        if (_settings.SidebarCollapse is not ("Rail" or "Hidden")) _settings.SidebarCollapse = "Rail";
+        _settings.ToolDefaults ??= new();
         Motion.UserReduced = _settings.ReduceMotion;
         ApplyTheme(_settings.DarkTheme);
     }
@@ -101,6 +216,7 @@ public static class ThemeService
         if (at >= 0) merged[at] = new ResourceDictionary { Source = uri };
         else merged.Insert(0, new ResourceDictionary { Source = uri });
 
+        ApplyMaterialDictionary(dark);
         ApplySystemAccent(dark);
 
         foreach (Window w in Application.Current.Windows)
@@ -111,6 +227,18 @@ public static class ThemeService
         }
 
         Save();
+        AppearanceChanged?.Invoke();
+    }
+
+    /// <summary>Merge the current material's surface brushes after the color theme, so they win
+    /// over the plain translucent surfaces of Colors.*.xaml.</summary>
+    private static void ApplyMaterialDictionary(bool dark)
+    {
+        var dict = new ResourceDictionary { Source = MaterialUri(_settings.Material, dark) };
+        var merged = Application.Current.Resources.MergedDictionaries;
+        for (int i = 0; i < merged.Count; i++)
+            if (merged[i].Source?.OriginalString.Contains("Materials/") == true) { merged[i] = dict; return; }
+        merged.Add(dict);
     }
 
     /// <summary>A very quick opacity dip so the instant brush swap across every

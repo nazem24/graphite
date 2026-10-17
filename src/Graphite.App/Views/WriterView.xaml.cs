@@ -147,10 +147,29 @@ public partial class WriterView : UserControl, IWriterSurface
         // One column as wide as the sheet, so text never splits into newspaper columns.
         _vm.Document.PageWidth = page.WidthDip;
         _vm.Document.ColumnWidth = page.WidthDip;
-        _vm.Document.PagePadding = new Thickness(page.MarginDip);
+        ApplyMargins();
         _guideCount = -1;
         PageGuides.Width = page.WidthDip;
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, UpdatePageInfo);
+        var vm = _vm;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            if (!ReferenceEquals(vm, _vm)) return;
+            // Once the editor has its first layout, set the margins once more (see ApplyMargins).
+            ApplyMargins();
+            UpdatePageInfo();
+        });
+    }
+
+    /// <summary>Set the page margins on the document. A new document already carries its margins when it is
+    /// attached to the editor, so setting the same value again changes nothing and the editor kept laying the text
+    /// out with its own default padding until a different margin was picked. Nudging the value first makes it a
+    /// real change, so the right margins show from the start.</summary>
+    private void ApplyMargins()
+    {
+        if (_vm == null) return;
+        double margin = _vm.Page.MarginDip;
+        _vm.Document.PagePadding = new Thickness(margin + 0.5);
+        _vm.Document.PagePadding = new Thickness(margin);
     }
 
     private void ApplyZoom()
@@ -347,7 +366,7 @@ public partial class WriterView : UserControl, IWriterSurface
             var rect = Editor.CaretPosition.GetCharacterRect(LogicalDirection.Forward);
             if (!rect.IsEmpty) current = Math.Clamp((int)Math.Floor((rect.Top - margin) / perPage) + 1, 1, total);
 
-            PageInfo.Text = $"Page {current} of {total}";
+            PageInfo.Text = $"{current} / {total}";
             if (total != _guideCount)
             {
                 _guideCount = total;

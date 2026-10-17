@@ -1,0 +1,33 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Material "Glass" (dark): only the translucent surfaces. ThemeService merges this after
+         Colors.Dark.xaml, so text, strokes and accents stay the theme's own.
+         Clear glass with some depth: a soft sheen across the top-left that fades into a cool tint, and a thin
+         rim of light on the diagonal corners instead of a flat white outline. -->
+
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#4A14151B"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#26000000"/>
+
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#2CFFFFFF" Offset="0"/>
+        <GradientStop Color="#14FFFFFF" Offset="0.5"/>
+        <GradientStop Color="#228FA0D0" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#A6FFFFFF" Offset="0"/>
+        <GradientStop Color="#2EFFFFFF" Offset="0.32"/>
+        <GradientStop Color="#14FFFFFF" Offset="0.68"/>
+        <GradientStop Color="#52FFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#E61E2026"/>
+
+    <!-- Outlines on a see-through surface: a touch brighter than the opaque dark theme's, so
+         controls keep a crisp edge against the lighter backdrop. -->
+    <SolidColorBrush x:Key="App.StrokeBrush" Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="App.StrokeSoftBrush" Color="#1FFFFFFF"/>
+
+    <!-- how strongly the start page's accent glows show (AmbientBackdrop) -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">1.6</sys:Double>
+
+</ResourceDictionary>

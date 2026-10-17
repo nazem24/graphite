@@ -109,10 +109,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     /// <summary>Remembered opacity per tool. The freehand marker is keyed apart from the
     /// text highlight because they share <see cref="ToolKind.Highlight"/>.</summary>
-    private readonly Dictionary<string, double> _toolOpacities = new()
-    {
-        ["Marker"] = FreehandHighlightOpacity,
-    };
+    private readonly Dictionary<string, double> _toolOpacities = new();
 
     private string OpacityKey() =>
         ActiveTool == ToolKind.Highlight && HighlightFreehand ? "Marker" : ActiveTool.ToString();
@@ -168,7 +165,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     };
 
     public bool ShowsColor => ActiveTool is not (ToolKind.Select or ToolKind.Eraser or ToolKind.EditText
-        or ToolKind.PlaceImage or ToolKind.Note);
+        or ToolKind.PlaceImage or ToolKind.Note or ToolKind.Lasso);
     public bool ShowsThickness => ActiveTool is ToolKind.Underline or ToolKind.StrikeOut or ToolKind.Ink
         or ToolKind.Eraser or ToolKind.Rect or ToolKind.Ellipse or ToolKind.Arrow;
     public bool ShowsOpacity => ActiveTool is ToolKind.Highlight or ToolKind.Underline or ToolKind.StrikeOut
@@ -250,32 +247,31 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public const double FreehandHighlightWidth = 14.0;
     public const double FreehandHighlightOpacity = 0.42;
 
-    private readonly Dictionary<ToolKind, string> _toolColors = new()
-    {
-        [ToolKind.Highlight] = "#F2C744",
-        [ToolKind.Underline] = "#3E6DB5",
-        [ToolKind.StrikeOut] = "#C24444",
-        [ToolKind.Ink] = "#3E6DB5",
-        [ToolKind.Rect] = "#C24444",
-        [ToolKind.Ellipse] = "#C24444",
-        [ToolKind.Text] = "#1B1B1A",
-        [ToolKind.Arrow] = "#C24444",
-        [ToolKind.Signature] = "#1B3A6B",
-    };
+    // The remembered colour / width of each tool (opacities are further up). They start from the tool
+    // defaults (the app's own, or the ones the person set in Settings > Tool defaults): see ToolStyles.
+    // The eraser's width is its radius (x3, floor 6pt — see AnnotationLayer.EraserRadius), so the
+    // same "line thickness" menu also sizes the eraser.
+    private readonly Dictionary<ToolKind, string> _toolColors = new();
+    private readonly Dictionary<ToolKind, double> _toolWidths = new();
 
-    private readonly Dictionary<ToolKind, double> _toolWidths = new()
+    /// <summary>(Re)load every tool's colour, thickness and opacity from the tool defaults. Called when
+    /// the document opens and whenever a default is changed in Settings, so open documents follow.</summary>
+    public void ApplyToolDefaults()
     {
-        [ToolKind.Underline] = 1.5,
-        [ToolKind.StrikeOut] = 1.5,
-        [ToolKind.Ink] = 1.8,
-        // Reused as the eraser's radius (x3, floor 6pt — see AnnotationLayer.EraserRadius),
-        // so the same "line thickness" menu also sizes the eraser.
-        [ToolKind.Eraser] = 4.0,
-        [ToolKind.Rect] = 1.6,
-        [ToolKind.Ellipse] = 1.6,
-        [ToolKind.Arrow] = 2.0,
-        [ToolKind.Signature] = 1.6,
-    };
+        _toolColors.Clear();
+        _toolWidths.Clear();
+        _toolOpacities.Clear();
+        foreach (var s in ToolStyles.All)
+        {
+            if (s.Key != "Marker" && ToolStyles.ColorOf(s) is { } color) _toolColors[s.Kind] = color;
+            if (ToolStyles.WidthOf(s) is { } width) _toolWidths[s.Kind] = width;
+            if (ToolStyles.OpacityOf(s) is { } opacity) _toolOpacities[s.Key] = opacity;
+        }
+        // The tool in hand picks up its new look right away.
+        if (_toolColors.TryGetValue(ActiveTool, out var c)) ActiveColorHex = c;
+        if (_toolWidths.TryGetValue(ActiveTool, out var w)) ActiveStrokeWidth = w;
+        LoadToolOpacity();
+    }
 
     // ------------------------------------------------------------- undo / redo
 
@@ -405,8 +401,8 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public string MatchStatus => SearchResults.Count == 0 ? "No results"
         : $"{CurrentMatchIndex + 1} of {SearchResults.Count}";
 
-    /// <summary>Font size for quick inline text (Text tool click → type immediately).</summary>
-    public const double QuickTextSize = 8;
+    /// <summary>Font size for quick inline text (Text tool click → type immediately): the person's default.</summary>
+    public static double QuickTextSize => ThemeService.QuickTextSize;
 
     public event Action<int>? ScrollToPageRequested;
     public event Action? PagesReset;
@@ -443,6 +439,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         foreach (var node in outline) Outline.Add(node);
         foreach (var a in annotations) Annotations.Add(new AnnotationViewModel(this, a));
         SetFormFields(formFields);
+        ApplyToolDefaults();
         Annotations.CollectionChanged += (_, _) => RefreshMarkupCounts();
         RefreshVisiblePages();
         RecordDiskStamp();
@@ -906,10 +903,15 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     internal void RequestPlaceImage(int pageIndex, RectD area) => PlaceImageRequested?.Invoke(pageIndex, area);
     internal void RequestEditFreeText(AnnotationViewModel vm) => EditFreeTextRequested?.Invoke(vm);
 
+    /// <summary>The text box being typed into was made by a click (not a drag): it has no set width, so it
+    /// grows with the text and is fitted to it when editing ends.</summary>
+    public bool InlineEditAutoWidth { get; private set; }
+
     /// <summary>Text tool: create an empty text box and immediately edit it inline on
     /// the page (no dialog). Double-clicking the text later opens the full dialog.</summary>
-    public void StartInlineFreeText(int pageIndex, RectD area)
+    public void StartInlineFreeText(int pageIndex, RectD area, bool autoWidth = false)
     {
+        InlineEditAutoWidth = autoWidth;
         var model = new Annotation
         {
             Kind = AnnotationKind.FreeText,

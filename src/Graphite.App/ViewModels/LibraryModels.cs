@@ -238,6 +238,7 @@ public sealed partial class RailItem : ObservableObject
         Path = path;
         Subtitle = subtitle;
         CountText = countText;
+        TintBrush = MakeTint();
     }
 
     public RailKind Kind { get; }
@@ -249,6 +250,27 @@ public sealed partial class RailItem : ObservableObject
     public bool IsRoot => Kind == RailKind.Root;
     public bool IsFolder => Kind == RailKind.Folder;
     public bool IsFiles => Kind == RailKind.Files;
+
+    /// <summary>The icon's colour: the same one the folder card uses.</summary>
+    public Brush TintBrush { get; private set; }
+
+    /// <summary>Hover text in the collapsed rail: the name, then how many PDFs.</summary>
+    public string Tip => CountText.Length > 0 && !IsFiles ? $"{Name} · {CountText}" : Name;
+
+    private Brush MakeTint()
+    {
+        var color = FolderPalette.TryParse(ThemeService.GetFolderColor(Path), out var c) ? c : FolderPalette.Default;
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>The folder's colour was changed in the card menu.</summary>
+    public void RefreshColor()
+    {
+        TintBrush = MakeTint();
+        OnPropertyChanged(nameof(TintBrush));
+    }
 
     [ObservableProperty] private bool isActive;
 }

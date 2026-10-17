@@ -61,6 +61,8 @@ written as standard PDF annotations, so they open in any other viewer. Undo/redo
 **Page editing** — insert (blank or from another PDF), delete, reorder, rotate and
 extract pages; merge PDFs; split into single-page files. Right-click a thumbnail
 for per-page operations. Annotations travel with their pages through every operation.
+Delete, extract and insert-from-PDF use a visual page picker (thumbnails, All/None/Odd/Even,
+a range box kept in sync); merge has a reorderable file list with previews and drag-and-drop.
 
 **Content editing** — an Edit Text tool (drag over a region, type the replacement —
 the region is covered and re-typeset, how most PDF editors work under the hood since
@@ -96,7 +98,7 @@ modified one asks whether to reload or keep your version — saving never silent
 someone else's changes.
 
 **Platform** — single instance (opening another PDF from Explorer adds a tab to the running
-window), dark/light themes (persisted), Windows 11 Mica backdrop, per-monitor
+window), a settings page (gear button or Ctrl+,) with light/dark and four window materials — Mica, Blur, Frosted glass, Glass (all persisted; the materials need Windows 11), a library sidebar on the start page that collapses to an icon rail or hides completely (your choice in Settings), per-tool default colour / thickness / opacity and text size (Settings > Tool defaults), per-monitor
 DPI awareness, drag-and-drop, recent files, OneDrive quick-open, printing at 300 dpi
 with annotations included, and a script to register the .pdf file association.
 
@@ -153,14 +155,14 @@ Graphite.sln
 │   ├─ Ocr/              Tesseract engine + invisible-text-layer writer
 │   └─ Export/           docx / xlsx / pptx / image exporters, Office→PDF via COM
 └─ src/Graphite.App      ── WPF shell (net10.0-windows)
-    ├─ Themes/           light/dark palettes, styles, original icon geometry
+    ├─ Themes/           light/dark palettes, Materials/ (Mica, Blur, Frosted, Glass surfaces), styles, original icon geometry
     ├─ ViewModels/       Main / Document / Page / Annotation (CommunityToolkit.Mvvm)
     ├─ Controls/         AnnotationLayer (per-page overlay), FormLayer (form filling),
     │                    StrokeSmoothing (pen input)
     ├─ Services/         theme/settings, signature store, printing, self-updater,
     │                    single instance, crash recovery, markup → notes
     ├─ Views/            MainWindow + dialogs (input, edit-text, password, signature, properties)
-    └─ Interop/          Mica backdrop + dark title bar (DWM)
+    └─ Interop/          Mica / Acrylic backdrop + dark title bar (DWM)
 
 src/Graphite.Tests       ── xUnit tests for the Core engine
 ```

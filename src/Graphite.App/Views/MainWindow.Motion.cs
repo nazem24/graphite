@@ -101,6 +101,14 @@ public partial class MainWindow
             UpdateBarFold();
             UpdateToolPill(false);
         };
+        // When the tools come back, fade the highlight in on the active tool once they have been laid out.
+        ToolsPanel.IsVisibleChanged += (_, _) =>
+        {
+            if (ToolsPanel.IsVisible)
+                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => UpdateToolPill(true));
+            else
+                UpdateToolPill(false);
+        };
     }
 
     /// <summary>Per-document hooks (called when a document is added).</summary>
@@ -455,6 +463,15 @@ public partial class MainWindow
     {
         if (ToolPill == null || ToolsPanel == null || ToolPill.Parent is not UIElement host) return;
         var move = (TranslateTransform)ToolPill.RenderTransform;
+
+        // The tools are hidden (start screen, settings): the highlight goes with them, at once, instead of
+        // fading out on its own clock after the rest of the bar has already changed.
+        if (!ToolsPanel.IsVisible)
+        {
+            ToolPill.BeginAnimation(OpacityProperty, null);
+            ToolPill.Opacity = 0;
+            return;
+        }
 
         var active = ToolsPanel.Children.OfType<RadioButton>()
             .FirstOrDefault(r => r.GroupName == "Tools" && r.IsChecked == true);

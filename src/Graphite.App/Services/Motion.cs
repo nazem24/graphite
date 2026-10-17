@@ -51,6 +51,21 @@ public static class Motion
 
     public static Duration Ms(double ms) => new(TimeSpan.FromMilliseconds(ms));
 
+    // ---- page transition (folders on the start page, the settings page) ----
+    // One set of numbers so every full-page change feels the same: the old page fades out and drifts
+    // a little toward where you came from, then the new one fades in while sliding in from the side
+    // you are heading to, with a long, soft stop. The fades use gentle curves (a quintic fade starts
+    // too abruptly to read as smooth); only the slide gets the long quintic tail.
+    public const double PageOutMs = 130;
+    public const double PageOutDriftPx = 12;
+    public const double PageInFadeMs = 300;
+    public const double PageInSlideMs = 440;
+    public const double PageInSlidePx = 28;
+
+    public static readonly IEasingFunction PageOutEase = Freeze(new SineEase { EasingMode = EasingMode.EaseIn });
+    public static readonly IEasingFunction PageFadeEase = Freeze(new CubicEase { EasingMode = EasingMode.EaseOut });
+    public static readonly IEasingFunction PageSlideEase = Freeze(new QuinticEase { EasingMode = EasingMode.EaseOut });
+
     /// <summary>
     /// Animate a double property from → to and leave it at <paramref name="to"/> afterwards.
     /// With a delay the property is parked at <paramref name="from"/> first, so a staggered
