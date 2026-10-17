@@ -1762,14 +1762,33 @@
                         <Rectangle Style="{StaticResource ToolSep}"/>
 
                         <!-- the document's name (renames the file) and where it is saved -->
-                        <StackPanel Margin="4,-1,0,-1" VerticalAlignment="Center">
-                            <TextBox x:Name="WriterTitleBox" Width="230" Padding="6,0" Background="Transparent"
+                        <StackPanel Orientation="Horizontal" Margin="4,0,0,0" VerticalAlignment="Center">
+                            <TextBox x:Name="WriterTitleBox" MinWidth="80" MaxWidth="230" Padding="6,0" VerticalAlignment="Center" Background="Transparent"
                                      BorderBrush="Transparent" FontWeight="SemiBold" FontSize="12.5"
                                      Text="{Binding SelectedWriter.Title, UpdateSourceTrigger=LostFocus}"
                                      ToolTip="Document name||Edit to rename the file"
                                      PreviewKeyDown="WriterTitle_PreviewKeyDown"/>
-                            <TextBlock Text="{Binding SelectedWriter.SaveStatus}" Style="{StaticResource Caption}" FontSize="11"
-                                       Margin="7,0,0,0" MaxWidth="230"/>
+                            <!-- save state: a small dot (amber = never saved, grey = editing, green = saved),
+                                 and the status, beside the name -->
+                            <StackPanel Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="{Binding SelectedWriter.FolderPath}">
+                                <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="0,1,6,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="#4CAF7A"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedWriter.IsDirty}" Value="True">
+                                                    <Setter Property="Fill" Value="{DynamicResource App.TextSecondaryBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedWriter.HasFile}" Value="False">
+                                                    <Setter Property="Fill" Value="#E3A33B"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Text="{Binding SelectedWriter.SaveStatus}" Style="{StaticResource Caption}" FontSize="11"
+                                           VerticalAlignment="Center" MaxWidth="170" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>

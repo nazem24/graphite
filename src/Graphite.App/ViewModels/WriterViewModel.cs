@@ -70,17 +70,12 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
 
     public string FolderPath => Path.GetDirectoryName(FilePath) ?? "";
 
-    private const string NotSavedText = "Not saved yet — press Ctrl+S";
+    private const string NotSavedText = "Not saved yet";
 
     /// <summary>False for a new document that was never saved: <see cref="FilePath"/> is then only the
     /// name and folder it would get, and nothing is written (or autosaved) until the first manual save.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StoredAsText))]
-    [NotifyPropertyChangedFor(nameof(AutosaveText))]
     private bool hasFile;
-
-    /// <summary>The small note in the corner of the editor.</summary>
-    public string AutosaveText => HasFile ? "Autosave on" : "Not saved yet · Ctrl+S to save";
 
     public string FolderName
     {
@@ -122,8 +117,6 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
     public string ZoomText => $"{Math.Round(Zoom * 100)}%";
 
     public string WordCountText => WordCount == 1 ? "1 word" : $"{WordCount} words";
-
-    public string StoredAsText => HasFile ? $"Stored as .docx in {FolderName}" : $"Will be saved in {FolderName}";
 
     partial void OnWordCountChanged(int value) => OnPropertyChanged(nameof(WordCountText));
 
@@ -246,7 +239,6 @@ public sealed partial class WriterViewModel : ObservableObject, IDisposable
         GraphiteDocx.Forget(path);
         OnPropertyChanged(nameof(FilePath));
         OnPropertyChanged(nameof(Title));
-        OnPropertyChanged(nameof(StoredAsText));
         PathChanged?.Invoke(oldPath, path);
         return true;
     }

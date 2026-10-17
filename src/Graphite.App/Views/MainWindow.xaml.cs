@@ -54,6 +54,12 @@ public partial class MainWindow : Window
         // message hook, so the message is seen whichever of our windows Windows addresses it to.
         System.Windows.Interop.ComponentDispatcher.ThreadPreprocessMessage += OnThreadMessage;
         Closed += (_, _) => System.Windows.Interop.ComponentDispatcher.ThreadPreprocessMessage -= OnThreadMessage;
+        // ...and on the window's own hook too: some trackpad drivers *send* the message straight to the
+        // window instead of posting it, and a sent message never passes through the thread's queue.
+        SourceInitialized += (_, _) =>
+        {
+            if (PresentationSource.FromVisual(this) is System.Windows.Interop.HwndSource src) src.AddHook(HWheelHook);
+        };
         Closing += MainWindow_Closing;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         ViewModel.PasteImageRequested += () =>
@@ -681,14 +687,28 @@ public partial class MainWindow : Window
     /// whichever viewer is under the pointer that can actually move sideways.</summary>
     private void OnThreadMessage(ref System.Windows.Interop.MSG msg, ref bool handled)
     {
-        if (handled || msg.message != WM_MOUSEHWHEEL || !IsActive || ViewModel.IsSettingsOpen) return;
-        int delta = (short)((msg.wParam.ToInt64() >> 16) & 0xFFFF);   // + is right
-        if (delta == 0) return;
-        try
+        if (handled || msg.message != WM_MOUSEHWHEEL) return;
+        if (OnHWheel(msg.wParam, new Point(msg.pt_x, msg.pt_y))) handled = true;
+    }
+
+    private IntPtr HWheelHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_MOUSEHWHEEL && !handled)
         {
-            if (ScrollSideways(new Point(msg.pt_x, msg.pt_y), delta)) handled = true;
+            // lParam holds the pointer's screen position, as two signed 16-bit values.
+            long lp = lParam.ToInt64();
+            var screen = new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF));
+            if (OnHWheel(wParam, screen)) handled = true;
         }
-        catch (Exception ex) { App.LogError("Sideways scroll failed", ex); }
+        return IntPtr.Zero;
+    }
+
+    private bool OnHWheel(IntPtr wParam, Point screen)
+    {
+        int delta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);   // + is right
+        if (delta == 0 || !IsActive || ViewModel.IsSettingsOpen) return false;
+        try { return ScrollSideways(screen, delta); }
+        catch (Exception ex) { App.LogError("Sideways scroll failed", ex); return false; }
     }
 
     private bool ScrollSideways(Point screen, int delta)
@@ -696,7 +716,10 @@ public partial class MainWindow : Window
         Point local = PointFromScreen(screen);
         if (local.X < 0 || local.Y < 0 || local.X > ActualWidth || local.Y > ActualHeight) return false;
 
-        var hit = VisualTreeHelper.HitTest(this, local)?.VisualHit;
+        // Start from the element the mouse is really over, the same one the vertical wheel goes to. A plain
+        // visual hit test from the window lands on layout grids (stacked/faded document hosts, overlays)
+        // that aren't inside any scroll viewer, so a sideways swipe never found anything to move.
+        DependencyObject? hit = Mouse.DirectlyOver as DependencyObject ?? VisualTreeHelper.HitTest(this, local)?.VisualHit;
         ScrollViewer? sv = null;
         for (DependencyObject? d = hit; d != null;
              d = d is Visual or System.Windows.Media.Media3D.Visual3D
@@ -711,8 +734,9 @@ public partial class MainWindow : Window
             }
         }
 
-        // Over the documents but not over a scrollable part (a margin, an overlay): use the open document's own viewer.
-        if (sv == null && hit is Visual hv && hv.IsDescendantOf(DocsLayer))
+        // Not over a viewer that can move sideways (a margin, an overlay, a layout grid): use the open
+        // PDF's or document's own viewer whenever one is showing.
+        if (sv == null && DocsLayer.IsVisible)
             sv = ActiveDocumentScrollViewer();
         if (sv == null || sv.ScrollableWidth <= 0) return false;
 
@@ -731,9 +755,10 @@ public partial class MainWindow : Window
     /// <summary>The scroll viewer of the PDF or document that is showing.</summary>
     private ScrollViewer? ActiveDocumentScrollViewer()
     {
+        // The page list registered for this document (its first ListBox would be the thumbnail sidebar).
         if (ViewModel.SelectedDocument is { } doc &&
-            DocHost.ItemContainerGenerator.ContainerFromItem(doc) is DependencyObject pdfHost)
-            return FindDescendant<ListBox>(pdfHost) is { } lb ? FindScrollViewer(lb) : null;
+            _viewers.TryGetValue(doc, out var lb) && ReferenceEquals(lb.DataContext, doc))
+            return FindScrollViewer(lb);
 
         if (ViewModel.SelectedWriter is { } writer &&
             WriterHost.ItemContainerGenerator.ContainerFromItem(writer) is DependencyObject writerHost)

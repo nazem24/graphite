@@ -279,12 +279,6 @@
                     </Border>
                 </ScrollViewer>
 
-                <!-- where it lives -->
-                <StackPanel HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="30,0,0,22" IsHitTestVisible="False">
-                    <TextBlock Text="{Binding AutosaveText}" Style="{StaticResource Caption}" FontSize="11.5"/>
-                    <TextBlock Text="{Binding StoredAsText}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,1,0,0"/>
-                </StackPanel>
-
                 <!-- page, words, zoom: a slim pill down the right-hand side, in the theme's own glass. -->
                 <Border Style="{StaticResource GlassPill}" CornerRadius="16" HorizontalAlignment="Right"
                         VerticalAlignment="Center" Margin="0,0,22,0" Padding="2,8" Width="46">
