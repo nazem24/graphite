@@ -89,6 +89,10 @@ public partial class AnnotationViewModel : ObservableObject
         {
             if (_quote != null) return _quote;
             if (Category != MarkupFilter.Highlights || Model.Quads.Count == 0) return _quote = "";
+            // Undo / redo rebuild every card; re-reading each page's text for every highlight on the UI
+            // thread each time was a large part of the pause. The document remembers quotes by annotation.
+            var key = (Model.Id, Model.Bounds);
+            if (Doc.QuoteCache.TryGetValue(key, out var known)) return _quote = known;
             try
             {
                 var parts = Model.Quads
@@ -96,6 +100,7 @@ public partial class AnnotationViewModel : ObservableObject
                     .Where(t => t.Length > 0);
                 var text = string.Join(" ", parts);
                 if (text.Length > 280) text = text[..280].TrimEnd() + "…";
+                Doc.QuoteCache[key] = text;
                 return _quote = text;
             }
             catch { return _quote = ""; }

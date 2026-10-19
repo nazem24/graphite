@@ -153,8 +153,26 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsWriterSelected));
     }
 
+    private bool _reorderingTabs;
+
+    /// <summary>True for the instant a tab is being moved to a new place in the strip.</summary>
+    public bool IsReorderingTabs => _reorderingTabs;
+
+    /// <summary>Move a tab within the strip (drag and drop). The Home tab is not in <see cref="Tabs"/>, so it
+    /// always stays first. The selected tab stays selected, and nothing is treated as a tab switch.</summary>
+    public void MoveTab(int from, int to)
+    {
+        if (from == to || (uint)from >= (uint)Tabs.Count || (uint)to >= (uint)Tabs.Count) return;
+        var keep = SelectedTab;
+        _reorderingTabs = true;
+        try { Tabs.Move(from, to); }
+        finally { _reorderingTabs = false; }
+        if (!ReferenceEquals(SelectedTab, keep)) SelectedTab = keep;
+    }
+
     partial void OnSelectedTabChanged(object? value)
     {
+        if (_reorderingTabs) return;
         // Picking any tab (or a document opening) leaves the settings page.
         IsSettingsOpen = false;
         if (_syncingTabs) return;
@@ -279,6 +297,15 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private Task OpenRecent(string path) => OpenFilesAsync(new[] { path });
 
+    // Files being opened right now. A double click, or a library card clicked twice, used to start the
+    // open twice before the first one had added its tab — and the file then opened in two tabs.
+    private readonly HashSet<string> _opening = new(StringComparer.OrdinalIgnoreCase);
+
+    private static string OpenKey(string path)
+    {
+        try { return Path.GetFullPath(path); } catch { return path; }
+    }
+
     /// <param name="activate">False opens the file in a background tab and leaves the current
     /// tab (or the start screen) showing — the library's "open in new tab" button.</param>
     /// <param name="resume">Reopen a PDF on the page the person last left it on.</param>
@@ -286,6 +313,8 @@ public partial class MainViewModel : ObservableObject
     {
         foreach (string path in paths)
         {
+            string openKey = OpenKey(path);
+            if (!_opening.Add(openKey)) continue; // that file is already being opened
             try
             {
                 // Already open? Just focus it.
@@ -306,6 +335,7 @@ public partial class MainViewModel : ObservableObject
                     await OpenPdfAsync(path, activate, resume);
             }
             catch (Exception ex) { Error(ex); }
+            finally { _opening.Remove(openKey); }
         }
     }
 
@@ -363,11 +393,13 @@ public partial class MainViewModel : ObservableObject
             string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
         if (existing != null) { if (activate) SelectedTab = existing; return; }
 
-        byte[] bytes = await File.ReadAllBytesAsync(path);
+        byte[] bytes = await FileReader.ReadAllBytesAsync(path);
         DocumentViewModel doc;
 
-        // Password-protected? Ask, decrypt in memory, and continue normally.
-        if (Graphite.Core.Pdf.PdfSecurity.IsPasswordProtected(bytes))
+        // Password-protected? Ask, decrypt in memory, and continue normally. (Checked off the UI thread:
+        // for an encrypted file this parses the whole document.)
+        var fileBytes = bytes;
+        if (await Task.Run(() => Graphite.Core.Pdf.PdfSecurity.IsPasswordProtected(fileBytes)))
         {
             var decrypted = PromptAndDecrypt(bytes, Path.GetFileName(path));
             if (decrypted == null) return; // user cancelled
@@ -902,7 +934,7 @@ public partial class MainViewModel : ObservableObject
                 await Task.Delay(400);
             }
 
-            byte[] bytes = await File.ReadAllBytesAsync(path);
+            byte[] bytes = await FileReader.ReadAllBytesAsync(path);
             string? password = null;
             if (PdfSecurity.IsPasswordProtected(bytes))
             {

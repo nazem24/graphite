@@ -76,11 +76,18 @@ public sealed class Annotation
     {
         var c = new Annotation
         {
+            // Same Id: a clone is the same annotation at another point in time (undo history, bake),
+            // never a second annotation. Lets caches and typing-burst keys survive an undo.
+            Id = Id,
             Kind = Kind,
             PageIndex = PageIndex,
             Bounds = Bounds,
             Quads = Quads.ToList(),
-            Strokes = Strokes.Select(s => s.ToList()).ToList(),
+            // The outer list is copied, the point lists inside are shared: once committed a stroke's
+            // points are never edited (erase / move / resize build new lists), and the renderer caches
+            // each stroke's smoothed geometry by list identity — copying them made every undo throw
+            // that cache away and re-smooth every stroke on screen.
+            Strokes = Strokes.ToList(),
             IsFreehand = IsFreehand,
             ColorHex = ColorHex,
             Opacity = Opacity,
@@ -100,6 +107,31 @@ public sealed class Annotation
         };
         c.Replies.AddRange(Replies.Select(r => new AnnotationReply { Author = r.Author, Text = r.Text, Modified = r.Modified }));
         return c;
+    }
+
+    /// <summary>True when <paramref name="o"/> describes exactly the same annotation (same Id, same content).
+    /// Undo uses it to leave untouched markup alone instead of rebuilding its card and its drawing.</summary>
+    public bool ContentEquals(Annotation o)
+    {
+        if (ReferenceEquals(this, o)) return true;
+        if (Id != o.Id || Kind != o.Kind || PageIndex != o.PageIndex || Bounds != o.Bounds ||
+            IsFreehand != o.IsFreehand || ColorHex != o.ColorHex || Opacity != o.Opacity ||
+            StrokeWidth != o.StrokeWidth || FontSize != o.FontSize || FontFamily != o.FontFamily ||
+            Bold != o.Bold || Italic != o.Italic || Underline != o.Underline ||
+            FillColorHex != o.FillColorHex || BorderColorHex != o.BorderColorHex ||
+            LineStart != o.LineStart || LineEnd != o.LineEnd ||
+            Author != o.Author || Contents != o.Contents || Modified != o.Modified ||
+            Quads.Count != o.Quads.Count || Strokes.Count != o.Strokes.Count || Replies.Count != o.Replies.Count)
+            return false;
+
+        for (int i = 0; i < Quads.Count; i++)
+            if (Quads[i] != o.Quads[i]) return false;
+        for (int i = 0; i < Strokes.Count; i++)
+            if (!ReferenceEquals(Strokes[i], o.Strokes[i]) && !Strokes[i].SequenceEqual(o.Strokes[i])) return false;
+        for (int i = 0; i < Replies.Count; i++)
+            if (Replies[i].Author != o.Replies[i].Author || Replies[i].Text != o.Replies[i].Text ||
+                Replies[i].Modified != o.Replies[i].Modified) return false;
+        return true;
     }
 
     /// <summary>Parse "#RRGGBB" (or "#AARRGGBB") into 0..1 components. Malformed input

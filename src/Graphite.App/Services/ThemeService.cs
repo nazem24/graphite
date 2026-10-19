@@ -449,16 +449,67 @@ public static class ThemeService
         Save();
     }
 
+    // Settings used to be serialised and written to disk, on the UI thread, by every change — including
+    // the "last page read" stamp that every tab switch, open and close makes. Changes now schedule ONE
+    // write a moment later (further changes ride along), and the file is written off the UI thread.
+    // Flush() writes anything still pending when the app exits.
+    private static System.Windows.Threading.DispatcherTimer? _saveTimer;
+    private static long _writeSeq, _writtenSeq;
+    private static readonly object WriteGate = new();
+
     private static void Save()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null) { WriteNow(); return; }
+        if (!dispatcher.CheckAccess()) { dispatcher.BeginInvoke(new Action(Save)); return; }
+        if (_saveTimer == null)
+        {
+            _saveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+            _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); WriteLater(); };
+        }
+        if (!_saveTimer.IsEnabled) _saveTimer.Start();
+    }
+
+    /// <summary>Write a change that is still waiting for its timer (called when the app exits).</summary>
+    public static void Flush()
+    {
+        if (_saveTimer is not { IsEnabled: true }) return;
+        _saveTimer.Stop();
+        WriteNow();
+    }
+
+    private static void WriteLater()
+    {
+        string json;
+        try { json = JsonSerializer.Serialize(_settings); }   // on the UI thread, where _settings is edited
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Settings save failed: {ex.Message}"); return; }
+        long seq = ++_writeSeq;
+        Task.Run(() => WriteFile(json, seq));
+    }
+
+    private static void WriteNow()
+    {
+        string json;
+        try { json = JsonSerializer.Serialize(_settings); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Settings save failed: {ex.Message}"); return; }
+        WriteFile(json, ++_writeSeq);
+    }
+
+    private static void WriteFile(string json, long seq)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            // Write-then-rename so a crash or power loss mid-write can't leave a truncated
-            // settings.json (which silently reset the theme, recent files and signature).
-            string tmp = SettingsPath + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(_settings));
-            File.Move(tmp, SettingsPath, overwrite: true);
+            lock (WriteGate)
+            {
+                if (seq < _writtenSeq) return; // a newer snapshot has already been written
+                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+                // Write-then-rename so a crash or power loss mid-write can't leave a truncated
+                // settings.json (which silently reset the theme, recent files and signature).
+                string tmp = SettingsPath + ".tmp";
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, SettingsPath, overwrite: true);
+                _writtenSeq = seq;
+            }
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Settings save failed: {ex.Message}"); }
     }

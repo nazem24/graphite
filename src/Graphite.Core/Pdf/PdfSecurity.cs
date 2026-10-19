@@ -10,6 +10,10 @@ public static class PdfSecurity
     /// <summary>True if the file cannot be opened without a password.</summary>
     public static bool IsPasswordProtected(byte[] pdf)
     {
+        // An encrypted PDF always names its /Encrypt dictionary in the (never compressed) trailer, so a file
+        // without that token cannot be password protected. Skipping the full parse that follows saved a whole
+        // extra read of the document on every open — and it ran on the UI thread.
+        if (!HasEncryptEntry(pdf)) return false;
         try
         {
             using var doc = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Import);
@@ -30,12 +34,15 @@ public static class PdfSecurity
     private static bool HasEncryptEntry(byte[] pdf)
     {
         ReadOnlySpan<byte> needle = "/Encrypt"u8;
-        for (int i = 0; i + needle.Length < pdf.Length; i++)
+        ReadOnlySpan<byte> all = pdf;
+        int from = 0;
+        while (from < all.Length)
         {
-            if (pdf[i] != (byte)'/') continue;
-            if (!pdf.AsSpan(i, needle.Length).SequenceEqual(needle)) continue;
-            byte next = pdf[i + needle.Length];
-            if (next != (byte)'M') return true; // not "/EncryptMetadata"
+            int at = all[from..].IndexOf(needle); // vectorised search, not a byte-by-byte loop
+            if (at < 0) return false;
+            int next = from + at + needle.Length;
+            if (next >= all.Length || all[next] != (byte)'M') return true; // not "/EncryptMetadata"
+            from = next;
         }
         return false;
     }

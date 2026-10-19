@@ -181,6 +181,17 @@ public partial class PageViewModel : ObservableObject
         OnPropertyChanged(nameof(Thumbnail)); // realized thumbnails re-read → re-render
     }
 
+    /// <summary>The PDF behind this page was replaced by one with an identical page layout (undo / redo of
+    /// a form fill or text edit). The page keeps its bitmap on screen until the new one is rendered, and a
+    /// render already running against the old content is cancelled so it cannot land afterwards.</summary>
+    public void InvalidateContent()
+    {
+        Interlocked.Increment(ref _generation);
+        SearchRects = null;
+        SelectionRects = null;
+        InvalidateBitmaps();
+    }
+
     /// <summary>Drop the full-size rendered bitmap only (keep the cheap thumbnail).
     /// Called for pages that have scrolled well outside the viewport so a long
     /// document doesn't keep every page's decoded bitmap resident forever.

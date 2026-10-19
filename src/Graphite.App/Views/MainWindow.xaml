@@ -561,8 +561,30 @@
                                             <TextBlock><Run Text="Ink"/> <Run Text="{Binding MarkupCountInk, Mode=OneWay}"/></TextBlock>
                                         </RadioButton>
                                     </WrapPanel>
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding MarkupView}" Margin="10,0,10,10">
+                                    <!-- Virtualized even though it is grouped: with hundreds of markups only the
+                                         cards in view are built, so undo/redo/filter no longer rebuild them all.
+                                         Pixel scrolling keeps the wheel smooth across group headers. -->
+                                    <ItemsControl ItemsSource="{Binding MarkupView}"
+                                                  VirtualizingPanel.IsVirtualizing="True"
+                                                  VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                                                  VirtualizingPanel.VirtualizationMode="Standard"
+                                                  VirtualizingPanel.ScrollUnit="Pixel"
+                                                  ScrollViewer.CanContentScroll="True">
+                                        <ItemsControl.Template>
+                                            <ControlTemplate TargetType="ItemsControl">
+                                                <ScrollViewer Focusable="False" Padding="10,0,10,10"
+                                                              VerticalScrollBarVisibility="Auto"
+                                                              HorizontalScrollBarVisibility="Disabled"
+                                                              CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}">
+                                                    <ItemsPresenter/>
+                                                </ScrollViewer>
+                                            </ControlTemplate>
+                                        </ItemsControl.Template>
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <VirtualizingStackPanel/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
                                             <ItemsControl.GroupStyle>
                                                 <GroupStyle>
                                                     <GroupStyle.ContainerStyle>
@@ -716,8 +738,7 @@
                                                     </Border>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
+                                    </ItemsControl>
                                 </DockPanel>
 
                                 <!-- empty state: say what to do next, offer the first action, point to Ctrl K -->
@@ -852,7 +873,10 @@
                      ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
                      SelectionChanged="TabStrip_SelectionChanged"
                      PreviewMouseWheel="TabStrip_PreviewMouseWheel"
-                     PreviewMouseDown="TabStrip_PreviewMouseDown">
+                     PreviewMouseDown="TabStrip_PreviewMouseDown"
+                     PreviewMouseMove="TabStrip_PreviewMouseMove"
+                     PreviewMouseLeftButtonUp="TabStrip_PreviewMouseLeftButtonUp"
+                     LostMouseCapture="TabStrip_LostMouseCapture">
                 <ListBox.Resources>
                     <!-- a PDF -->
                     <DataTemplate DataType="{x:Type vm:DocumentViewModel}">

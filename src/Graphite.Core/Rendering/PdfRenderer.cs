@@ -22,15 +22,30 @@ public sealed class PdfRenderer
 
     public PdfRenderer(byte[] pdfBytes) => _pdf = Load(pdfBytes);
 
-    public void Reload(byte[] pdfBytes) => _pdf = Load(pdfBytes);
+    /// <summary>Swap in a different PDF. The document, page sizes and page count switch together under the
+    /// lock the renders take: `_pdf` used to be assigned after the lock was released, so a render running
+    /// during an undo could draw from the old document while the page sizes were already the new ones.</summary>
+    public void Reload(byte[] pdfBytes)
+    {
+        lock (PdfiumLock) { _pdf = Load(pdfBytes); }
+    }
+
+    // Page sizes per PDF buffer. Buffers are never changed after creation, so the sizes of bytes seen
+    // before (undo / redo walking back to an earlier state) need no second pass over every page.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<byte[], IReadOnlyList<(double Width, double Height)>>
+        SizeCache = new();
 
     private byte[] Load(byte[] pdfBytes)
     {
         lock (PdfiumLock)
         {
-            // One pass over the file: the size list is also the page count. This used to ask
-            // PDFium for the count and then for the sizes, parsing the whole document twice.
-            var sizes = Conversion.GetPageSizes(pdfBytes).Select(s => ((double)s.Width, (double)s.Height)).ToList();
+            if (!SizeCache.TryGetValue(pdfBytes, out var sizes))
+            {
+                // One pass over the file: the size list is also the page count. This used to ask
+                // PDFium for the count and then for the sizes, parsing the whole document twice.
+                sizes = Conversion.GetPageSizes(pdfBytes).Select(s => ((double)s.Width, (double)s.Height)).ToList();
+                SizeCache.AddOrUpdate(pdfBytes, sizes);
+            }
             PageSizes = sizes;
             PageCount = sizes.Count;
         }

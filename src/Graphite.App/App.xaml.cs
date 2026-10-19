@@ -114,6 +114,7 @@ public partial class App : Application
             try { File.Delete(f); } catch { /* best effort */ }
         // A clean exit: nothing to recover next time (the person already chose to save or discard).
         RecoveryService.EndSession();
+        ThemeService.Flush(); // settings changed in the last moment are still waiting for their write
         _instance?.Dispose();
         base.OnExit(e);
     }

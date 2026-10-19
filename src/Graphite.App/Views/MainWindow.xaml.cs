@@ -146,6 +146,12 @@ public partial class MainWindow : Window
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        // Moving a tab makes the strip drop and re-take its selection for a moment: not a tab switch.
+        if (ViewModel.IsReorderingTabs &&
+            e.PropertyName is nameof(MainViewModel.SelectedTab) or nameof(MainViewModel.SelectedDocument)
+                or nameof(MainViewModel.SelectedWriter))
+            return;
+
         if (e.PropertyName == nameof(MainViewModel.SelectedTab))
             OnSelectedTabSwitched();
 
@@ -278,6 +284,7 @@ public partial class MainWindow : Window
             {
                 if (_zp != null && ReferenceEquals(_zp.Doc, doc)) CancelZoomPreview();
                 _wired.Remove(doc);
+                CancelBitmapRelease(doc);
                 _viewers.Remove(doc);
                 _searchBoxes.Remove(doc);
                 _searchRadios.Remove(doc);
@@ -1085,7 +1092,8 @@ public partial class MainWindow : Window
         // Hidden tabs keep their viewer and scroll position but not their rendered page
         // bitmaps: those are the big allocation, and they come back in a moment when the tab
         // is shown again (the cheap thumbnail stands in meanwhile).
-        if (prev != null && ViewModel.Documents.Contains(prev)) prev.ReleaseBitmaps();
+        if (prev != null && ViewModel.Documents.Contains(prev)) ScheduleBitmapRelease(prev);
+        if (next != null) CancelBitmapRelease(next);
         if (next == null) return;
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
         {
@@ -1330,6 +1338,7 @@ public partial class MainWindow : Window
                  FindAncestor<System.Windows.Controls.Button>(src) == null) // the ✕ keeps its own click
         {
             ViewModel.SelectedTab = tab;
+            TabDragPress(tab, e); // moving the mouse from here drags the tab
             e.Handled = true;
         }
     }
@@ -1755,6 +1764,26 @@ public partial class MainWindow : Window
             CommitInlineEdit();
     }
 
+    /// <summary>Ctrl+Z undoes; Ctrl+Y and Ctrl+Shift+Z redo. Left to the text box when one has focus
+    /// (it has its own undo). While a mouse button is down (a drag, a pen stroke) the key is swallowed:
+    /// restoring the markup under a gesture in progress would leave the gesture editing objects that
+    /// are no longer on the page.</summary>
+    private static bool TryHistoryKey(DocumentViewModel? doc, KeyEventArgs e)
+    {
+        if (doc == null || e.Key is not (Key.Z or Key.Y)) return false;
+        var mods = Keyboard.Modifiers;
+        if ((mods & ModifierKeys.Control) == 0 || (mods & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return false;
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase) return false;
+
+        bool shift = (mods & ModifierKeys.Shift) != 0;
+        if (e.Key == Key.Y && shift) return false; // not a standard binding
+        bool redo = e.Key == Key.Y || shift;
+
+        if (Mouse.LeftButton == MouseButtonState.Pressed) return true; // swallow, do nothing
+        _ = redo ? doc.RedoAsync() : doc.UndoAsync();
+        return true;
+    }
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         var doc = ViewModel.SelectedDocument;
@@ -1864,16 +1893,8 @@ public partial class MainWindow : Window
             PasteImageFromClipboard(doc);
             e.Handled = true;
         }
-        else if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control &&
-            Keyboard.FocusedElement is not TextBox && doc != null)
+        else if (TryHistoryKey(doc, e))
         {
-            _ = doc.UndoAsync();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Y && Keyboard.Modifiers == ModifierKeys.Control &&
-                 Keyboard.FocusedElement is not TextBox && doc != null)
-        {
-            _ = doc.RedoAsync();
             e.Handled = true;
         }
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.IsHomeSelected)

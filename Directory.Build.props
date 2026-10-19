@@ -3,7 +3,9 @@
     <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>2.3.1</Version>
+    <!-- Fallback only (no git, or no tags): local builds take their version from the newest v* git tag, see
+         the GraphiteVersionFromGit target below. Release builds get it from the tag via -p:Version. -->
+    <Version>2.3.4</Version>
     <Product>Graphite</Product>
     <Company>Graphite</Company>
     <Copyright>© 2026 Graphite</Copyright>
@@ -15,4 +17,27 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <Optimize>true</Optimize>
   </PropertyGroup>
+
+  <!-- Local builds report the version of the newest release tag (v2.3.4 -> 2.3.4) instead of a number that has
+       to be bumped by hand. Without this, a build run from the repo claimed to be old, and the updater then
+       offered it the release that was already installed. Skipped on CI, where the workflow passes the version. -->
+  <Target Name="GraphiteVersionFromGit" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo"
+          Condition="'$(GITHUB_ACTIONS)' != 'true' and '$(GraphiteNoGitVersion)' != 'true'">
+    <Exec Command="git describe --tags --abbrev=0 --match v[0-9]*" WorkingDirectory="$(MSBuildThisFileDirectory)"
+          ConsoleToMSBuild="true" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GraphiteGitTag"/>
+      <Output TaskParameter="ExitCode" PropertyName="_GraphiteGitExit"/>
+    </Exec>
+    <PropertyGroup Condition="'$(_GraphiteGitExit)' == '0' and '$(_GraphiteGitTag)' != ''">
+      <_GraphiteTagVersion>$([System.Text.RegularExpressions.Regex]::Match('$(_GraphiteGitTag)', '[0-9]+(\.[0-9]+){1,2}').Value)</_GraphiteTagVersion>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(_GraphiteTagVersion)' != ''">
+      <Version>$(_GraphiteTagVersion)</Version>
+      <VersionPrefix>$(_GraphiteTagVersion)</VersionPrefix>
+      <AssemblyVersion>$(_GraphiteTagVersion).0</AssemblyVersion>
+      <FileVersion>$(_GraphiteTagVersion).0</FileVersion>
+      <InformationalVersion>$(_GraphiteTagVersion)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
 </Project>

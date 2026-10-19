@@ -18,12 +18,27 @@ public static class OfficeToPdf
     public static void Convert(string inputPath, string outputPdfPath)
     {
         string ext = Path.GetExtension(inputPath).ToLowerInvariant();
-        switch (ext)
+        if (ext is not (".doc" or ".docx" or ".rtf" or ".xls" or ".xlsx" or ".ppt" or ".pptx"))
+            throw new NotSupportedException($"Cannot convert {ext} to PDF.");
+
+        // Export beside the target first and move it into place when Office is done: a conversion that
+        // fails or is killed halfway used to leave a broken PDF, or overwrite a good existing one.
+        string temp = outputPdfPath + "." + System.Guid.NewGuid().ToString("N")[..8] + ".tmp.pdf";
+        try
         {
-            case ".doc" or ".docx" or ".rtf": ConvertWord(inputPath, outputPdfPath); break;
-            case ".xls" or ".xlsx": ConvertExcel(inputPath, outputPdfPath); break;
-            case ".ppt" or ".pptx": ConvertPowerPoint(inputPath, outputPdfPath); break;
-            default: throw new NotSupportedException($"Cannot convert {ext} to PDF.");
+            switch (ext)
+            {
+                case ".doc" or ".docx" or ".rtf": ConvertWord(inputPath, temp); break;
+                case ".xls" or ".xlsx": ConvertExcel(inputPath, temp); break;
+                default: ConvertPowerPoint(inputPath, temp); break;
+            }
+            if (!File.Exists(temp) || new FileInfo(temp).Length == 0)
+                throw new IOException("Office did not produce a PDF.");
+            File.Move(temp, outputPdfPath, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); } catch { /* best effort */ }
         }
     }
 
@@ -45,8 +60,12 @@ public static class OfficeToPdf
         try
         {
             app.Visible = false;
+            // No dialogs: an invisible Word waiting on a repair / conversion / password prompt nobody can
+            // see would hang the open forever.
+            try { app.DisplayAlerts = 0; /* wdAlertsNone */ } catch { }
             try { app.AutomationSecurity = AutomationSecurityForceDisable; } catch { /* older Word */ }
-            dynamic doc = app.Documents.Open(input, ReadOnly: true);
+            dynamic doc = app.Documents.Open(input, ConfirmConversions: false, ReadOnly: true,
+                AddToRecentFiles: false, NoEncodingDialog: true);
             try { doc.ExportAsFixedFormat(output, 17 /* wdExportFormatPDF */); }
             finally { doc.Close(false); }
         }

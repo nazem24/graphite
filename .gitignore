@@ -39,3 +39,10 @@ Thumbs.db
 
 ## Test output for eyeballing (tools/verify.bat sets GRAPHITE_DUMP)
 verify-out/
+
+## Debug screenshots, repro output and scratch files (kept locally, not in the repo)
+/repro-out/
+/repro-*.png
+/ours-open*.png
+/test-*.pdf
+/animations-backup/

@@ -73,7 +73,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     /// <summary>What the viewer shows: all pages (continuous) or just the current page (single).</summary>
     public ObservableCollection<PageViewModel> VisiblePages { get; } = new();
     public ObservableCollection<OutlineNode> Outline { get; } = new();
-    public ObservableCollection<AnnotationViewModel> Annotations { get; } = new();
+    public BulkObservableCollection<AnnotationViewModel> Annotations { get; } = new();
     public ObservableCollection<SearchMatch> SearchResults { get; } = new();
 
     /// <summary>Images placed but not yet baked into the PDF — see <see cref="PendingImage"/>.</summary>
@@ -281,8 +281,12 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     // ------------------------------------------------------------- undo / redo
 
-    private readonly List<(byte[] Bytes, List<Annotation> Annots, List<PendingImage> Images)> _undo = new();
-    private readonly List<(byte[] Bytes, List<Annotation> Annots, List<PendingImage> Images)> _redo = new();
+    /// <summary>One history step: the PDF bytes (shared between steps, never mutated in place) plus
+    /// private copies of the markup and the placed images.</summary>
+    private sealed record Snapshot(byte[] Bytes, List<Annotation> Annots, List<PendingImage> Images, bool HadForm);
+
+    private readonly List<Snapshot> _undo = new();
+    private readonly List<Snapshot> _redo = new();
     private const int MaxUndo = 30;
 
     /// <summary>Hard cap on how much memory undo + redo snapshots may hold together, on
@@ -293,113 +297,278 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     private List<PendingImage> CloneImages() => PlacedImages.Select(i => i.Clone()).ToList();
 
-    private void TrimStack(List<(byte[] Bytes, List<Annotation> Annots, List<PendingImage> Images)> stack)
+    private Snapshot Capture() => new(_bytes, Annotations.Select(a => a.Model.Clone()).ToList(), CloneImages(), HasForm);
+
+    /// <summary>Quotes already read for text-markup cards, by annotation (see AnnotationViewModel.Quote).
+    /// Cleared whenever the PDF itself is swapped, since the page text may differ.</summary>
+    internal Dictionary<(Guid Id, RectD Bounds), string> QuoteCache { get; } = new();
+
+    private void TrimStack(List<Snapshot> stack)
     {
-        while (stack.Count > MaxUndo) stack.RemoveAt(0);
+        if (stack.Count > MaxUndo) stack.RemoveRange(0, stack.Count - MaxUndo);
         // Annotation-only edits don't touch the PDF bytes, so most snapshots share the very
         // same byte[] as their neighbours (and as the live document). Budget by the distinct
         // buffers actually held — counting every snapshot's Bytes.Length charged a 50 MB PDF
         // 50 MB per pen stroke and threw away undo history long before any memory was at stake.
-        while (stack.Count > 1 && DistinctUndoBytes() > MaxUndoBudgetBytes)
+        if (stack.Count <= 1) return;
+        long total = DistinctUndoBytes();
+        while (stack.Count > 1 && total > MaxUndoBudgetBytes)
+        {
             stack.RemoveAt(0);
+            total = DistinctUndoBytes();
+        }
     }
 
     private long DistinctUndoBytes()
     {
         var seen = new HashSet<byte[]>(ReferenceEqualityComparer.Instance) { _bytes };
         long total = 0;
-        foreach (var snap in _undo.Concat(_redo))
-            if (seen.Add(snap.Bytes)) total += snap.Bytes.Length;
+        foreach (var snap in _undo) if (seen.Add(snap.Bytes)) total += snap.Bytes.Length;
+        foreach (var snap in _redo) if (seen.Add(snap.Bytes)) total += snap.Bytes.Length;
         return total;
     }
 
     /// <summary>Capture the current state; call BEFORE any mutation.</summary>
     public void PushUndo()
     {
+        _lastCoalescedKey = null; // a separate edit ends any typing burst
+        PushUndoCore();
+    }
+
+    private void PushUndoCore()
+    {
         MarkEdited();
-        _undo.Add((_bytes, Annotations.Select(a => a.Model.Clone()).ToList(), CloneImages()));
+        _undo.Add(Capture());
         TrimStack(_undo);
         _redo.Clear();
     }
 
     // Coalescing: continuous edits (typing in a comment box) should produce ONE undo
-    // step per burst, not one per keystroke.
-    private (string Key, DateTime When)? _lastCoalescedPush;
+    // step per burst, not one per keystroke. Monotonic ticks, not DateTime.Now: the wall
+    // clock can jump (DST, time sync) and is slower to read on a per-keystroke path.
+    private string? _lastCoalescedKey;
+    private long _lastCoalescedTick;
 
     /// <summary>Push an undo snapshot, but skip if the same <paramref name="key"/> was
     /// pushed within <paramref name="windowSeconds"/>. The first edit of a burst always
     /// captures the pre-edit state; later edits in the burst ride on that snapshot.</summary>
     public void PushUndoCoalesced(string key, double windowSeconds = 1.5)
     {
-        if (_lastCoalescedPush is { } last && last.Key == key &&
-            (DateTime.Now - last.When).TotalSeconds < windowSeconds)
+        long now = Environment.TickCount64;
+        bool inBurst = _lastCoalescedKey == key && now - _lastCoalescedTick < windowSeconds * 1000;
+        _lastCoalescedTick = now;
+        if (inBurst)
         {
-            _lastCoalescedPush = (key, DateTime.Now);
+            MarkEdited(); // still an edit for crash recovery, just not a new undo step
             return;
         }
-        PushUndo();
-        _lastCoalescedPush = (key, DateTime.Now);
+        PushUndoCore();
+        _lastCoalescedKey = key;
     }
 
-    public async Task UndoAsync()
-    {
-        if (_undo.Count == 0) return;
-        _redo.Add((_bytes, Annotations.Select(a => a.Model.Clone()).ToList(), CloneImages()));
-        TrimStack(_redo);
-        var snap = _undo[^1];
-        _undo.RemoveAt(_undo.Count - 1);
-        await RestoreSnapshotAsync(snap.Bytes, snap.Annots, snap.Images, "Undoing…");
-    }
+    // Undo / redo are asynchronous (a structural step re-reads the whole PDF). Every step runs
+    // under _editGate, so two of them — or one plus a page operation or form fill — can never
+    // reload the renderer / text index at the same time. A few key presses may queue up behind
+    // the running step (holding Ctrl+Z keeps stepping back); beyond that they are dropped so a
+    // held key cannot build an unbounded backlog of slow reloads.
+    private int _historyQueued;
+    private const int MaxQueuedHistorySteps = 3;
 
-    public async Task RedoAsync()
-    {
-        if (_redo.Count == 0) return;
-        _undo.Add((_bytes, Annotations.Select(a => a.Model.Clone()).ToList(), CloneImages()));
-        TrimStack(_undo);
-        var snap = _redo[^1];
-        _redo.RemoveAt(_redo.Count - 1);
-        await RestoreSnapshotAsync(snap.Bytes, snap.Annots, snap.Images, "Redoing…");
-    }
+    public Task UndoAsync() => StepHistoryAsync(undo: true);
+    public Task RedoAsync() => StepHistoryAsync(undo: false);
 
-    private async Task RestoreSnapshotAsync(byte[] bytes, List<Annotation> annots, List<PendingImage> images, string busy)
+    private async Task StepHistoryAsync(bool undo)
     {
-        IsBusy = true;
-        BusyText = busy;
+        if (_disposed || _historyQueued >= MaxQueuedHistorySteps) return;
+        var src = undo ? _undo : _redo;
+        var dst = undo ? _redo : _undo;
+
+        _historyQueued++;
         try
         {
-            if (!ReferenceEquals(bytes, _bytes))
+            await _editGate.WaitAsync();
+            try
             {
-                var outline = await Task.Run(() =>
+                // Checked again here: earlier queued steps may have used the history up, and
+                // saving / OCR / search (which also set IsBusy) must not see the document
+                // change underneath them.
+                if (_disposed || src.Count == 0 || IsBusy) return;
+
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                var snap = src[^1];
+                src.RemoveAt(src.Count - 1);
+                var current = Capture(); // what the opposite stack gets once the step succeeds
+                _lastCoalescedKey = null;
+                long captureMs = clock.ElapsedMilliseconds, loadMs = captureMs;
+
+                // Annotation-only step (the PDF bytes are shared): swap the markup in synchronously,
+                // with no busy overlay, no re-read and no await — it is instant.
+                LoadedStructure? loaded = null;
+                bool structural = !ReferenceEquals(snap.Bytes, _bytes);
+                if (structural)
                 {
-                    Renderer.Reload(bytes);
-                    Index.Reload(bytes);
-                    return Index.GetOutline();
-                });
-                _bytes = bytes;
-                Outline.Clear();
-                foreach (var n in outline) Outline.Add(n);
+                    IsBusy = true;
+                    BusyText = undo ? "Undoing…" : "Redoing…";
+                    try { loaded = await LoadStructureAsync(snap.Bytes, readForms: snap.HadForm); }
+                    catch (Exception ex)
+                    {
+                        // Nothing was applied: put the step back so it can be tried again.
+                        App.LogError(undo ? "Undo failed" : "Redo failed", ex);
+                        src.Add(snap);
+                        IsBusy = false;
+                        return;
+                    }
+                }
+
+                if (structural) loadMs = clock.ElapsedMilliseconds;
+
+                try { ApplySnapshot(snap, loaded); }
+                catch (Exception ex) { App.LogError(undo ? "Undo (apply) failed" : "Redo (apply) failed", ex); }
+                finally { if (structural) IsBusy = false; }
+
+                dst.Add(current);
+                TrimStack(dst);
+
+                // Slow steps leave a line in %LOCALAPPDATA%\Graphite\graphite.log, so a "this felt slow"
+                // can be traced to the stage that took the time.
+                // The numbers above stop when this method does; layout and drawing of the panels happen after.
+                // This logs when the UI has actually gone idle again, which is what "slow" feels like.
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                    new Action(() =>
+                    {
+                        if (clock.ElapsedMilliseconds > 150)
+                            App.LogError($"{(undo ? "Undo" : "Redo")}: UI settled {clock.ElapsedMilliseconds} ms after the step started", null);
+                    }));
+
+                if (clock.ElapsedMilliseconds > 100)
+                    App.LogError($"{(undo ? "Undo" : "Redo")} took {clock.ElapsedMilliseconds} ms " +
+                                 $"(structural: {structural}, snapshot {captureMs} ms, reload {loadMs - captureMs} ms, " +
+                                 $"apply {clock.ElapsedMilliseconds - loadMs} ms, {Annotations.Count} markups, {Pages.Count} pages)", null);
+            }
+            finally { _editGate.Release(); }
+        }
+        finally { _historyQueued--; }
+    }
+
+    /// <summary>What re-reading a different PDF produces (everything that is slow to compute).</summary>
+    private sealed record LoadedStructure(IReadOnlyList<OutlineNode> Outline, List<FormField> Fields);
+
+    /// <summary>Point the renderer and text index at <paramref name="bytes"/> and read the outline
+    /// and form fields. The three readers parse the file independently, so they run side by side
+    /// (as on open): a structural undo takes as long as the slowest of them, not the sum.</summary>
+    private async Task<LoadedStructure> LoadStructureAsync(byte[] bytes, bool readForms)
+    {
+        var renderTask = Task.Run(() => Renderer.Reload(bytes));
+        var indexTask = Task.Run(() => { Index.Reload(bytes); return Index.GetOutline(); });
+        // Reading the form means parsing the whole file again; a document that has no form (before or
+        // after) skips it.
+        var formTask = readForms ? Task.Run(() => ReadFormFields(bytes)) : Task.FromResult(new List<FormField>());
+        try
+        {
+            // WhenAll only throws once all three have finished, so nothing is still touching
+            // the renderer / index when the recovery below runs.
+            await Task.WhenAll(renderTask, indexTask, formTask);
+        }
+        catch
+        {
+            // The renderer and index may be split across two different PDFs now: point both
+            // back at the document that is still live before reporting the failure.
+            var live = _bytes;
+            try { await Task.Run(() => { Renderer.Reload(live); Index.Reload(live); }); }
+            catch (Exception ex) { App.LogError("Could not restore the document after a failed undo", ex); }
+            throw;
+        }
+        return new LoadedStructure(indexTask.Result, formTask.Result);
+    }
+
+    /// <summary>Make <see cref="Annotations"/> match <paramref name="target"/> by changing only what differs.
+    /// An undo normally touches one or two markups; swapping the whole list instead rebuilt all of their
+    /// cards in the Markup panel (hundreds on a marked-up document) and dropped each one's cached drawing.
+    /// Unchanged markups keep their view-model — and so their card, quote and selection.</summary>
+    private void ReconcileAnnotations(List<Annotation> target)
+    {
+        var live = new Dictionary<Guid, AnnotationViewModel>(Annotations.Count);
+        foreach (var vm in Annotations) live[vm.Model.Id] = vm;
+
+        var result = new List<AnnotationViewModel>(target.Count);
+        var keep = new HashSet<AnnotationViewModel>();
+        foreach (var a in target)
+        {
+            if (live.TryGetValue(a.Id, out var vm) && !keep.Contains(vm) && vm.Model.ContentEquals(a))
+            {
+                keep.Add(vm);
+                result.Add(vm);
+            }
+            else result.Add(new AnnotationViewModel(this, a));
+        }
+
+        // Mostly different (a different file state altogether): one reset is cheaper than many edits.
+        int edits = (Annotations.Count - keep.Count) + (result.Count - keep.Count);
+        if (edits > 40) { Annotations.ReplaceAll(result); return; }
+
+        for (int i = Annotations.Count - 1; i >= 0; i--)
+            if (!keep.Contains(Annotations[i])) Annotations.RemoveAt(i);
+
+        for (int i = 0; i < result.Count; i++)
+        {
+            if (i < Annotations.Count && ReferenceEquals(Annotations[i], result[i])) continue;
+            if (keep.Contains(result[i])) { Annotations.ReplaceAll(result); return; } // order differs: rebuild
+            Annotations.Insert(i, result[i]);
+        }
+    }
+
+    private bool HasSameLayout()
+    {
+        var sizes = Renderer.PageSizes;
+        if (sizes.Count != Pages.Count) return false;
+        for (int i = 0; i < sizes.Count; i++)
+            if (Pages[i].WidthPt != sizes[i].Width || Pages[i].HeightPt != sizes[i].Height) return false;
+        return true;
+    }
+
+    /// <summary>Make <paramref name="snap"/> the live state. UI thread. The snapshot was already
+    /// taken off the history stack, so its markup objects go live as they are — no second clone.</summary>
+    private void ApplySnapshot(Snapshot snap, LoadedStructure? loaded)
+    {
+        if (loaded != null)
+        {
+            bool hadForm = HasForm;
+            _bytes = snap.Bytes;
+            QuoteCache.Clear();
+            Outline.Clear();
+            foreach (var n in loaded.Outline) Outline.Add(n);
+            SearchResults.Clear();
+            CurrentMatchIndex = -1;
+            if (HasSameLayout())
+            {
+                // Same pages, same sizes (form fill, text edit): keep the page list, the scroll position
+                // and the bitmaps on screen, and re-render in place. Rebuilding every page blanked the
+                // view and re-rendered it from nothing.
+                foreach (var p in Pages) p.InvalidateContent();
+                _ = RerenderPagesAsync(Enumerable.Range(0, Pages.Count));
+            }
+            else
+            {
                 RebuildPages();
-                SearchResults.Clear();
-                CurrentMatchIndex = -1;
-                CurrentPageIndex = Math.Clamp(CurrentPageIndex, 0, Pages.Count - 1);
+                CurrentPageIndex = Math.Clamp(CurrentPageIndex, 0, Math.Max(0, Pages.Count - 1));
                 RefreshVisiblePages();
                 OnPropertyChanged(nameof(PageStatus));
                 PagesReset?.Invoke();
-                await RefreshFormFieldsAsync();
             }
-            MarkEdited();
-            ClearLasso();
-            Annotations.Clear();
-            foreach (var a in annots) Annotations.Add(new AnnotationViewModel(this, a.Clone()));
-            SelectedAnnotation = null;
-            PlacedImages.Clear();
-            foreach (var img in images) PlacedImages.Add(img.Clone());
-            SelectedImage = null;
-            IsDirty = true;
-            AnnotationsVisualChanged?.Invoke();
-            StateRestored?.Invoke();
+            if (hadForm || loaded.Fields.Count > 0) SetFormFields(loaded.Fields);
         }
-        finally { IsBusy = false; }
+
+        MarkEdited();
+        ClearLasso();
+        ReconcileAnnotations(snap.Annots);
+        if (SelectedAnnotation != null && !Annotations.Contains(SelectedAnnotation)) SelectedAnnotation = null;
+        PlacedImages.Clear();
+        foreach (var img in snap.Images) PlacedImages.Add(img);
+        SelectedImage = null;
+        IsDirty = true;
+        AnnotationsVisualChanged?.Invoke();
+        if (loaded != null) StateRestored?.Invoke(); // the page re-read fades in; a markup-only step needs no fade
     }
 
     public string Title => Path.GetFileName(FilePath) ?? "Untitled";
@@ -485,7 +654,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
     public static async Task<DocumentViewModel> LoadAsync(string path)
     {
-        byte[] bytes = await File.ReadAllBytesAsync(path);
+        byte[] bytes = await FileReader.ReadAllBytesAsync(path);
         return await FromBytesAsync(bytes, path);
     }
 
@@ -762,6 +931,14 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public async Task ApplyOperationAsync(string busyMessage, Func<byte[], byte[]> operation,
         PageOpHint hint = default)
     {
+        // One at a time, and never alongside undo / redo or a form fill: they all reload the renderer.
+        await _editGate.WaitAsync();
+        try { await ApplyOperationCoreAsync(busyMessage, operation, hint); }
+        finally { _editGate.Release(); }
+    }
+
+    private async Task ApplyOperationCoreAsync(string busyMessage, Func<byte[], byte[]> operation, PageOpHint hint)
+    {
         IsBusy = true;
         BusyText = busyMessage;
         int pagesBefore = Pages.Count;
@@ -787,8 +964,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             _bytes = newBytes;
 
             ClearLasso();
-            Annotations.Clear();
-            foreach (var a in newAnnots) Annotations.Add(new AnnotationViewModel(this, a));
+            Annotations.ReplaceAll(newAnnots.Select(a => new AnnotationViewModel(this, a)).ToList());
             SelectedAnnotation = null;
             PlacedImages.Clear();
             SelectedImage = null;
@@ -800,7 +976,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
 
             SearchResults.Clear();
             CurrentMatchIndex = -1;
-            CurrentPageIndex = Math.Clamp(CurrentPageIndex, 0, Pages.Count - 1);
+            CurrentPageIndex = Math.Clamp(CurrentPageIndex, 0, Math.Max(0, Pages.Count - 1));
             RefreshVisiblePages();
             IsDirty = true;
             OnPropertyChanged(nameof(PageStatus));
@@ -1182,13 +1358,15 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public IEnumerable<(FormFieldViewModel Field, FormWidget Widget)> FormWidgetsOn(int pageIndex) =>
         FormFields.SelectMany(f => f.Model.Widgets.Where(w => w.PageIndex == pageIndex).Select(w => (f, w)));
 
-    private readonly SemaphoreSlim _formGate = new(1, 1);
+    /// <summary>Serialises everything that swaps the document's bytes / reloads the renderer: undo, redo,
+    /// form fills and page operations.</summary>
+    private readonly SemaphoreSlim _editGate = new(1, 1);
 
     /// <summary>Write a field's new value into the PDF (value + appearance), then re-render the
     /// pages it appears on. Undoable like any other edit.</summary>
     public async Task SetFormValueAsync(FormFieldViewModel field, string value)
     {
-        await _formGate.WaitAsync();
+        await _editGate.WaitAsync();
         try
         {
             if (_disposed || field.Value == value) return;
@@ -1208,7 +1386,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
             IsDirty = true;
             await RerenderPagesAsync(field.Model.Widgets.Select(w => w.PageIndex));
         }
-        finally { _formGate.Release(); }
+        finally { _editGate.Release(); }
     }
 
     /// <summary>Re-render specific pages now (their old bitmap stays up until the new one is ready).</summary>
