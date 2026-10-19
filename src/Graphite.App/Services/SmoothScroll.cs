@@ -89,6 +89,7 @@ public static class SmoothScroll
     private static double _frameLayoutMs, _frameScrolledMs;
     private static int _frameRealized;
     private static List<string> _slow = new();
+    private static int _smallSteps;
     private static long _opStart;
     private static double _busyMs;
     private static readonly List<string> LongOps = new();
@@ -124,6 +125,7 @@ public static class SmoothScroll
         _gc2 = GC.CollectionCount(2);
         _gcPause = GC.GetTotalPauseDuration();
         _busyMs = 0;
+        _smallSteps = 0;
         LongOps.Clear();
         _probeDispatcher = sv.Dispatcher;
         _probeDispatcher.Hooks.OperationStarted += OnOpStarted;
@@ -179,7 +181,7 @@ public static class SmoothScroll
         if (gaps.Count < 3) return;
         gaps.Sort();
         App.LogError($"Scroll probe: {gaps.Count} frames, avg {gaps.Average():0.0} ms, p95 {gaps[(int)(gaps.Count * 0.95)]:0.0} ms, " +
-                     $"max {gaps[^1]:0.0} ms, {gaps.Count(g => g > 25)} over 25 ms; GC gen0/1/2 {GC.CollectionCount(0) - _gc0}/{GC.CollectionCount(1) - _gc1}/{GC.CollectionCount(2) - _gc2}, paused {(GC.GetTotalPauseDuration() - _gcPause).TotalMilliseconds:0} ms; UI thread busy {_busyMs:0} ms of {gaps.Sum():0}; long operations: {string.Join(", ", LongOps)}; {_probeNote}; slow frames: {string.Join(", ", _slow)}", null);
+                     $"max {gaps[^1]:0.0} ms, {gaps.Count(g => g > 25)} over 25 ms; GC gen0/1/2 {GC.CollectionCount(0) - _gc0}/{GC.CollectionCount(1) - _gc1}/{GC.CollectionCount(2) - _gc2}, paused {(GC.GetTotalPauseDuration() - _gcPause).TotalMilliseconds:0} ms; small wheel steps {_smallSteps}; UI thread busy {_busyMs:0} ms of {gaps.Sum():0}; long operations: {string.Join(", ", LongOps)}; {_probeNote}; slow frames: {string.Join(", ", _slow)}", null);
     }
 
     private static void MarkScrolling(double glideMs)
@@ -229,6 +231,30 @@ public static class SmoothScroll
         long now = Environment.TickCount64;
         double current = sv.VerticalOffset;
         bool gliding = now < (long)sv.GetValue(ArriveProperty);
+
+        // A precision touchpad (or a free-spinning wheel) sends many small steps that already follow the fingers, and
+        // Windows adds the coasting itself. Gliding each one would restart an ease-out every few milliseconds, and
+        // every restart begins at full speed, so the movement judders, most of all when scrolling slowly. Those steps
+        // are applied as they come; the glide is only for the 120-unit notches of an ordinary wheel.
+        if (Math.Abs(e.Delta) < 120)
+        {
+            if (gliding)
+            {
+                // stop a running glide where it is (the base value first, so clearing it does not jump to 0)
+                sv.SetValue(OffsetProperty, current);
+                sv.BeginAnimation(OffsetProperty, null);
+                sv.SetValue(ArriveProperty, 0L);
+            }
+            double step = Math.Clamp(current - e.Delta / 120.0 * PixelsPerNotch, 0, sv.ScrollableHeight);
+            e.Handled = true;
+            if (Math.Abs(step - current) < 0.01) return;
+            _smallSteps++;
+            MarkScrolling(60);
+            ProbeStart(sv);
+            Hold(sv);
+            sv.ScrollToVerticalOffset(step);
+            return;
+        }
         double from = gliding ? (double)sv.GetValue(TargetProperty) : current;
         double target = Math.Clamp(from - e.Delta / 120.0 * PixelsPerNotch, 0, sv.ScrollableHeight);
 

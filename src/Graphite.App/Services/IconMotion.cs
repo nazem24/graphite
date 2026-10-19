@@ -84,9 +84,6 @@ public static class IconMotion
 
     private static void Play(WpfPath path, string key)
     {
-        // The theme glyph already has its own spin; leave it alone.
-        if (key == "Icon.Theme") return;
-
         Point origin = key switch
         {
             "Icon.Sidebar" => new Point(0.0, 0.5),
@@ -122,6 +119,11 @@ public static class IconMotion
                 break;
 
             case "Icon.Invert": Spin(rig, 360, 480); break;
+            case "Icon.Theme":
+                // the Appearance row in Settings: the half-filled disc turns once, with a small squeeze
+                Spin(rig, 360, 520);
+                Scale(rig, (0, 1), (150, 0.86), (520, 1));
+                break;
             case "Icon.Fullscreen": Scale(rig, (0, 1), (110, 0.76), (270, 1.15), (390, 1)); break;
             case "Icon.Command":
                 Spin(rig, 90, 380);

@@ -20,9 +20,15 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // A way to compare drawing on the processor with drawing on the graphics card (before any window exists):
-        // start with GRAPHITE_RENDER=software to try it. Without the variable nothing changes.
-        if (string.Equals(Environment.GetEnvironmentVariable("GRAPHITE_RENDER"), "software", StringComparison.OrdinalIgnoreCase))
+        // Drawing on the processor or on the graphics card (decided before any window exists). On ARM PCs the graphics
+        // path of WPF stutters while scrolling (measured on a Surface: more late frames, and it felt worse), and a
+        // current ARM processor draws this app without trouble, so ARM64 builds draw on the processor. Everything else
+        // keeps the graphics card. GRAPHITE_RENDER=software or =hardware overrides either way.
+        string? render = Environment.GetEnvironmentVariable("GRAPHITE_RENDER");
+        bool software = string.Equals(render, "software", StringComparison.OrdinalIgnoreCase)
+            || (!string.Equals(render, "hardware", StringComparison.OrdinalIgnoreCase)
+                && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64);
+        if (software)
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
         base.OnStartup(e);
