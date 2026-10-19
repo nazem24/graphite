@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Graphite.App.Services;
 using Graphite.App.Views;
+using Graphite.Core;
 
 namespace Graphite.App;
 
@@ -73,6 +74,10 @@ public partial class App : Application
         // Start loading PDFium / the PDF readers now, in the background, so the first document
         // the user opens doesn't pay for it.
         Warmup.Start();
+
+        // The person got past SmartScreen's "Windows protected your PC" prompt to be here: drop the download mark from
+        // Graphite's own files so the prompt doesn't come back on every launch.
+        MarkOfTheWeb.UnblockInBackground(AppContext.BaseDirectory);
 
         CleanupStalePasteFiles();
         RecoveryService.StartSession();
