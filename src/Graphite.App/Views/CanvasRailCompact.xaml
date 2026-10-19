@@ -1,0 +1,82 @@
+<UserControl x:Class="Graphite.App.Views.CanvasRailCompact"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Graphite.App.ViewModels"
+             xmlns:conv="clr-namespace:Graphite.App.Converters"
+             xmlns:svc="clr-namespace:Graphite.App.Services"
+             Focusable="False">
+
+    <!-- The Canvas space in the collapsed icon rail (44 px wide). DataContext: CanvasViewModel. Every course is the
+         course icon in its own colour (the name is in the tooltip); a small accent dot marks new items. -->
+    <UserControl.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="NewDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="6"/>
+            <Setter Property="Height" Value="6"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Margin" Value="0,7,6,0"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+            <Setter Property="Fill" Value="{DynamicResource App.AccentSystemBrush}"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <RadioButton Style="{StaticResource RailNavCompact}" GroupName="canvasNavCompact"
+                         IsChecked="{Binding IsOverview, Mode=OneWay}" Command="{Binding ShowOverviewCommand}" ToolTip="Overview">
+                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Thumbs}" Width="16" Height="16"/>
+            </RadioButton>
+            <Grid>
+                <RadioButton Style="{StaticResource RailNavCompact}" GroupName="canvasNavCompact"
+                             IsChecked="{Binding IsNewPage, Mode=OneWay}" Command="{Binding ShowNewCommand}" ToolTip="New">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Sparkle}" Width="16" Height="16"/>
+                </RadioButton>
+                <Ellipse Style="{StaticResource NewDot}" Visibility="{Binding HasNewTotal, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+            <RadioButton Style="{StaticResource RailNavCompact}" GroupName="canvasNavCompact"
+                         IsChecked="{Binding IsPinnedPage, Mode=OneWay}" Command="{Binding ShowPinnedCommand}" ToolTip="Pinned">
+                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Pin}" Width="16" Height="16"/>
+            </RadioButton>
+            <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="8,10,8,8"
+                       Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" svc:SmoothScroll.Enabled="True" VerticalScrollBarVisibility="Hidden"
+                      HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"
+                      PanningDeceleration="0.0015" CanContentScroll="False" Stylus.IsFlicksEnabled="False">
+            <ItemsControl ItemsSource="{Binding Courses}" Focusable="False"
+                          Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:CanvasCourseItem}">
+                        <Grid>
+                            <RadioButton Style="{StaticResource RailNavCompact}" MinHeight="36" GroupName="canvasNavCompact"
+                                         IsChecked="{Binding IsActive, Mode=OneWay}" ToolTip="{Binding Tip}"
+                                         Command="{Binding DataContext.OpenCourseCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                         CommandParameter="{Binding}">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="16" Height="16"
+                                      Stretch="Uniform" Stroke="{Binding TintBrush}"/>
+                            </RadioButton>
+                            <Ellipse Style="{StaticResource NewDot}" Margin="0,5,4,0"
+                                     Visibility="{Binding HasNew, Converter={StaticResource BoolToVis}}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Button Grid.Row="2" Style="{StaticResource RailRow}" Height="40" Padding="0"
+                HorizontalContentAlignment="Center" Margin="0,8,0,0"
+                Command="{Binding OpenSettingsCommand}" ToolTip="Canvas settings…">
+            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Settings}" Width="14" Height="14"
+                  Stretch="Uniform"/>
+        </Button>
+    </Grid>
+</UserControl>

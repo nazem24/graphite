@@ -11,9 +11,13 @@ pure managed core keep it quick and small.
 
 ## Download
 
-Grab the latest `Graphite-vX.Y.Z-win-x64.zip` from
+Grab the latest `Graphite-vX.Y.Z-win-x64.zip` (Intel/AMD PCs) from
 [Releases](https://github.com/nazem24/graphite/releases), unzip, and run `Graphite.exe`.
-It's a single self-contained executable — no installer, no .NET runtime needed.
+It's self-contained — no installer, no .NET runtime needed.
+On an ARM PC (Snapdragon, Surface Pro 11 …) there is also a native `Graphite-vX.Y.Z-win-arm64.zip`: it
+draws and scrolls more smoothly than the x64 build, which runs there emulated. The one thing it lacks is
+OCR (the recognition library has no ARM64 code); the x64 build has it. An installed build updates itself
+with packages of its own kind.
 
 Graphite **updates itself**: it checks for new releases at startup (quietly — it only
 speaks up when there's something new) and from *File → Check for updates…*. Accepting
@@ -31,6 +35,17 @@ navigation, full-text search with per-page highlights, and multi-tab support —
 each tab remembers its scroll position.
 
 **Library start screen** — the Home tab is a mirror of one main folder (OneDrive by default): browse its subfolders like a file manager, search across them (Ctrl+F), pin files, and pick up where you stopped with a *Continue reading* card and per-file progress. Files that are online-only in OneDrive are marked with a cloud and never downloaded just to be listed. Choose the folder once from *Choose your main folder*; open documents stay open in their tabs behind Home.
+
+**Canvas space** — the start screen's sidebar switches between **Local** (your library folder) and **Canvas** (your
+courses from Canvas LMS, e.g. learning.unisg.ch). Canvas shows each course's start page and modules with all their files,
+including files hidden from the Files tab and files linked inside wiki pages, plus links, assignments with due dates and
+NEW markers (also gathered in one *New* list across courses), pins and search across courses. Clicking a file opens it in
+a tab. A course can be **linked to a folder**: opened files are saved there and recognised later by their Canvas id, even
+after you rename them ("On this PC"). Without a link, files open from a cache and their first Save goes to *Save as…*. Each
+file has Quick download / Save as… / Save to course folder, and each module a ZIP button. It is read-only and light:
+nothing talks to Canvas until the space is opened, course structures are cached on disk and refresh quietly, and nothing
+is downloaded unless you click. The access token is stored encrypted with Windows DPAPI for your account
+(*Settings › Canvas*).
 
 **Reading** — fullscreen mode (F11, Esc to leave), dark pages (inverted page colors
 for night reading, moon button in the page bar), and reading history: Alt+Left /
@@ -98,7 +113,7 @@ modified one asks whether to reload or keep your version — saving never silent
 someone else's changes.
 
 **Platform** — single instance (opening another PDF from Explorer adds a tab to the running
-window), a settings page (gear button or Ctrl+,) with light/dark and four window materials — Mica, Blur, Frosted glass, Glass (all persisted; the materials need Windows 11), a library sidebar on the start page that collapses to an icon rail or hides completely (your choice in Settings), per-tool default colour / thickness / opacity and text size (Settings > Tool defaults), per-monitor
+window), a settings page (gear button or Ctrl+,) in five sections (Appearance, Start page, Reading & markup, Canvas, About) with light/dark and four window materials — Mica, Blur, Frosted glass, Glass (all persisted; the materials need Windows 11), a library sidebar on the start page that collapses to an icon rail or hides completely (your choice in Settings), per-tool default colour / thickness / opacity and text size (Settings > Tool defaults), per-monitor
 DPI awareness, drag-and-drop, recent files, OneDrive quick-open, printing at 300 dpi
 with annotations included, and a script to register the .pdf file association.
 

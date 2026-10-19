@@ -881,6 +881,11 @@
                     <!-- a PDF -->
                     <DataTemplate DataType="{x:Type vm:DocumentViewModel}">
                         <StackPanel Orientation="Horizontal" ToolTip="{Binding FilePath}">
+                            <!-- opened from the Canvas cache: its first Save asks where to keep it -->
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="12" Height="12"
+                                  Stretch="Uniform" Margin="0,0,7,0" VerticalAlignment="Center"
+                                  ToolTip="From Canvas, not saved on this PC yet. Save asks where to keep it."
+                                  Visibility="{Binding IsCanvasCache, Converter={StaticResource BoolToVis}}"/>
                             <TextBlock Text="{Binding Title}" MaxWidth="170" TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center"/>
                             <TextBlock Text="●" FontSize="8" Margin="6,0,0,0" VerticalAlignment="Center"
@@ -1566,6 +1571,54 @@
                     <StackPanel x:Name="HomeBar" Orientation="Horizontal" VerticalAlignment="Center"
                                 Visibility="{Binding IsHomeSelected, Converter={StaticResource BoolToVis}}">
 
+                      <!-- ============ the Canvas space: where you are, search the courses (refresh and "open in Canvas" are on the page) ============ -->
+                      <StackPanel Orientation="Horizontal" DataContext="{Binding Library.Canvas}"
+                                  Visibility="{Binding DataContext.Library.IsCanvasSpace, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
+                            <Rectangle Style="{StaticResource ToolSep}"/>
+                            <Button Style="{StaticResource BarPill}" Command="{Binding ShowOverviewCommand}"
+                                    ToolTip="{Binding LocationLabel}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="14" Height="14"
+                                          Stretch="Uniform"/>
+                                    <TextBlock x:Name="CanvasLocationText" Text="{Binding LocationLabel}" Margin="8,0,0,0"
+                                               FontSize="12.5" MaxWidth="170" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+
+                            <Border x:Name="CanvasSearchHost" Width="210" Height="30" CornerRadius="9" Margin="6,0"
+                                    VerticalAlignment="Center" BorderThickness="1" Background="Transparent"
+                                    BorderBrush="{DynamicResource App.StrokeBrush}">
+                                <Grid Margin="10,0,6,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Search}" Width="13" Height="13"
+                                          Stretch="Uniform" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding SearchPlaceholder}" Style="{StaticResource Caption}" FontSize="12"
+                                                   IsHitTestVisible="False" TextTrimming="CharacterEllipsis"
+                                                   Visibility="{Binding IsSearching, Converter={StaticResource InvBoolToVis}}"/>
+                                        <TextBox x:Name="CanvasSearchBox" Background="Transparent" BorderThickness="0" Padding="0"
+                                                 FontSize="12" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 PreviewKeyDown="CanvasSearch_PreviewKeyDown" TextChanged="HomeSearch_TextChanged"/>
+                                    </Grid>
+                                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Padding="5" ToolTip="Clear search"
+                                            Command="{Binding ClearSearchCommand}" Focusable="False"
+                                            Visibility="{Binding IsSearching, Converter={StaticResource BoolToVis}}">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Close}" Width="10" Height="10"
+                                              Stretch="Uniform"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                      </StackPanel>
+
+                      <!-- ============ the Local space ============ -->
+                      <StackPanel Orientation="Horizontal"
+                                  Visibility="{Binding Library.IsLocalSpace, Converter={StaticResource BoolToVis}}">
+
                         <!-- nothing ticked -->
                         <StackPanel Orientation="Horizontal" DataContext="{Binding Library}"
                                     Visibility="{Binding HasSelection, Converter={StaticResource InvBoolToVis}}">
@@ -1734,6 +1787,7 @@
                                 </Button.ContextMenu>
                             </Button>
                         </StackPanel>
+                      </StackPanel>
                     </StackPanel>
 
                     <!-- ============ document editor: undo, insert, page, name ============ -->

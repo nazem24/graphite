@@ -572,6 +572,10 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     }
 
     public string Title => Path.GetFileName(FilePath) ?? "Untitled";
+
+    /// <summary>Opened from the Canvas file cache (a course without a linked folder): the tab says so, and the
+    /// first Save asks where to keep the file.</summary>
+    public bool IsCanvasCache => Services.CanvasSettings.IsCacheFile(FilePath);
     public string PageStatus => Pages.Count == 0 ? "" : $"{CurrentPageIndex + 1} / {Pages.Count}";
     public string MatchStatus => SearchResults.Count == 0 ? "No results"
         : $"{CurrentMatchIndex + 1} of {SearchResults.Count}";
@@ -829,7 +833,11 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         }
     }
 
-    partial void OnFilePathChanged(string? value) => OnPropertyChanged(nameof(Title));
+    partial void OnFilePathChanged(string? value)
+    {
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(IsCanvasCache));
+    }
 
     partial void OnActiveToolChanged(ToolKind value)
     {
@@ -1265,6 +1273,12 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     /// bakes an invisible text layer into the PDF so it stays searchable after save.</summary>
     public async Task<int> RunOcrAsync()
     {
+        // The text-recognition library only ships native code for Intel/AMD processors.
+        if (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64)
+            throw new InvalidOperationException(
+                "Text recognition (OCR) isn't available in the ARM64 version of Graphite, because its recognition library " +
+                "only exists for Intel/AMD processors.\n\nThe x64 version of Graphite (it runs on ARM PCs too, a little slower) has it.");
+
         if (!OcrEngine.IsAvailable())
             throw new InvalidOperationException(
                 "OCR language data not found.\n\nRun tools\\get-tessdata.ps1 (or place eng.traineddata and deu.traineddata " +

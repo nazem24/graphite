@@ -765,6 +765,8 @@ public partial class MainWindow
         if (BrandName != null) BrandName.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
         if (HomeSearchHost != null) HomeSearchHost.Width = level >= 2 ? 150 : 210;
         if (HomeLocationText != null) HomeLocationText.MaxWidth = level >= 2 ? 110 : 170;
+        if (CanvasSearchHost != null) CanvasSearchHost.Width = level >= 2 ? 150 : 210;
+        if (CanvasLocationText != null) CanvasLocationText.MaxWidth = level >= 2 ? 110 : 170;
     }
 
     private void ShowPageBar(bool show, bool animate = true, bool force = false)

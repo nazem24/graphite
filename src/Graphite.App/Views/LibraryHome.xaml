@@ -5,6 +5,7 @@
              xmlns:ctrl="clr-namespace:Graphite.App.Controls"
              xmlns:conv="clr-namespace:Graphite.App.Converters"
              xmlns:svc="clr-namespace:Graphite.App.Services"
+             xmlns:views="clr-namespace:Graphite.App.Views"
              Focusable="False">
 
     <!-- DataContext: LibraryViewModel (set by MainWindow). Commands that live on it are reached
@@ -718,21 +719,59 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- the two spaces of the start screen, and the collapse chevron -->
+                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                        <!-- Quiet by default: a small, faint chevron that only wakes up on hover. -->
+                        <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Padding="5"
+                                VerticalAlignment="Center" Margin="4,0,0,0"
+                                Command="{Binding ToggleRailPaneCommand}"
+                                ToolTip="Collapse sidebar">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronLeft}"
+                                  Width="10" Height="10" Stretch="Uniform" StrokeThickness="1.3"
+                                  Stroke="{DynamicResource App.TextSecondaryBrush}"/>
+                        </Button>
+                        <Border Style="{StaticResource SegmentTray}">
+                            <UniformGrid Columns="2">
+                                <RadioButton Style="{StaticResource SegmentOption}" GroupName="spaceOpen" Padding="0,6"
+                                             IsChecked="{Binding IsLocalSpace, Mode=OneWay}" Command="{Binding ShowLocalSpaceCommand}"
+                                             ToolTip="Your library folder on this PC">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="13" Height="13"
+                                              Stretch="Uniform" Margin="0,0,7,0"/>
+                                        <TextBlock Text="Local" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton Style="{StaticResource SegmentOption}" GroupName="spaceOpen" Padding="0,6"
+                                             IsChecked="{Binding IsCanvasSpace, Mode=OneWay}" Command="{Binding ShowCanvasSpaceCommand}"
+                                             ToolTip="Your courses from Canvas">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="13" Height="13"
+                                              Stretch="Uniform" Margin="0,0,7,0"/>
+                                        <TextBlock Text="Canvas" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </UniformGrid>
+                        </Border>
+                    </DockPanel>
+
+                    <!-- Canvas -->
+                    <Grid Grid.Row="1" Visibility="{Binding IsCanvasSpace, Converter={StaticResource BoolToVis}}">
+                        <views:CanvasRail DataContext="{Binding Canvas}"/>
+                    </Grid>
+
+                    <!-- Local -->
+                    <Grid Grid.Row="1" Visibility="{Binding IsLocalSpace, Converter={StaticResource BoolToVis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0">
-                        <!-- library switcher + collapse -->
+                        <!-- library switcher -->
                         <DockPanel Margin="0,0,0,10">
-                            <!-- Quiet by default: a small, faint chevron that only wakes up on hover. -->
-                            <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Padding="5"
-                                    VerticalAlignment="Center" Margin="4,0,0,0"
-                                    Command="{Binding ToggleRailPaneCommand}"
-                                    ToolTip="Collapse sidebar">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronLeft}"
-                                      Width="10" Height="10" Stretch="Uniform" StrokeThickness="1.3"
-                                      Stroke="{DynamicResource App.TextSecondaryBrush}"/>
-                            </Button>
                             <Button Style="{StaticResource RailRow}" Height="52" Padding="8,0,8,0"
                                     Click="LibraryMenu_Click" ToolTip="Switch, add or remove library folders">
                                 <DockPanel>
@@ -893,6 +932,7 @@
                             </StackPanel>
                         </Button>
                     </StackPanel>
+                    </Grid>
                 </Grid>
 
                 <!-- icon rail -->
@@ -937,25 +977,49 @@
                                   Width="10" Height="10" Stretch="Uniform" StrokeThickness="1.3"
                                   Stroke="{DynamicResource App.TextSecondaryBrush}"/>
                         </Button>
-                        <RadioButton Style="{StaticResource RailNavCompact}" IsChecked="{Binding IsHomeActive, Mode=OneWay}"
-                                     Command="{Binding ShowHomeCommand}" ToolTip="Home">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Home}" Width="16" Height="16"/>
-                        </RadioButton>
-                        <RadioButton Style="{StaticResource RailNavCompact}" IsChecked="{Binding IsRecentActive, Mode=OneWay}"
-                                     Command="{Binding ShowRecentCommand}" ToolTip="Recent">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Clock}" Width="16" Height="16"/>
-                        </RadioButton>
-                        <RadioButton Style="{StaticResource RailNavCompact}" IsChecked="{Binding IsPinnedActive, Mode=OneWay}"
-                                     Command="{Binding ShowPinnedCommand}" ToolTip="Pinned">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Pin}" Width="16" Height="16"/>
-                        </RadioButton>
-                        <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="8,10,8,8"
-                                   Visibility="{Binding HasRoot, Converter={StaticResource BoolToVis}}"/>
+                        <!-- the two spaces, one above the other in a tray -->
+                        <Border Style="{StaticResource SegmentTray}" Padding="2" Margin="0,0,0,10">
+                            <StackPanel>
+                                <RadioButton Style="{StaticResource SegmentOption}" GroupName="spaceCompact" Padding="0,7"
+                                             IsChecked="{Binding IsLocalSpace, Mode=OneWay}" Command="{Binding ShowLocalSpaceCommand}"
+                                             ToolTip="Local: your library folder">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="15" Height="15" Stretch="Uniform"/>
+                                </RadioButton>
+                                <RadioButton Style="{StaticResource SegmentOption}" GroupName="spaceCompact" Padding="0,7" Margin="0,2,0,0"
+                                             IsChecked="{Binding IsCanvasSpace, Mode=OneWay}" Command="{Binding ShowCanvasSpaceCommand}"
+                                             ToolTip="Canvas: your courses">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="15" Height="15" Stretch="Uniform"/>
+                                </RadioButton>
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Visibility="{Binding IsLocalSpace, Converter={StaticResource BoolToVis}}">
+                            <RadioButton Style="{StaticResource RailNavCompact}" IsChecked="{Binding IsHomeActive, Mode=OneWay}"
+                                         Command="{Binding ShowHomeCommand}" ToolTip="Home">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Home}" Width="16" Height="16"/>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource RailNavCompact}" IsChecked="{Binding IsRecentActive, Mode=OneWay}"
+                                         Command="{Binding ShowRecentCommand}" ToolTip="Recent">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Clock}" Width="16" Height="16"/>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource RailNavCompact}" IsChecked="{Binding IsPinnedActive, Mode=OneWay}"
+                                         Command="{Binding ShowPinnedCommand}" ToolTip="Pinned">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Pin}" Width="16" Height="16"/>
+                            </RadioButton>
+                            <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="8,10,8,8"
+                                       Visibility="{Binding HasRoot, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
                     </StackPanel>
+
+                    <!-- Canvas: everything below the switcher -->
+                    <Grid Grid.Row="1" Grid.RowSpan="2" Visibility="{Binding IsCanvasSpace, Converter={StaticResource BoolToVis}}">
+                        <views:CanvasRailCompact DataContext="{Binding Canvas}"/>
+                    </Grid>
 
                     <ScrollViewer Grid.Row="1" svc:SmoothScroll.Enabled="True" VerticalScrollBarVisibility="Hidden"
                                   HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"
-                                  PanningDeceleration="0.0015" CanContentScroll="False" Stylus.IsFlicksEnabled="False">
+                                  PanningDeceleration="0.0015" CanContentScroll="False" Stylus.IsFlicksEnabled="False"
+                                  Visibility="{Binding IsLocalSpace, Converter={StaticResource BoolToVis}}">
                         <ItemsControl ItemsSource="{Binding RailItems}" Focusable="False"
                                       Visibility="{Binding HasRoot, Converter={StaticResource BoolToVis}}">
                             <ItemsControl.ItemTemplate>
@@ -987,12 +1051,14 @@
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <Button Grid.Row="2" Style="{StaticResource RailRow}" Height="40" Padding="0"
-                            HorizontalContentAlignment="Center" Margin="0,8,0,0"
-                            Command="{Binding AddFolderCommand}" ToolTip="Add folder…"
-                            Visibility="{Binding HasRoot, Converter={StaticResource BoolToVis}}">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Add}" Width="14" Height="14"/>
-                    </Button>
+                    <Grid Grid.Row="2" Visibility="{Binding IsLocalSpace, Converter={StaticResource BoolToVis}}">
+                        <Button Style="{StaticResource RailRow}" Height="40" Padding="0"
+                                HorizontalContentAlignment="Center" Margin="0,8,0,0"
+                                Command="{Binding AddFolderCommand}" ToolTip="Add folder…"
+                                Visibility="{Binding HasRoot, Converter={StaticResource BoolToVis}}">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Add}" Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
                 </Grid>
             </Grid>
         </Border>
@@ -1002,7 +1068,15 @@
              fades back in when you change folder.
              See LibraryHome.xaml.cs (page transition). -->
         <Grid x:Name="PageHost" Grid.Column="1" ClipToBounds="True">
-          <Grid x:Name="PageContent" RenderTransformOrigin="0.5,0.5">
+          <!-- the Canvas space's page (LibraryHome.xaml.cs fades between the two spaces) -->
+          <Grid x:Name="CanvasLayer" Visibility="{Binding IsCanvasSpace, Converter={StaticResource BoolToVis}}">
+              <Grid.RenderTransform>
+                  <TranslateTransform/>
+              </Grid.RenderTransform>
+              <views:CanvasHome x:Name="CanvasView" DataContext="{Binding Canvas}"/>
+          </Grid>
+          <Grid x:Name="PageContent" RenderTransformOrigin="0.5,0.5"
+                Visibility="{Binding IsLocalSpace, Converter={StaticResource BoolToVis}}">
             <Grid.RenderTransform>
                 <TranslateTransform/>
             </Grid.RenderTransform>

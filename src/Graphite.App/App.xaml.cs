@@ -20,6 +20,11 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // A way to compare drawing on the processor with drawing on the graphics card (before any window exists):
+        // start with GRAPHITE_RENDER=software to try it. Without the variable nothing changes.
+        if (string.Equals(Environment.GetEnvironmentVariable("GRAPHITE_RENDER"), "software", StringComparison.OrdinalIgnoreCase))
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+
         base.OnStartup(e);
 
         // Files passed on the command line (file association / "Open with"), as full paths —

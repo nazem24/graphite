@@ -11,6 +11,12 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        # win-x64: Intel/AMD PCs (also runs on ARM PCs, emulated, with OCR).
+        # win-arm64: native build for ARM PCs. OCR is not in it: the Tesseract library has no ARM64 code.
+        rid: [win-x64, win-arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,29 +33,32 @@ jobs:
       # Not a single-file publish: Tesseract locates its native DLLs (x64\tesseract50.dll,
       # x64\leptonica-*.dll) relative to Tesseract.dll on disk. Inside a single-file exe
       # Assembly.Location is empty and OCR fails with "Value cannot be null (path1)".
-      - name: Publish self-contained win-x64 build
+      - name: Publish self-contained ${{ matrix.rid }} build
         shell: pwsh
         run: >
           dotnet publish src/Graphite.App/Graphite.App.csproj
           -c Release
-          -r win-x64
+          -r ${{ matrix.rid }}
           --self-contained true
           -p:PublishReadyToRun=true
           -p:Version="$("${{ github.ref_name }}".TrimStart('v'))"
           -o publish
 
-      - name: Verify OCR files are in the package
+      - name: Verify the package files
         shell: pwsh
         run: |
           $required = @(
+            'Graphite.exe',
             'Tesseract.dll',
-            'x64\tesseract50.dll',
-            'x64\leptonica-1.82.0.dll',
             'tessdata\eng.traineddata',
             'tessdata\deu.traineddata'
           )
+          # the native OCR libraries only exist for Intel/AMD: the x64 package must carry them
+          if ('${{ matrix.rid }}' -eq 'win-x64') {
+            $required += @('x64\tesseract50.dll', 'x64\leptonica-1.82.0.dll')
+          }
           $missing = $required | Where-Object { -not (Test-Path (Join-Path 'publish' $_)) }
-          if ($missing) { throw "OCR files missing from publish output: $($missing -join ', ')" }
+          if ($missing) { throw "Files missing from the publish output: $($missing -join ', ')" }
 
       # The self-updater removes files an old version shipped but the new one doesn't — only
       # files listed in the old version's manifest, never anything else in the install folder.
@@ -66,20 +75,43 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}"
-          Compress-Archive -Path publish\* -DestinationPath "Graphite-$version-win-x64.zip"
+          Compress-Archive -Path publish\* -DestinationPath "Graphite-$version-${{ matrix.rid }}.zip"
 
       # The updater refuses to install a package whose SHA-256 doesn't match this file.
       - name: Checksum the package
         shell: pwsh
         run: |
-          $zip = "Graphite-${{ github.ref_name }}-win-x64.zip"
+          $zip = "Graphite-${{ github.ref_name }}-${{ matrix.rid }}.zip"
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -Path "$zip.sha256" -Value "$hash  $zip" -Encoding ascii -NoNewline
+
+      - name: Keep the package for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.rid }}
+          path: |
+            Graphite-*-${{ matrix.rid }}.zip
+            Graphite-*-${{ matrix.rid }}.zip.sha256
+          if-no-files-found: error
+
+  # One job makes the release, so the two builds never race to create it.
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect the packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: packages
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Graphite-*-win-x64.zip
-            Graphite-*-win-x64.zip.sha256
+            packages/Graphite-*-win-x64.zip
+            packages/Graphite-*-win-x64.zip.sha256
+            packages/Graphite-*-win-arm64.zip
+            packages/Graphite-*-win-arm64.zip.sha256
           generate_release_notes: true

@@ -272,6 +272,8 @@ public partial class MainWindow : Window
         }
         // The start screen's "continue reading" needs to know where each open tab stood.
         ViewModel.SaveAllReadingPositions();
+        // The Canvas course on show counts as seen.
+        if (ViewModel.Library.IsCanvasSpace) ViewModel.Library.Canvas.Deactivate();
     }
 
     private void Documents_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -1354,6 +1356,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private void CanvasSearch_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && ViewModel.Library.Canvas.IsSearching)
+        {
+            ViewModel.Library.Canvas.ClearSearchCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
     /// <summary>Typing ">" turns the search box into the command palette, like the editors people know.</summary>
     private void HomeSearch_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -1899,8 +1910,9 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.IsHomeSelected)
         {
-            HomeSearchBox.Focus();
-            HomeSearchBox.SelectAll();
+            var box = ViewModel.Library.IsCanvasSpace ? CanvasSearchBox : HomeSearchBox;
+            box.Focus();
+            box.SelectAll();
             e.Handled = true;
         }
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.SelectedDocument != null)

@@ -16,7 +16,7 @@ public sealed record UpdateInfo(string Tag, Version Version, string? ZipUrl, str
 
 /// <summary>
 /// Checks GitHub Releases for a newer Graphite build and can self-update in place.
-/// The release workflow publishes a Graphite-vX.Y.Z-win-x64.zip asset per tag, its SHA-256
+/// The release workflow publishes a Graphite-vX.Y.Z-win-x64.zip and a Graphite-vX.Y.Z-win-arm64.zip asset per tag, their SHA-256
 /// (….zip.sha256) and, inside the zip, a manifest of the files it contains (Graphite.files).
 ///
 /// Updating: download the zip, verify it against the published checksum (a damaged or
@@ -31,6 +31,14 @@ public sealed record UpdateInfo(string Tag, Version Version, string? ZipUrl, str
 public static class UpdateService
 {
     private const string Repo = "nazem24/graphite";
+
+    /// <summary>The package flavour of the running build ("win-x64" or "win-arm64"). An update stays on the line it is on:
+    /// an x64 build running on an ARM PC keeps getting x64 packages (they have OCR); a person who wants the native ARM64 build
+    /// installs that package once, and it then updates itself with ARM64 packages.</summary>
+    private static string PackageFlavour =>
+        System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64
+            ? "win-arm64"
+            : "win-x64";
 
     private static readonly HttpClient Http = CreateClient();
 
@@ -87,7 +95,7 @@ public static class UpdateService
             foreach (var asset in assets.EnumerateArray())
             {
                 string? url = asset.GetProperty("browser_download_url").GetString();
-                if (url == null || !url.Contains("win-x64", StringComparison.OrdinalIgnoreCase)) continue;
+                if (url == null || !url.Contains(PackageFlavour, StringComparison.OrdinalIgnoreCase)) continue;
                 if (url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) zip ??= url;
                 else if (url.EndsWith(".zip.sha256", StringComparison.OrdinalIgnoreCase)) checksum ??= url;
             }
@@ -112,7 +120,7 @@ public static class UpdateService
         string stageDir = Path.Combine(Path.GetTempPath(), $"graphite-update-{info.Tag}");
         string zipPath = stageDir + ".zip";
 
-        // The published checksum: "<64 hex digits>  Graphite-vX.Y.Z-win-x64.zip".
+        // The published checksum: "<64 hex digits>  Graphite-vX.Y.Z-win-x64.zip" (or -win-arm64).
         string checksumText = await Http.GetStringAsync(info.ChecksumUrl);
         string expected = checksumText.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
         if (expected.Length != 64 || !expected.All(Uri.IsHexDigit))

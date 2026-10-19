@@ -130,6 +130,13 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ToggleSettings() => IsSettingsOpen = !IsSettingsOpen;
 
+    /// <summary>Open the settings page on one of its sections ("Canvas", "Appearance"…).</summary>
+    public void OpenSettings(string section)
+    {
+        Settings.Section = section;
+        IsSettingsOpen = true;
+    }
+
     /// <summary>A PDF is showing (the markup tools apply).</summary>
     public bool IsPdfSelected => SelectedDocument != null;
 
@@ -838,7 +845,9 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            if (doc.FilePath == null) { await SaveAs(); return; }
+            // A file opened from the Canvas cache is saved somewhere of the person's choosing the first time,
+            // so edits never vanish with the cache.
+            if (doc.FilePath == null || doc.IsCanvasCache) { await SaveDocAsAsync(doc); return; }
             // Someone else changed the file since we read it: don't overwrite their work silently.
             var (exists, changed) = doc.CheckDisk();
             if (exists && changed)
@@ -859,11 +868,18 @@ public partial class MainViewModel : ObservableObject
     {
         if (SelectedWriter != null) { SaveWriterCopy(); return; }
         if (SelectedDocument is not { } doc) return;
+        await SaveDocAsAsync(doc);
+    }
+
+    private async Task SaveDocAsAsync(DocumentViewModel doc)
+    {
         var dlg = new SaveFileDialog
         {
             Filter = "PDF document|*.pdf",
             FileName = doc.Title,
         };
+        // A Canvas cache copy has no folder worth suggesting: start in Documents.
+        if (doc.IsCanvasCache) dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         if (dlg.ShowDialog(Owner) != true) return;
         try { await doc.SaveAsync(dlg.FileName); ThemeService.AddRecentFile(dlg.FileName); }
         catch (Exception ex) { Error(ex); }

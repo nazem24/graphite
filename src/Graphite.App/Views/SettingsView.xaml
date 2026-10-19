@@ -10,6 +10,28 @@
          Esc, Back, or opening any tab). Everything applies the moment it is chosen. -->
     <UserControl.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+        <conv:InvertBoolConverter x:Key="InvertBool"/>
+
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+        </Style>
+
+        <!-- a group of settings: one glass card, rows divided by a hairline -->
+        <Style x:Key="SettingsCard" TargetType="Border" BasedOn="{StaticResource GlassCard}">
+            <Setter Property="Padding" Value="22,18"/>
+            <Setter Property="Margin" Value="0,0,0,18"/>
+        </Style>
+        <Style x:Key="RowDivider" TargetType="Rectangle">
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Margin" Value="0,16"/>
+            <Setter Property="Fill" Value="{DynamicResource App.StrokeSoftBrush}"/>
+        </Style>
+        <Style x:Key="CardHeading" TargetType="TextBlock" BasedOn="{StaticResource SectionLabel}">
+            <Setter Property="Margin" Value="4,0,0,8"/>
+        </Style>
 
         <Style x:Key="SettingsTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="26"/>
@@ -30,37 +52,6 @@
             <Setter Property="Margin" Value="0,3,0,0"/>
         </Style>
 
-        <!-- Light | Dark -->
-        <Style x:Key="SegmentOption" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
-            <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="bg" CornerRadius="8" Padding="20,6" Background="Transparent"
-                                BorderThickness="1" BorderBrush="Transparent">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bg" Property="Background" Value="{DynamicResource App.HoverBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="bg" Property="Background" Value="{DynamicResource App.ToolCheckedBrush}"/>
-                                <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource App.StrokeBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource App.FocusRingBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <!-- A small colour dot in the tool defaults. -->
         <Style x:Key="MiniSwatch" TargetType="RadioButton" BasedOn="{StaticResource SwatchButton}">
             <Setter Property="Width" Value="24"/>
@@ -77,14 +68,25 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
+                        <!-- Layers that fade (hover tint, the chosen frame) and a check badge that pops in, so choosing a
+                             material is not a snap. -->
                         <Grid>
+                            <Border x:Name="hl" CornerRadius="16" Background="{DynamicResource App.HoverBrush}"
+                                    Opacity="0" IsHitTestVisible="False"/>
+                            <Border x:Name="sel" CornerRadius="16" BorderThickness="2"
+                                    BorderBrush="{DynamicResource App.AccentSystemBrush}"
+                                    Background="{DynamicResource App.AccentSoftBrush}" Opacity="0" IsHitTestVisible="False"/>
                             <Border x:Name="ring" CornerRadius="16" BorderThickness="2" Padding="8"
                                     Background="Transparent" BorderBrush="Transparent">
                                 <ContentPresenter/>
                             </Border>
                             <Border x:Name="badge" Width="22" Height="22" CornerRadius="11" Margin="0,16,16,0"
                                     HorizontalAlignment="Right" VerticalAlignment="Top" Opacity="0"
+                                    RenderTransformOrigin="0.5,0.5"
                                     Background="{DynamicResource App.AccentSystemBrush}" IsHitTestVisible="False">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="0.6" ScaleY="0.6"/>
+                                </Border.RenderTransform>
                                 <Path Data="{StaticResource Icon.Check}" Stroke="White" StrokeThickness="1.8"
                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                       Width="12" Height="12" Stretch="Uniform"
@@ -93,15 +95,51 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ring" Property="Background" Value="{DynamicResource App.HoverBrush}"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.22"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="ring" Property="BorderBrush" Value="{DynamicResource App.FocusRingBrush}"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="ring" Property="BorderBrush" Value="{DynamicResource App.AccentSystemBrush}"/>
-                                <Setter TargetName="ring" Property="Background" Value="{DynamicResource App.AccentSoftBrush}"/>
-                                <Setter TargetName="badge" Property="Opacity" Value="1"/>
+                                <Setter TargetName="hl" Property="Visibility" Value="Collapsed"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sel" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.2"
+                                                             EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="badge" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16"/>
+                                            <DoubleAnimation Storyboard.TargetName="badge" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                             To="1" Duration="0:0:0.26" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="badge" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                             To="1" Duration="0:0:0.26" EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sel" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2"/>
+                                            <DoubleAnimation Storyboard.TargetName="badge" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.14"/>
+                                            <DoubleAnimation Storyboard.TargetName="badge" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                             To="0.6" Duration="0:0:0.14"/>
+                                            <DoubleAnimation Storyboard.TargetName="badge" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                             To="0.6" Duration="0:0:0.14"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.45"/>
@@ -126,11 +164,15 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" Focusable="False" RenderTransformOrigin="0.5,0.5">
-        <ScrollViewer.RenderTransform>
+    <Grid x:Name="PageRoot" RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform>
             <TranslateTransform/>
-        </ScrollViewer.RenderTransform>
-        <StackPanel MaxWidth="960" HorizontalAlignment="Stretch" Margin="28,14,28,40">
+        </Grid.RenderTransform>
+        <Grid MaxWidth="1100" HorizontalAlignment="Stretch" Margin="28,14,28,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
             <!-- header -->
             <DockPanel Margin="0,0,0,18">
@@ -142,270 +184,495 @@
                 <TextBlock Text="Settings" Style="{StaticResource SettingsTitle}" VerticalAlignment="Center"/>
             </DockPanel>
 
-            <!-- ================================ Appearance ================================ -->
-            <TextBlock Text="APPEARANCE" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18" Margin="0,0,0,26">
-                <DockPanel>
-                    <Border DockPanel.Dock="Right" CornerRadius="11" BorderThickness="1" Padding="3"
-                            VerticalAlignment="Center" BorderBrush="{DynamicResource App.StrokeSoftBrush}"
-                            Background="{DynamicResource App.PanelBrush}">
-                        <StackPanel Orientation="Horizontal">
-                            <RadioButton Style="{StaticResource SegmentOption}" Content="Light" GroupName="mode"
-                                         IsChecked="{Binding IsLight, Mode=OneWay}"
-                                         Command="{Binding SetAppearanceCommand}" CommandParameter="light"/>
-                            <RadioButton Style="{StaticResource SegmentOption}" Content="Dark" GroupName="mode"
-                                         IsChecked="{Binding IsDark, Mode=OneWay}"
-                                         Command="{Binding SetAppearanceCommand}" CommandParameter="dark"/>
-                        </StackPanel>
-                    </Border>
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
-                        <TextBlock Text="Mode" Style="{StaticResource RowTitle}"/>
-                        <TextBlock Text="Light or dark colors for the whole app." Style="{StaticResource RowHint}"/>
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="214"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- ============ the sections: the same rows as the library sidebar ============ -->
+                <Border Style="{StaticResource GlassCard}" CornerRadius="18" Padding="10" Margin="0,0,24,40"
+                        VerticalAlignment="Top">
+                    <StackPanel>
+                        <RadioButton Style="{StaticResource RailNav}" GroupName="settingsNav"
+                                     IsChecked="{Binding IsAppearanceSection, Mode=OneWay}"
+                                     Command="{Binding ShowSectionCommand}" CommandParameter="Appearance">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}" Width="16" Height="16" Stretch="Uniform"/>
+                                <TextBlock Text="Appearance" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource RailNav}" GroupName="settingsNav"
+                                     IsChecked="{Binding IsStartPageSection, Mode=OneWay}"
+                                     Command="{Binding ShowSectionCommand}" CommandParameter="StartPage">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Home}" Width="16" Height="16"/>
+                                <TextBlock Text="Start page" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource RailNav}" GroupName="settingsNav"
+                                     IsChecked="{Binding IsReadingSection, Mode=OneWay}"
+                                     Command="{Binding ShowSectionCommand}" CommandParameter="Reading">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Highlighter}" Width="16" Height="16"/>
+                                <TextBlock Text="Reading &amp; markup" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource RailNav}" GroupName="settingsNav"
+                                     IsChecked="{Binding IsCanvasSection, Mode=OneWay}"
+                                     Command="{Binding ShowSectionCommand}" CommandParameter="Canvas">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="16" Height="16" Stretch="Uniform"/>
+                                <TextBlock Text="Canvas" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="6,8,6,8"/>
+                        <RadioButton Style="{StaticResource RailNav}" GroupName="settingsNav"
+                                     IsChecked="{Binding IsAboutSection, Mode=OneWay}"
+                                     Command="{Binding ShowSectionCommand}" CommandParameter="About">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Info}" Width="16" Height="16"/>
+                                <TextBlock Text="About" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
                     </StackPanel>
-                </DockPanel>
-            </Border>
+                </Border>
 
-            <!-- ================================ Material ================================ -->
-            <TextBlock Text="MATERIAL" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18,10,6" Margin="0,0,0,26">
-                <StackPanel>
-                    <TextBlock Text="Window material" Style="{StaticResource RowTitle}"/>
-                    <TextBlock Style="{StaticResource RowHint}" Margin="0,3,12,16"
-                               Text="How the window and its panels look. Works with both Light and Dark."/>
+                <ScrollViewer x:Name="SectionScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Focusable="False">
+                    <StackPanel Margin="0,0,8,40">
 
-                    <WrapPanel>
-                        <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                     IsChecked="{Binding IsMica, Mode=OneWay}" IsEnabled="{Binding MaterialsSupported}"
-                                     Command="{Binding SetMaterialCommand}" CommandParameter="Mica"
-                                     AutomationProperties.Name="Mica material">
-                            <StackPanel Width="196">
-                                <views:MaterialPreview Material="Mica"/>
-                                <TextBlock Text="Mica" Style="{StaticResource CardName}"/>
-                                <TextBlock Style="{StaticResource CardText}"
-                                           Text="The original look: a soft backdrop tinted by your wallpaper."/>
-                            </StackPanel>
-                        </RadioButton>
+                        <!-- ================================ Appearance ================================ -->
+                        <StackPanel Visibility="{Binding IsAppearanceSection, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Appearance" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="How Graphite looks and moves." Style="{StaticResource RowHint}" Margin="0,3,0,18"/>
 
-                        <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                     IsChecked="{Binding IsBlur, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
-                                     Command="{Binding SetMaterialCommand}" CommandParameter="Blur"
-                                     AutomationProperties.Name="Blur material">
-                            <StackPanel Width="196">
-                                <views:MaterialPreview Material="Blur"/>
-                                <TextBlock Text="Blur" Style="{StaticResource CardName}"/>
-                                <TextBlock Style="{StaticResource CardText}"
-                                           Text="Windows blurs what is behind the window. Light tint, the desktop shows through."/>
-                            </StackPanel>
-                        </RadioButton>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Border DockPanel.Dock="Right" Style="{StaticResource SegmentTray}" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <RadioButton Style="{StaticResource SegmentOption}" Content="Light" GroupName="mode"
+                                                             IsChecked="{Binding IsLight, Mode=OneWay}"
+                                                             Command="{Binding SetAppearanceCommand}" CommandParameter="light"/>
+                                                <RadioButton Style="{StaticResource SegmentOption}" Content="Dark" GroupName="mode"
+                                                             IsChecked="{Binding IsDark, Mode=OneWay}"
+                                                             Command="{Binding SetAppearanceCommand}" CommandParameter="dark"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Mode" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Text="Light or dark colors for the whole app." Style="{StaticResource RowHint}"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding ReduceMotion, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Reduce motion"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Reduce motion" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="Turns off sliding, fading and the drifting glow on the start page."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
 
-                        <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                     IsChecked="{Binding IsFrosted, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
-                                     Command="{Binding SetMaterialCommand}" CommandParameter="Frosted"
-                                     AutomationProperties.Name="Frosted glass material">
-                            <StackPanel Width="196">
-                                <views:MaterialPreview Material="Frosted"/>
-                                <TextBlock Text="Frosted glass" Style="{StaticResource CardName}"/>
-                                <TextBlock Style="{StaticResource CardText}"
-                                           Text="The same blur with a milky tint. Calmer, more opaque panels."/>
-                            </StackPanel>
-                        </RadioButton>
+                            <Border Style="{StaticResource SettingsCard}" Padding="22,18,10,6">
+                                <StackPanel>
+                                        <TextBlock Text="Window material" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Style="{StaticResource RowHint}" Margin="0,3,12,16"
+                                                   Text="How the window and its panels look. Works with both Light and Dark."/>
 
-                        <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                     IsChecked="{Binding IsGlass, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
-                                     Command="{Binding SetMaterialCommand}" CommandParameter="Glass"
-                                     AutomationProperties.Name="Glass material">
-                            <StackPanel Width="196">
-                                <views:MaterialPreview Material="Glass"/>
-                                <TextBlock Text="Glass" Style="{StaticResource CardName}"/>
-                                <TextBlock Style="{StaticResource CardText}"
-                                           Text="Almost clear panels, bright edges and a livelier glow."/>
-                            </StackPanel>
-                        </RadioButton>
-                    </WrapPanel>
+                                        <WrapPanel>
+                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
+                                                         IsChecked="{Binding IsMica, Mode=OneWay}" IsEnabled="{Binding MaterialsSupported}"
+                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Mica"
+                                                         AutomationProperties.Name="Mica material">
+                                                <StackPanel Width="196">
+                                                    <views:MaterialPreview Material="Mica"/>
+                                                    <TextBlock Text="Mica" Style="{StaticResource CardName}"/>
+                                                    <TextBlock Style="{StaticResource CardText}"
+                                                               Text="The original look: a soft backdrop tinted by your wallpaper."/>
+                                                </StackPanel>
+                                            </RadioButton>
 
-                    <TextBlock Text="{Binding NoteText}" Style="{StaticResource RowHint}" Margin="2,0,12,14"
-                               Visibility="{Binding HasNote, Converter={StaticResource BoolToVis}}"/>
-                </StackPanel>
-            </Border>
+                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
+                                                         IsChecked="{Binding IsBlur, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
+                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Blur"
+                                                         AutomationProperties.Name="Blur material">
+                                                <StackPanel Width="196">
+                                                    <views:MaterialPreview Material="Blur"/>
+                                                    <TextBlock Text="Blur" Style="{StaticResource CardName}"/>
+                                                    <TextBlock Style="{StaticResource CardText}"
+                                                               Text="Windows blurs what is behind the window. Light tint, the desktop shows through."/>
+                                                </StackPanel>
+                                            </RadioButton>
 
-            <!-- ================================ Start page ================================ -->
-            <TextBlock Text="START PAGE" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18" Margin="0,0,0,26">
-                <DockPanel>
-                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
-                                  IsChecked="{Binding CompactHome, Mode=TwoWay}"
-                                  AutomationProperties.Name="Folders only start page"/>
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
-                        <TextBlock Text="Folders only" Style="{StaticResource RowTitle}"/>
-                        <TextBlock Style="{StaticResource RowHint}"
-                                   Text="Hides the clock, the greeting and the Continue reading card. The start page then begins with the name of your library folder and the folders fill the page."/>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
+                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
+                                                         IsChecked="{Binding IsFrosted, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
+                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Frosted"
+                                                         AutomationProperties.Name="Frosted glass material">
+                                                <StackPanel Width="196">
+                                                    <views:MaterialPreview Material="Frosted"/>
+                                                    <TextBlock Text="Frosted glass" Style="{StaticResource CardName}"/>
+                                                    <TextBlock Style="{StaticResource CardText}"
+                                                               Text="The same blur with a milky tint. Calmer, more opaque panels."/>
+                                                </StackPanel>
+                                            </RadioButton>
 
-            <!-- ================================ Sidebar ================================ -->
-            <TextBlock Text="SIDEBAR" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18" Margin="0,0,0,26">
-                <DockPanel>
-                    <Border DockPanel.Dock="Right" CornerRadius="11" BorderThickness="1" Padding="3"
-                            VerticalAlignment="Center" BorderBrush="{DynamicResource App.StrokeSoftBrush}"
-                            Background="{DynamicResource App.PanelBrush}">
-                        <StackPanel Orientation="Horizontal">
-                            <RadioButton Style="{StaticResource SegmentOption}" Content="Icon rail" GroupName="collapse"
-                                         IsChecked="{Binding CollapseToRail, Mode=TwoWay}"/>
-                            <RadioButton Style="{StaticResource SegmentOption}" Content="Hide completely" GroupName="collapse"
-                                         IsChecked="{Binding CollapseHidden, Mode=TwoWay}"/>
+                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
+                                                         IsChecked="{Binding IsGlass, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
+                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Glass"
+                                                         AutomationProperties.Name="Glass material">
+                                                <StackPanel Width="196">
+                                                    <views:MaterialPreview Material="Glass"/>
+                                                    <TextBlock Text="Glass" Style="{StaticResource CardName}"/>
+                                                    <TextBlock Style="{StaticResource CardText}"
+                                                               Text="Almost clear panels, bright edges and a livelier glow."/>
+                                                </StackPanel>
+                                            </RadioButton>
+                                        </WrapPanel>
+
+                                        <TextBlock Text="{Binding NoteText}" Style="{StaticResource RowHint}" Margin="2,0,12,14"
+                                                   Visibility="{Binding HasNote, Converter={StaticResource BoolToVis}}"/>
+
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
-                    </Border>
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
-                        <TextBlock Text="When the sidebar is collapsed" Style="{StaticResource RowTitle}"/>
-                        <TextBlock Style="{StaticResource RowHint}"
-                                   Text="Keep a slim strip of icons for Home, Recent, Pinned and your folders, or hide the sidebar completely. It also folds by itself in narrow windows."/>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
 
-            <!-- ================================ Tool defaults ================================ -->
-            <TextBlock Text="TOOL DEFAULTS" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18" Margin="0,0,0,26">
-                <StackPanel>
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" VerticalAlignment="Top"
-                                Content="Reset all" Command="{Binding ResetToolDefaultsCommand}"/>
-                        <StackPanel Margin="0,0,24,0">
-                            <TextBlock Text="Starting style of each tool" Style="{StaticResource RowTitle}"/>
-                            <TextBlock Style="{StaticResource RowHint}"
-                                       Text="The colour, thickness and opacity every tool starts with in your documents. You can still change them from the toolbar while you work."/>
+                        <!-- ================================ Start page ================================ -->
+                        <StackPanel Visibility="{Binding IsStartPageSection, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Start page" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="The Home tab: your library folder and the Canvas space." Style="{StaticResource RowHint}" Margin="0,3,0,18"/>
+
+                            <Border Style="{StaticResource SettingsCard}">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding CompactHome, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Folders only start page"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Folders only" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="Hides the clock, the greeting and the Continue reading card. The start page then begins with the name of your library folder and the folders fill the page."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <Border DockPanel.Dock="Right" Style="{StaticResource SegmentTray}" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <RadioButton Style="{StaticResource SegmentOption}" Content="Icon rail" GroupName="collapse"
+                                                             IsChecked="{Binding CollapseToRail, Mode=TwoWay}"/>
+                                                <RadioButton Style="{StaticResource SegmentOption}" Content="Hide completely" GroupName="collapse"
+                                                             IsChecked="{Binding CollapseHidden, Mode=TwoWay}"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="When the sidebar is collapsed" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="Keep a slim strip of icons (Home, Recent, Pinned, your folders or courses), or hide the sidebar completely. It also folds by itself in narrow windows."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
-                    </DockPanel>
 
-                    <Grid Margin="0,18,0,2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="128"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="150"/>
-                            <ColumnDefinition Width="150"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="1" Text="COLOUR" Style="{StaticResource SectionLabel}"/>
-                        <TextBlock Grid.Column="2" Text="THICKNESS" Style="{StaticResource SectionLabel}" Margin="12,0,0,0"/>
-                        <TextBlock Grid.Column="3" Text="OPACITY" Style="{StaticResource SectionLabel}" Margin="12,0,0,0"/>
-                    </Grid>
+                        <!-- ================================ Reading & markup ================================ -->
+                        <StackPanel Visibility="{Binding IsReadingSection, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Reading &amp; markup" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="What documents show while you read, and how the markup tools start." Style="{StaticResource RowHint}" Margin="0,3,0,18"/>
 
-                    <ItemsControl ItemsSource="{Binding ToolRows}" Focusable="False">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid MinHeight="38">
+                            <Border Style="{StaticResource SettingsCard}">
+                                <DockPanel>
+                                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                  IsChecked="{Binding ShowProgressLine, Mode=TwoWay}"
+                                                  AutomationProperties.Name="Reading progress line"/>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                        <TextBlock Text="Reading progress line" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Style="{StaticResource RowHint}"
+                                                   Text="A thin line along the bottom of the page that shows how far through the document you are."/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+
+                            <TextBlock Text="TOOL DEFAULTS" Style="{StaticResource CardHeading}" Margin="4,8,0,8"/>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <StackPanel>
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" VerticalAlignment="Top"
+                                            Content="Reset all" Command="{Binding ResetToolDefaultsCommand}"/>
+                                    <StackPanel Margin="0,0,24,0">
+                                        <TextBlock Text="Starting style of each tool" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Style="{StaticResource RowHint}"
+                                                   Text="The colour, thickness and opacity every tool starts with in your documents. You can still change them from the toolbar while you work."/>
+                                    </StackPanel>
+                                </DockPanel>
+
+                                <Grid Margin="0,18,0,2">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="128"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="150"/>
                                         <ColumnDefinition Width="150"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Title}" Style="{StaticResource Body}" FontWeight="SemiBold"
-                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="COLOUR" Style="{StaticResource SectionLabel}"/>
+                                    <TextBlock Grid.Column="2" Text="THICKNESS" Style="{StaticResource SectionLabel}" Margin="12,0,0,0"/>
+                                    <TextBlock Grid.Column="3" Text="OPACITY" Style="{StaticResource SectionLabel}" Margin="12,0,0,0"/>
+                                </Grid>
 
-                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding Swatches}" Focusable="False"
-                                                  VerticalAlignment="Center"
-                                                  Visibility="{Binding HasColor, Converter={StaticResource BoolToVis}}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <WrapPanel/>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
+                                <ItemsControl ItemsSource="{Binding ToolRows}" Focusable="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid MinHeight="38">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="128"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="150"/>
+                                                    <ColumnDefinition Width="150"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Title}" Style="{StaticResource Body}" FontWeight="SemiBold"
+                                                           VerticalAlignment="Center"/>
+
+                                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Swatches}" Focusable="False"
+                                                              VerticalAlignment="Center"
+                                                              Visibility="{Binding HasColor, Converter={StaticResource BoolToVis}}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <RadioButton Style="{StaticResource MiniSwatch}" Background="{Binding Brush}"
+                                                                         ToolTip="{Binding Name}"
+                                                                         IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                                         Command="{Binding DataContext.PickColorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                         CommandParameter="{Binding Hex}"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <DockPanel Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                           Visibility="{Binding HasWidth, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding WidthText}" Style="{StaticResource Caption}"
+                                                               Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
+                                                    <Slider Style="{StaticResource OpacitySlider}" Minimum="0.5" Maximum="8"
+                                                            TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.5"
+                                                            Value="{Binding Width, Mode=TwoWay}"/>
+                                                </DockPanel>
+
+                                                <DockPanel Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                           Visibility="{Binding HasOpacity, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding OpacityText}" Style="{StaticResource Caption}"
+                                                               Width="40" TextAlignment="Right" VerticalAlignment="Center"/>
+                                                    <Slider Style="{StaticResource OpacitySlider}" Minimum="0.2" Maximum="1"
+                                                            TickFrequency="0.05" IsSnapToTickEnabled="True" SmallChange="0.05" LargeChange="0.1"
+                                                            Value="{Binding Opacity, Mode=TwoWay}"/>
+                                                </DockPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="0,12,0,14"/>
+
+                                <DockPanel>
+                                    <DockPanel DockPanel.Dock="Right" Width="220" VerticalAlignment="Center">
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding QuickTextSizeText}" Style="{StaticResource Caption}"
+                                                   Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
+                                        <Slider Style="{StaticResource OpacitySlider}" Minimum="6" Maximum="48"
+                                                TickFrequency="1" IsSnapToTickEnabled="True" SmallChange="1" LargeChange="4"
+                                                Value="{Binding QuickTextSize, Mode=TwoWay}"/>
+                                    </DockPanel>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                        <TextBlock Text="Text box size" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Style="{StaticResource RowHint}"
+                                                   Text="The font size of a new text box. You can change one box's size later by double-clicking it."/>
+                                    </StackPanel>
+                                </DockPanel>
+
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ================================ Canvas ================================ -->
+                        <StackPanel Visibility="{Binding IsCanvasSection, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Canvas" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Style="{StaticResource RowHint}" Margin="0,3,0,18"
+                                       Text="Your courses in the Canvas space of the start page. Graphite only reads from Canvas, and nothing is downloaded until you click a file."/>
+
+                            <TextBlock Text="CONNECTION" Style="{StaticResource CardHeading}"/>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
+                                                 Fill="{DynamicResource App.AccentSystemBrush}"
+                                                 Visibility="{Binding HasCanvasToken, Converter={StaticResource BoolToVis}}"/>
+                                        <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Remove token"
+                                                VerticalAlignment="Center" Command="{Binding RemoveCanvasTokenCommand}"
+                                                Visibility="{Binding HasCanvasToken, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Text="{Binding CanvasConnectionText}" Style="{StaticResource RowTitle}" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="Canvas address" Style="{StaticResource RowTitle}" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Column="1" Height="32" VerticalContentAlignment="Center"
+                                                 Text="{Binding CanvasBaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                 AutomationProperties.Name="Canvas address"/>
+
+                                        <TextBlock Grid.Row="1" Text="Access token" Style="{StaticResource RowTitle}" Margin="0,14,0,0"
+                                                   VerticalAlignment="Center"/>
+                                        <PasswordBox x:Name="TokenBox" Grid.Row="1" Grid.Column="1" Height="32" Margin="0,14,0,0"
+                                                     VerticalContentAlignment="Center" AutomationProperties.Name="Canvas access token"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CanvasTokenHint}" Style="{StaticResource RowHint}"
+                                                   Margin="0,6,0,0"/>
+                                    </Grid>
+
+                                    <StackPanel Orientation="Horizontal" Margin="150,14,0,0">
+                                        <Button Style="{StaticResource AccentButton}" Content="Test and save" Click="TestCanvas_Click"
+                                                IsEnabled="{Binding IsTestingCanvas, Converter={StaticResource InvertBool}}"/>
+                                        <Button Style="{StaticResource GhostButton}" Content="Create a token in Canvas…" Margin="10,0,0,0"
+                                                Command="{Binding OpenCanvasTokenPageCommand}"
+                                                ToolTip="Account › Settings › Approved Integrations › + New Access Token"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding CanvasMessage}" Margin="150,10,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding HasCanvasMessage, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource RowHint}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CanvasMessageIsError}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Style="{StaticResource RowHint}" Margin="150,12,0,0" LineHeight="19"
+                                               Visibility="{Binding HasCanvasToken, Converter={StaticResource InvBoolToVis}}">
+                                        <Run Text="To get a token: in Canvas open Account › Settings, click + New Access Token (+ Neues Zugangs-Token),"/>
+                                        <Run Text="give it a name and an expiry date, and copy it. Canvas shows it only once."/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="COURSES" Style="{StaticResource CardHeading}" Margin="4,8,0,8"/>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <ComboBox DockPanel.Dock="Right" Width="260" VerticalAlignment="Center"
+                                                  ItemsSource="{Binding CanvasTerms}" DisplayMemberPath="Name"
+                                                  SelectedItem="{Binding SelectedCanvasTerm, Mode=TwoWay}"
+                                                  AutomationProperties.Name="Term"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Term" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="Which semester's courses the Canvas space lists. Also in the menu at the top of its sidebar."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding CanvasCheckAllCourses, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Check every course for new files"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Check every course for new files" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="While the Canvas space is open, Graphite looks through this term's courses (two at a time, skipping any it checked in the last ten minutes), so New lists everything. Off: only the courses you open are checked."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding CanvasAllFileTypes, Mode=TwoWay}"
+                                                      AutomationProperties.Name="All file types"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="All file types" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="List every file in a course. Off: only PDFs and Word, Excel and PowerPoint files."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="LINKED FOLDERS" Style="{StaticResource CardHeading}" Margin="4,8,0,8"/>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource RowHint}" Margin="0,0,0,4"
+                                               Text="A linked course keeps the files you open in its folder, and recognises them there even after you rename them. Link a course with Link folder… on its page."/>
+                                    <TextBlock Text="No course is linked yet." Style="{StaticResource RowTitle}" Margin="0,12,0,0"
+                                               Visibility="{Binding HasLinkedCourses, Converter={StaticResource InvBoolToVis}}"/>
+                                    <ItemsControl ItemsSource="{Binding LinkedCourses}" Focusable="False" Margin="0,8,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <RadioButton Style="{StaticResource MiniSwatch}" Background="{Binding Brush}"
-                                                             ToolTip="{Binding Name}"
-                                                             IsChecked="{Binding IsSelected, Mode=OneWay}"
-                                                             Command="{Binding DataContext.PickColorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                             CommandParameter="{Binding Hex}"/>
+                                                <DockPanel Margin="0,8,0,0">
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Style="{StaticResource GhostButton}" Content="Open"
+                                                                Command="{Binding DataContext.OpenLinkedFolderCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                        <Button Style="{StaticResource GhostButton}" Content="Change…" Margin="8,0,0,0"
+                                                                Command="{Binding DataContext.ChangeLinkedFolderCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                        <Button Style="{StaticResource GhostButton}" Content="Unlink" Margin="8,0,0,0"
+                                                                Command="{Binding DataContext.UnlinkCourseCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </StackPanel>
+                                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                        <TextBlock Text="{Binding Name}" Style="{StaticResource RowTitle}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding FolderLine}" Style="{StaticResource Caption}" Margin="0,2,0,0"
+                                                                   ToolTip="{Binding Folder}"/>
+                                                    </StackPanel>
+                                                </DockPanel>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                </StackPanel>
+                            </Border>
 
-                                    <DockPanel Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
-                                               Visibility="{Binding HasWidth, Converter={StaticResource BoolToVis}}">
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding WidthText}" Style="{StaticResource Caption}"
-                                                   Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
-                                        <Slider Style="{StaticResource OpacitySlider}" Minimum="0.5" Maximum="8"
-                                                TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.5"
-                                                Value="{Binding Width, Mode=TwoWay}"/>
-                                    </DockPanel>
-
-                                    <DockPanel Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Center"
-                                               Visibility="{Binding HasOpacity, Converter={StaticResource BoolToVis}}">
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding OpacityText}" Style="{StaticResource Caption}"
-                                                   Width="40" TextAlignment="Right" VerticalAlignment="Center"/>
-                                        <Slider Style="{StaticResource OpacitySlider}" Minimum="0.2" Maximum="1"
-                                                TickFrequency="0.05" IsSnapToTickEnabled="True" SmallChange="0.05" LargeChange="0.1"
-                                                Value="{Binding Opacity, Mode=TwoWay}"/>
-                                    </DockPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="0,12,0,14"/>
-
-                    <DockPanel>
-                        <DockPanel DockPanel.Dock="Right" Width="220" VerticalAlignment="Center">
-                            <TextBlock DockPanel.Dock="Right" Text="{Binding QuickTextSizeText}" Style="{StaticResource Caption}"
-                                       Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
-                            <Slider Style="{StaticResource OpacitySlider}" Minimum="6" Maximum="48"
-                                    TickFrequency="1" IsSnapToTickEnabled="True" SmallChange="1" LargeChange="4"
-                                    Value="{Binding QuickTextSize, Mode=TwoWay}"/>
-                        </DockPanel>
-                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
-                            <TextBlock Text="Text box size" Style="{StaticResource RowTitle}"/>
-                            <TextBlock Style="{StaticResource RowHint}"
-                                       Text="The font size of a new text box. You can change one box's size later by double-clicking it."/>
+                            <TextBlock Text="STORAGE" Style="{StaticResource CardHeading}" Margin="4,8,0,8"/>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Clear cache"
+                                            VerticalAlignment="Center" Command="{Binding ClearCanvasCacheCommand}"/>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                        <TextBlock Text="Cache" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Style="{StaticResource RowHint}" Text="{Binding CanvasCacheText}"/>
+                                        <TextBlock Style="{StaticResource RowHint}"
+                                                   Text="Course structures and files opened from courses without a linked folder are kept here, so they open at once next time. Files from the cache open in a tab marked with the course icon; their first Save asks where to keep them."/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
                         </StackPanel>
-                    </DockPanel>
-                </StackPanel>
-            </Border>
 
-            <!-- ================================ Reading ================================ -->
-            <TextBlock Text="READING" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18" Margin="0,0,0,26">
-                <DockPanel>
-                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
-                                  IsChecked="{Binding ShowProgressLine, Mode=TwoWay}"
-                                  AutomationProperties.Name="Reading progress line"/>
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
-                        <TextBlock Text="Reading progress line" Style="{StaticResource RowTitle}"/>
-                        <TextBlock Style="{StaticResource RowHint}"
-                                   Text="A thin line along the bottom of the page that shows how far through the document you are."/>
+                        <!-- ================================ About ================================ -->
+                        <StackPanel Visibility="{Binding IsAboutSection, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="About" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="Version and updates." Style="{StaticResource RowHint}" Margin="0,3,0,18"/>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" VerticalAlignment="Center"
+                                            Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"/>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                        <TextBlock Text="Graphite" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Text="{Binding VersionText}" Style="{StaticResource RowHint}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
-                </DockPanel>
-            </Border>
-
-            <!-- ================================ Motion ================================ -->
-            <TextBlock Text="MOTION" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18">
-                <DockPanel>
-                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
-                                  IsChecked="{Binding ReduceMotion, Mode=TwoWay}"
-                                  AutomationProperties.Name="Reduce motion"/>
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
-                        <TextBlock Text="Reduce motion" Style="{StaticResource RowTitle}"/>
-                        <TextBlock Style="{StaticResource RowHint}"
-                                   Text="Turns off sliding, fading and the drifting glow on the start page."/>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
-
-            <!-- ================================ About ================================ -->
-            <TextBlock Text="ABOUT" Style="{StaticResource SectionLabel}" Margin="4,26,0,8"/>
-            <Border Style="{StaticResource GlassCard}" Padding="22,18" Margin="0,0,0,8">
-                <DockPanel>
-                    <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" VerticalAlignment="Center"
-                            Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"/>
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
-                        <TextBlock Text="Graphite" Style="{StaticResource RowTitle}"/>
-                        <TextBlock Text="{Binding VersionText}" Style="{StaticResource RowHint}"/>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Grid>
 </UserControl>

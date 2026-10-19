@@ -1,0 +1,165 @@
+<UserControl x:Class="Graphite.App.Views.CanvasRail"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Graphite.App.ViewModels"
+             xmlns:conv="clr-namespace:Graphite.App.Converters"
+             xmlns:svc="clr-namespace:Graphite.App.Services"
+             Focusable="False">
+
+    <!-- The open sidebar of the Canvas space. DataContext: CanvasViewModel. It sits in the same glass card as the
+         Local sidebar, under the Local | Canvas switcher, and is built from the same rows (RailRow, RailNav), so it
+         takes on every material and both modes the way the Local one does. -->
+    <UserControl.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+
+        <!-- the accent count of new items (the Local sidebar's Pinned count, in the accent) -->
+        <Style x:Key="NewCount" TargetType="Border">
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource App.AccentSoftBrush}"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <!-- Canvas and the term on show; the menu switches terms (like the Local library switcher) -->
+            <Button Style="{StaticResource RailRow}" Height="52" Padding="8,0,8,0" Margin="0,0,0,10"
+                    Click="TermMenu_Click" ToolTip="Switch term">
+                <DockPanel>
+                    <Path DockPanel.Dock="Right" Style="{StaticResource IconPath}"
+                          Data="{StaticResource Icon.ChevronDown}" Width="10" Height="10"
+                          Stretch="Uniform" Opacity="0.7" Margin="6,0,0,0"
+                          Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}"/>
+                    <Border Width="34" Height="34" CornerRadius="10" Background="{DynamicResource App.HoverBrush}">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}"
+                              Width="16" Height="16" Stretch="Uniform"/>
+                    </Border>
+                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Canvas" Style="{StaticResource Body}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding TermLine}" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </DockPanel>
+                <Button.ContextMenu>
+                    <ContextMenu/>
+                </Button.ContextMenu>
+            </Button>
+
+            <RadioButton Style="{StaticResource RailNav}" GroupName="canvasNav" IsChecked="{Binding IsOverview, Mode=OneWay}"
+                         Command="{Binding ShowOverviewCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Thumbs}" Width="16" Height="16"/>
+                    <TextBlock Text="Overview" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource RailNav}" GroupName="canvasNav" IsChecked="{Binding IsNewPage, Mode=OneWay}"
+                         Command="{Binding ShowNewCommand}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Right" Style="{StaticResource NewCount}"
+                            Visibility="{Binding HasNewTotal, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding NewTotal}" Style="{StaticResource Caption}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.AccentSystemBrush}"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Sparkle}" Width="16" Height="16"/>
+                        <TextBlock Text="New" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DockPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource RailNav}" GroupName="canvasNav" IsChecked="{Binding IsPinnedPage, Mode=OneWay}"
+                         Command="{Binding ShowPinnedCommand}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Right" CornerRadius="8" Padding="6,1" VerticalAlignment="Center"
+                            Background="{DynamicResource App.HoverBrush}"
+                            Visibility="{Binding HasPins, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding PinTotal}" Style="{StaticResource Caption}"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Pin}" Width="16" Height="16"/>
+                        <TextBlock Text="Pinned" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DockPanel>
+            </RadioButton>
+
+            <DockPanel Margin="12,16,0,4" Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}">
+                <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Padding="6"
+                        VerticalAlignment="Center" Command="{Binding RefreshCommand}"
+                        ToolTip="Refresh from Canvas">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Refresh}"
+                          Width="11" Height="11" Stretch="Uniform"/>
+                </Button>
+                <TextBlock Text="COURSES" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
+            </DockPanel>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" svc:SmoothScroll.Enabled="True" VerticalScrollBarVisibility="Hidden"
+                      HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"
+                      PanningDeceleration="0.0015" CanContentScroll="False" Stylus.IsFlicksEnabled="False">
+            <Grid>
+                <ItemsControl ItemsSource="{Binding Courses}" Focusable="False"
+                              Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:CanvasCourseItem}">
+                            <RadioButton Style="{StaticResource RailNav}" MinHeight="32" GroupName="canvasNav"
+                                         IsChecked="{Binding IsActive, Mode=OneWay}" ToolTip="{Binding Tip}"
+                                         Command="{Binding DataContext.OpenCourseCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                         CommandParameter="{Binding}">
+                                <DockPanel>
+                                    <Grid DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Center">
+                                        <Border Style="{StaticResource NewCount}"
+                                                Visibility="{Binding HasNew, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding NewCount}" Style="{StaticResource Caption}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource App.AccentSystemBrush}"/>
+                                        </Border>
+                                        <!-- loading: a quiet refresh glyph where the count goes -->
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Refresh}"
+                                              Width="10" Height="10" Stretch="Uniform" Opacity="0.6"
+                                              Visibility="{Binding ShowBusy, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
+                                    <Path DockPanel.Dock="Left" Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}"
+                                          Width="16" Height="16" Stretch="Uniform" Margin="0,0,12,0" Stroke="{Binding TintBrush}"/>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Body}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                            </RadioButton>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- not connected yet (the same dashed card as "No main folder yet") -->
+                <Grid Margin="0,12,0,0" VerticalAlignment="Top"
+                      Visibility="{Binding IsConnected, Converter={StaticResource InvBoolToVis}}">
+                    <Rectangle RadiusX="14" RadiusY="14" StrokeThickness="1.2" StrokeDashArray="4 4"
+                               Stroke="{DynamicResource App.StrokeBrush}"/>
+                    <StackPanel Margin="14,16,14,14">
+                        <TextBlock Text="Not connected" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="13"/>
+                        <TextBlock Text="Add a Canvas access token and your courses show up here."
+                                   Style="{StaticResource Caption}" TextWrapping="Wrap" TextTrimming="None"
+                                   Margin="0,4,0,12"/>
+                        <Button Style="{StaticResource GhostButton}" Content="Connect…"
+                                Command="{Binding OpenSettingsCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Margin="0,8,0,0">
+            <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="6,0,6,8"/>
+            <Button Style="{StaticResource RailRow}" Height="36" Padding="12,0"
+                    Command="{Binding OpenSettingsCommand}" ToolTip="Canvas address, token, linked folders">
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Settings}" Width="14" Height="14"
+                          Stretch="Uniform"/>
+                    <TextBlock Text="Canvas settings…" Style="{StaticResource Body}" Margin="12,0,0,0"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

@@ -357,6 +357,12 @@ public static class ThemeService
         Save();
     }
 
+    /// <summary>Drop recent entries whose path <paramref name="match"/> accepts (files that were cleaned up).</summary>
+    public static void RemoveRecentFiles(Func<string, bool> match)
+    {
+        if (_settings.RecentFiles.RemoveAll(p => match(p)) > 0) Save();
+    }
+
     // ------------------------------------------------------------- start-screen library
 
     public static IReadOnlyList<string> LibraryRoots => _settings.LibraryRoots;

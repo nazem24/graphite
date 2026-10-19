@@ -6,9 +6,10 @@ using Graphite.App.Services;
 
 namespace Graphite.App.ViewModels;
 
-/// <summary>The settings page: light/dark mode, window material and reduced motion. Everything
-/// applies the moment it is chosen (no Apply button); <see cref="ThemeService"/> does the work and
-/// remembers it, this class only mirrors the current state for the page.</summary>
+/// <summary>The settings page, in five sections picked on its left: Appearance (mode, material, motion),
+/// Start page (layout, sidebar), Reading &amp; markup (progress line, tool defaults), Canvas, and About.
+/// Everything applies the moment it is chosen (no Apply button); <see cref="ThemeService"/> and
+/// <see cref="CanvasSettings"/> do the work and remember it, this class only mirrors the current state.</summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly Action _close;
@@ -21,6 +22,39 @@ public sealed partial class SettingsViewModel : ObservableObject
         VersionText = $"Version {version}";
         foreach (var style in ToolStyles.All) ToolRows.Add(new ToolDefaultRow(style));
         ThemeService.AppearanceChanged += Refresh;
+    }
+
+    // ---- sections ----
+    public static readonly string[] Sections = { "Appearance", "StartPage", "Reading", "Canvas", "About" };
+
+    /// <summary>The section on show.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAppearanceSection))]
+    [NotifyPropertyChangedFor(nameof(IsStartPageSection))]
+    [NotifyPropertyChangedFor(nameof(IsReadingSection))]
+    [NotifyPropertyChangedFor(nameof(IsCanvasSection))]
+    [NotifyPropertyChangedFor(nameof(IsAboutSection))]
+    private string section = "Appearance";
+
+    public bool IsAppearanceSection => Section == "Appearance";
+    public bool IsStartPageSection => Section == "StartPage";
+    public bool IsReadingSection => Section == "Reading";
+    public bool IsCanvasSection => Section == "Canvas";
+    public bool IsAboutSection => Section == "About";
+
+    partial void OnSectionChanged(string value)
+    {
+        if (value == "Canvas") RefreshCanvas();
+        SectionShown?.Invoke();
+    }
+
+    /// <summary>Raised after another section was picked (the page scrolls back to the top).</summary>
+    public event Action? SectionShown;
+
+    [RelayCommand]
+    private void ShowSection(string? name)
+    {
+        if (name != null && Sections.Contains(name)) Section = name;
     }
 
     // ---- mode ----
@@ -146,7 +180,11 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>Re-read everything (also when the page opens: the person may have changed a
     /// Windows setting or used the command palette in the meantime).</summary>
-    public void Refresh() => OnPropertyChanged(string.Empty);
+    public void Refresh()
+    {
+        OnPropertyChanged(string.Empty);
+        if (IsCanvasSection) RefreshCanvas();
+    }
 
     [RelayCommand]
     private void SetAppearance(string mode)

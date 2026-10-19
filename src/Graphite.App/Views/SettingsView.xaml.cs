@@ -6,7 +6,7 @@ using Graphite.App.Services;
 
 namespace Graphite.App.Views;
 
-/// <summary>The settings page (mode, window material, start page, motion). The settings live in
+/// <summary>The settings page, one section at a time (picked on its left). The settings live in
 /// <see cref="ViewModels.SettingsViewModel"/>; this file only plays the page transition, which is
 /// the same one the start page uses between folders (see <see cref="Motion"/>): the page slides in
 /// from the right while fading in, and on the way out fades and drifts a little to the right.</summary>
@@ -14,9 +14,34 @@ public partial class SettingsView : UserControl
 {
     private int _gen;   // bumped whenever a transition starts or is cut short
 
-    public SettingsView() => InitializeComponent();
+    private ViewModels.SettingsViewModel? _watched;
 
-    private TranslateTransform Move => (TranslateTransform)PageScroll.RenderTransform;
+    public SettingsView()
+    {
+        InitializeComponent();
+        DataContextChanged += (_, e) =>
+        {
+            if (_watched != null) _watched.SectionShown -= OnSectionShown;
+            _watched = e.NewValue as ViewModels.SettingsViewModel;
+            if (_watched != null) _watched.SectionShown += OnSectionShown;
+        };
+    }
+
+    private void OnSectionShown() => SectionScroll.ScrollToTop();
+
+    /// <summary>A password box cannot be bound, so its text is handed over here, and cleared once it is saved
+    /// (the token is never shown again).</summary>
+    private async void TestCanvas_Click(object sender, RoutedEventArgs e)
+    {
+        if (_watched == null) return;
+        try
+        {
+            if (await _watched.TestAndSaveCanvasAsync(TokenBox.Password)) TokenBox.Clear();
+        }
+        catch (Exception ex) { App.LogError("Testing the Canvas token failed", ex); }
+    }
+
+    private TranslateTransform Move => (TranslateTransform)PageRoot.RenderTransform;
 
     private static DoubleAnimation Animate(IAnimatable target, DependencyProperty property, double from, double to,
         double ms, IEasingFunction ease)
@@ -29,9 +54,9 @@ public partial class SettingsView : UserControl
     /// <summary>Everything at rest: fully visible, no animation running, drawn live (not as a cached picture).</summary>
     private void Rest()
     {
-        PageScroll.BeginAnimation(OpacityProperty, null);
-        PageScroll.Opacity = 1;
-        PageScroll.CacheMode = null;
+        PageRoot.BeginAnimation(OpacityProperty, null);
+        PageRoot.Opacity = 1;
+        PageRoot.CacheMode = null;
         Move.BeginAnimation(TranslateTransform.XProperty, null);
         Move.X = 0;
     }
@@ -44,8 +69,8 @@ public partial class SettingsView : UserControl
         if (!Motion.Enabled) return;
 
         // one cached picture, so the movement runs on the graphics card alone
-        PageScroll.CacheMode = new BitmapCache();
-        Animate(PageScroll, OpacityProperty, 0, 1, Motion.PageInFadeMs, Motion.PageFadeEase);
+        PageRoot.CacheMode = new BitmapCache();
+        Animate(PageRoot, OpacityProperty, 0, 1, Motion.PageInFadeMs, Motion.PageFadeEase);
         Animate(Move, TranslateTransform.XProperty, Motion.PageInSlidePx, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
         Motion.After(Motion.PageInSlideMs + 40, () =>
         {
@@ -65,8 +90,8 @@ public partial class SettingsView : UserControl
             return;
         }
 
-        PageScroll.CacheMode ??= new BitmapCache();
-        Animate(PageScroll, OpacityProperty, PageScroll.Opacity, 0, Motion.PageOutMs, Motion.PageOutEase);
+        PageRoot.CacheMode ??= new BitmapCache();
+        Animate(PageRoot, OpacityProperty, PageRoot.Opacity, 0, Motion.PageOutMs, Motion.PageOutEase);
         Animate(Move, TranslateTransform.XProperty, Move.X, Motion.PageOutDriftPx, Motion.PageOutMs, Motion.PageOutEase);
         Motion.After(Motion.PageOutMs + 20, () =>
         {

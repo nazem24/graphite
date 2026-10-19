@@ -613,6 +613,7 @@ public partial class LibraryHome : UserControl
             ApplyRailWidth(animate: true);
         }
         if (e.PropertyName == nameof(LibraryViewModel.IsRailVisible) && !_changingRail) _autoCollapsed = false;
+        if (e.PropertyName == nameof(LibraryViewModel.IsCanvasSpace)) EnterSpace();
 
         if (e.PropertyName == nameof(LibraryViewModel.IsLoading) && _awaitingPage && _watched is { IsLoading: false })
             QueuePageTransition();
@@ -677,6 +678,58 @@ public partial class LibraryHome : UserControl
 
         FlushDeferredPreviews();
         pending?.Invoke();
+    }
+
+    // ------------------------------------------------------------- Local | Canvas
+
+    private int _spaceGen;
+
+    /// <summary>The space was switched: the page of the new one comes in with a fade and a small lift, the same one
+    /// Recent and Pinned use. The page is hidden at once (no flash of the finished page), and the movement only
+    /// starts after layout has run (Input priority), so building the page does not eat the first frames of the
+    /// animation and make it jump. Skipped when motion is reduced.</summary>
+    private void EnterSpace()
+    {
+        EndTransition();
+        int gen = ++_spaceGen;
+        FrameworkElement layer = _watched is { IsCanvasSpace: true } ? CanvasLayer : PageContent;
+        FrameworkElement other = layer == CanvasLayer ? PageContent : CanvasLayer;
+        RestLayer(other);
+        if (!Motion.Enabled || !IsLoaded || !IsVisible || layer.RenderTransform is not TranslateTransform move)
+        {
+            RestLayer(layer);
+            return;
+        }
+
+        layer.BeginAnimation(OpacityProperty, null);
+        move.BeginAnimation(TranslateTransform.YProperty, null);
+        layer.Opacity = 0;
+        move.Y = 12;
+        layer.CacheMode = new BitmapCache();
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (gen != _spaceGen) return;   // switched again: the newer call owns the layers
+            Animate(layer, OpacityProperty, 0, 1, Motion.PageInFadeMs, Motion.PageFadeEase);
+            Animate(move, TranslateTransform.YProperty, 12, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
+            Motion.After(Motion.PageInSlideMs + 40, () =>
+            {
+                if (gen == _spaceGen) RestLayer(layer);
+            });
+        }, DispatcherPriority.Input);
+    }
+
+    /// <summary>A space layer at rest: fully shown, no animation, no cached picture.</summary>
+    private static void RestLayer(FrameworkElement layer)
+    {
+        layer.BeginAnimation(OpacityProperty, null);
+        layer.Opacity = 1;
+        layer.CacheMode = null;
+        if (layer.RenderTransform is TranslateTransform move)
+        {
+            move.BeginAnimation(TranslateTransform.YProperty, null);
+            move.Y = 0;
+        }
     }
 
     // ------------------------------------------------------------- previews during a transition
