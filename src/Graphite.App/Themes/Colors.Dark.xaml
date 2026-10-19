@@ -18,6 +18,8 @@
         <GradientStop Color="#14FFFFFF" Offset="1"/>
     </LinearGradientBrush>
     <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#F02A2A2E"/>
+    <!-- Fill of small floating surfaces: the page bar (MainWindow, Tag="PageBar") and tooltips. -->
+    <SolidColorBrush x:Key="App.FloatingBrush" Color="#FF2A2A2E"/>
     <Color x:Key="App.ShadowColor">#000000</Color>
 
     <!-- Outlines are white at low alpha, not a fixed grey: they pick up whatever sits behind them,

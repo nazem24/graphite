@@ -684,10 +684,12 @@
         </Setter>
     </Style>
 
-    <!-- Tooltips: a name, an optional key cap and an optional one-line hint. Plain strings
+    <!-- Tooltips take the window material's floating surface (App.FloatingBrush: opaque for Mica,
+         the shaded glass for Glass, the shared glass for Blur / Frosted), like the page bar.
+         A name, an optional key cap and an optional one-line hint. Plain strings
          still work; "Name|Key|Hint" fills the three slots (any part may be left empty). -->
     <Style TargetType="ToolTip">
-        <Setter Property="Background" Value="{DynamicResource App.GlassSolidBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource App.FloatingBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
         <Setter Property="MaxWidth" Value="300"/>
         <Setter Property="Template">
@@ -1268,6 +1270,49 @@
                             <Setter TargetName="bd" Property="Background" Value="#8C808080"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- The stock ScrollViewer template fills the little square where the vertical and horizontal
+         scroll bars meet with the system control colour (a white box on our dark viewer when zoomed in).
+         Same template, with that corner left transparent. -->
+    <Style TargetType="ScrollViewer">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollViewer">
+                    <Grid Background="{TemplateBinding Background}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Grid.Column="0" Grid.Row="0"
+                                                Margin="{TemplateBinding Padding}"
+                                                Content="{TemplateBinding Content}"
+                                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                CanContentScroll="{TemplateBinding CanContentScroll}"
+                                                CanHorizontallyScroll="False" CanVerticallyScroll="False"/>
+                        <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" Grid.Row="0"
+                                   Orientation="Vertical" Cursor="Arrow"
+                                   Minimum="0"
+                                   Maximum="{TemplateBinding ScrollableHeight}"
+                                   ViewportSize="{TemplateBinding ViewportHeight}"
+                                   Value="{Binding VerticalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                        <ScrollBar x:Name="PART_HorizontalScrollBar" Grid.Column="0" Grid.Row="1"
+                                   Orientation="Horizontal" Cursor="Arrow"
+                                   Minimum="0"
+                                   Maximum="{TemplateBinding ScrollableWidth}"
+                                   ViewportSize="{TemplateBinding ViewportWidth}"
+                                   Value="{Binding HorizontalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                        <Rectangle Grid.Column="1" Grid.Row="1" Fill="Transparent"/>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -1990,17 +2035,29 @@
         <Setter Property="Padding" Value="5,1"/>
     </Style>
 
-    <!-- Keyboard focus: a 2 px light ring with a thin dark gap, readable on any backdrop.
-         (WPF only draws this for keyboard focus, never after a mouse click.) -->
+    <!-- Keyboard focus (Tab through the bar): a faint 1 px ring in the theme's own text colour that
+         fades out by itself after a moment. It shows on every new focus, so tabbing on keeps
+         marking the current item. (WPF only draws this for keyboard focus, never after a mouse click.) -->
     <Style x:Key="BarFocusVisual">
         <Setter Property="Control.Template">
             <Setter.Value>
                 <ControlTemplate>
                     <Grid IsHitTestVisible="False">
-                        <Border Margin="-3" CornerRadius="12" BorderThickness="2"
-                                BorderBrush="{DynamicResource App.FocusRingBrush}"/>
-                        <Border Margin="-1" CornerRadius="10" BorderThickness="1"
-                                BorderBrush="{DynamicResource App.FocusGapBrush}"/>
+                        <Grid.Triggers>
+                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="Opacity">
+                                            <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="1"/>
+                                            <DiscreteDoubleKeyFrame KeyTime="0:0:1.1" Value="1"/>
+                                            <LinearDoubleKeyFrame KeyTime="0:0:1.8" Value="0"/>
+                                        </DoubleAnimationUsingKeyFrames>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Grid.Triggers>
+                        <Border Margin="-2" CornerRadius="11" BorderThickness="1" Opacity="0.4"
+                                BorderBrush="{DynamicResource App.TextBrush}"/>
                     </Grid>
                 </ControlTemplate>
             </Setter.Value>

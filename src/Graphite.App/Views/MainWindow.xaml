@@ -330,18 +330,31 @@
                             </DockPanel>
                         </Border>
 
-                        <!-- floating page controls -->
+                        <!-- floating page controls: a "dynamic island". Collapsed it is a small pill with just the
+                             page number; hovering it (and, briefly, when a document is first shown) expands it to
+                             the full set of controls. The expand / collapse is driven from code
+                             (MainWindow.SetPageBarExpanded) by animating the width of the two "PageBarExtra" parts.
+                             Its fill is App.FloatingBrush, defined per material and light / dark in Themes (opaque for Mica,
+                             a heavier glass for Glass so the controls read, the shared glass for Blur / Frosted); the border
+                             is the shared GlassBorderBrush. The corner radius is
+                             kept at half the height (PageBar_SizeChanged) so it is a true pill in both states. -->
                         <Border Style="{StaticResource GlassPill}" VerticalAlignment="Bottom" Tag="PageBar"
                                 HorizontalAlignment="Center" Margin="0,0,0,16" Padding="7,4"
-                                CornerRadius="21"
-                                Background="{DynamicResource App.CardBrush}"
-                                BorderBrush="{DynamicResource App.StrokeBrush}">
+                                CornerRadius="16"
+                                Background="{DynamicResource App.FloatingBrush}"
+                                Loaded="PageBar_Loaded" IsVisibleChanged="PageBar_IsVisibleChanged"
+                                SizeChanged="PageBar_SizeChanged"
+                                MouseEnter="PageBar_MouseEnter" MouseLeave="PageBar_MouseLeave">
                             <StackPanel Orientation="Horizontal">
-                                <!-- page navigation -->
-                                <Button Style="{StaticResource IconButton}" Padding="6" Click="PrevPage_Click" ToolTip="Previous page">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronLeft}"
-                                          Width="11" Height="11" Stretch="Uniform"/>
-                                </Button>
+                                <!-- previous page (expanded part) -->
+                                <Border Tag="PageBarExtra" Width="0" Opacity="0" ClipToBounds="True" IsHitTestVisible="False">
+                                    <Button Style="{StaticResource IconButton}" Padding="6" Click="PrevPage_Click" ToolTip="Previous page">
+                                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronLeft}"
+                                              Width="11" Height="11" Stretch="Uniform"/>
+                                    </Button>
+                                </Border>
+
+                                <!-- page number: always visible -->
                                 <Button Style="{StaticResource IconButton}" Padding="8,4" BorderThickness="0"
                                         Command="{Binding DataContext.GoToPageDialogCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         ToolTip="Go to page… (Ctrl+G)">
@@ -357,80 +370,87 @@
                                         </TextBlock.Triggers>
                                     </TextBlock>
                                 </Button>
-                                <Button Style="{StaticResource IconButton}" Padding="6" Click="NextPage_Click" ToolTip="Next page">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronRight}"
-                                          Width="11" Height="11" Stretch="Uniform"/>
-                                </Button>
 
-                                <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
+                                <!-- everything else (expanded part) -->
+                                <Border Tag="PageBarExtra" Width="0" Opacity="0" ClipToBounds="True" IsHitTestVisible="False">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                        <Button Style="{StaticResource IconButton}" Padding="6" Click="NextPage_Click" ToolTip="Next page">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronRight}"
+                                                  Width="11" Height="11" Stretch="Uniform"/>
+                                        </Button>
 
-                                <!-- zoom -->
-                                <Button Style="{StaticResource IconButton}" Padding="6"
-                                        Command="{Binding DataContext.ZoomOutCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        ToolTip="Zoom out (Ctrl+-)">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomOut}"
-                                          Width="13" Height="13" Stretch="Uniform"/>
-                                </Button>
-                                <Button Style="{StaticResource IconButton}" Padding="5,4" BorderThickness="0"
-                                        Click="ZoomReset_Click" ToolTip="Reset zoom to 100%">
-                                    <TextBlock Text="{Binding Zoom, Converter={StaticResource ZoomToPercent}}"
-                                               VerticalAlignment="Center" MinWidth="40" TextAlignment="Center" FontSize="12"
-                                               Foreground="{DynamicResource App.TextBrush}"/>
-                                </Button>
-                                <Button Style="{StaticResource IconButton}" Padding="6"
-                                        Command="{Binding DataContext.ZoomInCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        ToolTip="Zoom in (Ctrl++)">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomIn}"
-                                          Width="13" Height="13" Stretch="Uniform"/>
-                                </Button>
-                                <Button Style="{StaticResource IconButton}" Padding="6" Click="FitWidth_Click" ToolTip="Fit width">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.FitWidth}"
-                                          Width="13" Height="13" Stretch="Uniform"/>
-                                </Button>
+                                        <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
 
-                                <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
+                                        <!-- zoom -->
+                                        <Button Style="{StaticResource IconButton}" Padding="6"
+                                                Command="{Binding DataContext.ZoomOutCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ToolTip="Zoom out (Ctrl+-)">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomOut}"
+                                                  Width="13" Height="13" Stretch="Uniform"/>
+                                        </Button>
+                                        <Button Style="{StaticResource IconButton}" Padding="5,4" BorderThickness="0"
+                                                Click="ZoomReset_Click" ToolTip="Reset zoom to 100%">
+                                            <TextBlock Text="{Binding Zoom, Converter={StaticResource ZoomToPercent}}"
+                                                       VerticalAlignment="Center" MinWidth="40" TextAlignment="Center" FontSize="12"
+                                                       Foreground="{DynamicResource App.TextBrush}"/>
+                                        </Button>
+                                        <Button Style="{StaticResource IconButton}" Padding="6"
+                                                Command="{Binding DataContext.ZoomInCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ToolTip="Zoom in (Ctrl++)">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ZoomIn}"
+                                                  Width="13" Height="13" Stretch="Uniform"/>
+                                        </Button>
+                                        <Button Style="{StaticResource IconButton}" Padding="6" Click="FitWidth_Click" ToolTip="Fit width">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.FitWidth}"
+                                                  Width="13" Height="13" Stretch="Uniform"/>
+                                        </Button>
 
-                                <!-- layout -->
-                                <RadioButton Style="{StaticResource ToolToggle}" Padding="6"
-                                             ToolTip="Continuous"
-                                             IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Continuous}">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Continuous}"
-                                          Width="12" Height="12" Stretch="Uniform"/>
-                                </RadioButton>
-                                <RadioButton Style="{StaticResource ToolToggle}" Padding="6"
-                                             ToolTip="Single page"
-                                             IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Single}">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.SinglePage}"
-                                          Width="12" Height="12" Stretch="Uniform"/>
-                                </RadioButton>
-                                <RadioButton Style="{StaticResource ToolToggle}" Padding="6"
-                                             ToolTip="Two pages"
-                                             IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Spread}">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Spread}"
-                                          Width="12" Height="12" Stretch="Uniform"/>
-                                </RadioButton>
+                                        <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
 
-                                <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
+                                        <!-- layout -->
+                                        <RadioButton Style="{StaticResource ToolToggle}" Padding="6"
+                                                     ToolTip="Continuous"
+                                                     IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Continuous}">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Continuous}"
+                                                  Width="12" Height="12" Stretch="Uniform"/>
+                                        </RadioButton>
+                                        <RadioButton Style="{StaticResource ToolToggle}" Padding="6"
+                                                     ToolTip="Single page"
+                                                     IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Single}">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.SinglePage}"
+                                                  Width="12" Height="12" Stretch="Uniform"/>
+                                        </RadioButton>
+                                        <RadioButton Style="{StaticResource ToolToggle}" Padding="6"
+                                                     ToolTip="Two pages"
+                                                     IsChecked="{Binding Layout, Converter={StaticResource EnumToBool}, ConverterParameter=Spread}">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Spread}"
+                                                  Width="12" Height="12" Stretch="Uniform"/>
+                                        </RadioButton>
 
-                                <!-- reading -->
-                                <ToggleButton Style="{StaticResource IconButton}" Padding="6"
-                                              IsChecked="{Binding InvertPages}"
-                                              ToolTip="Dark pages">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Invert}"
-                                          Width="13" Height="13" Stretch="Uniform"/>
-                                </ToggleButton>
-                                <Button Style="{StaticResource IconButton}" Padding="6"
-                                        Command="{Binding DataContext.ToggleFullscreenCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        ToolTip="Fullscreen (F11)">
-                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Fullscreen}"
-                                          Width="13" Height="13" Stretch="Uniform"/>
-                                </Button>
+                                        <Rectangle Style="{StaticResource ToolSep}" Height="15" Margin="6,0"/>
+
+                                        <!-- reading -->
+                                        <ToggleButton Style="{StaticResource IconButton}" Padding="6"
+                                                      IsChecked="{Binding InvertPages}"
+                                                      ToolTip="Dark pages">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Invert}"
+                                                  Width="13" Height="13" Stretch="Uniform"/>
+                                        </ToggleButton>
+                                        <Button Style="{StaticResource IconButton}" Padding="6"
+                                                Command="{Binding DataContext.ToggleFullscreenCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ToolTip="Fullscreen (F11)">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Fullscreen}"
+                                                  Width="13" Height="13" Stretch="Uniform"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
 
                         <!-- Reading progress: a thin line along the bottom edge that stays put while
                              the page bar above it fades away when idle. -->
                         <ProgressBar VerticalAlignment="Bottom" Height="2" Margin="16,0,16,0"
+                                     Visibility="{DynamicResource App.ProgressLineVisibility}"
                                      IsHitTestVisible="False" Focusable="False"
                                      Minimum="0" Maximum="{Binding Pages.Count, Mode=OneWay}"
                                      Value="{Binding CurrentPageIndex, Mode=OneWay, Converter={StaticResource PlusOne}}">
@@ -1292,7 +1312,7 @@
                             <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.Image}"/>
                         </RadioButton>
                         <RadioButton Style="{StaticResource BarTool}" GroupName="Tools" AutomationProperties.Name="Edit page text"
-                                     ToolTip="Edit page text||Drag over text to edit it."
+                                     ToolTip="Edit page text||Click a line to edit it (Ctrl+click: one word), or drag over text."
                                      IsChecked="{Binding SelectedDocument.ActiveTool, Converter={StaticResource EnumToBool}, ConverterParameter=EditText}">
                             <Path Style="{StaticResource BarToolIcon}" Data="{StaticResource Icon.EditText}"/>
                         </RadioButton>
@@ -1500,6 +1520,15 @@
                                                 <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}"
                                                               IsChecked="{Binding SelectedDocument.HighlightFreehand, Converter={StaticResource InvertBool}}"/>
                                                 <TextBlock Text="Snap to words" VerticalAlignment="Center"/>
+                                            </DockPanel>
+
+                                            <!-- freehand marker only: straight lines (Shift locks horizontal / vertical) -->
+                                            <DockPanel Margin="0,14,0,0"
+                                                       Visibility="{Binding SelectedDocument.ShowsStraight, Converter={StaticResource BoolToVis}}">
+                                                <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}"
+                                                              IsChecked="{Binding SelectedDocument.HighlightStraight}"
+                                                              AutomationProperties.Name="Straight lines"/>
+                                                <TextBlock Text="Straight lines" VerticalAlignment="Center"/>
                                             </DockPanel>
                                         </StackPanel>
                                     </Border>

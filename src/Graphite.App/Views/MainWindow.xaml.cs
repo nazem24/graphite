@@ -1091,8 +1091,8 @@ public partial class MainWindow : Window
         {
             EnsureScrollRestored(next);
             next.RenderShownPages();
-            // Fullscreen: the new tab's floating page bar follows the shown/hidden state.
-            if (ViewModel.IsFullscreen) ShowPageBar(_pageBarShown, animate: false, force: true);
+            // The new tab's floating page bar follows the shown/hidden state (fullscreen can hide it).
+            ShowPageBar(_pageBarShown, animate: false, force: true);
         });
     }
 
@@ -1467,16 +1467,30 @@ public partial class MainWindow : Window
 
     private async void OnEditTextRequested(DocumentViewModel doc, int pageIndex, RectD area)
     {
-        double autoSize = Math.Clamp(area.Height * 0.72, 6, 32);
+        // Read the original text and how it looks, so the dialog starts with it and the edit is typeset to match.
+        var probe = doc.Index.ProbeStyle(pageIndex, area);
+        string original = probe?.Text ?? doc.Index.TextInRectLines(pageIndex, area);
+        double autoSize = probe is { } found
+            ? Math.Clamp(Math.Round(found.FontSize * 2) / 2, 4, 96)
+            : Math.Clamp(area.Height * 0.72, 6, 32);
+
         var result = EditTextDialog.Show(this, "Edit text",
-            "Replacement text (the selected region is covered and re-typeset — leave empty to erase):",
-            autoSize: autoSize);
-        if (result is not { } r) return;
+            "Edit the text (it is re-typeset in the same font, size and colour over the page's own background — clear it to erase):",
+            initial: original, autoSize: autoSize);
+        if (result is not { } r) return;   // cancelled: stay in the tool, so another line can be clicked
+        if (r.Size == null && string.Equals(r.Text, original, StringComparison.Ordinal)) return;   // nothing changed
+
+        var style = new ContentEditor.TextEditStyle(
+            probe?.FontFamily ?? "Segoe UI",
+            r.Size ?? autoSize,
+            probe?.Bold ?? false,
+            probe?.Italic ?? false,
+            probe?.ColorHex ?? "#1A1A1A",
+            probe is { LineCount: 1 } ? probe.BaselineY : null);
         try
         {
             await doc.ApplyOperationAsync("Editing text…",
-                b => ContentEditor.ReplaceText(b, pageIndex, area, r.Text,
-                    fontSize: r.Size ?? autoSize));
+                b => ContentEditor.ReplaceText(b, pageIndex, area, r.Text, style));
         }
         catch (Exception ex)
         {

@@ -17,6 +17,11 @@
         <GradientStop Color="#18FFFFFF" Offset="1"/>
     </LinearGradientBrush>
     <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#E02A2A2E"/>
+    <!-- Fill of small floating surfaces: the page bar (MainWindow, Tag="PageBar") and tooltips. -->
+    <LinearGradientBrush x:Key="App.FloatingBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#7A2E2E33" Offset="0"/>
+        <GradientStop Color="#66232327" Offset="1"/>
+    </LinearGradientBrush>
 
     <!-- Outlines on a see-through surface: a touch brighter than the opaque dark theme's, so
          controls keep a crisp edge against the lighter backdrop. -->

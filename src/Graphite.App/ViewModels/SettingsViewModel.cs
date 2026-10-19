@@ -120,6 +120,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void CheckForUpdates() => _checkForUpdates();
 
+    // ---- reading ----
+    public bool ShowProgressLine
+    {
+        get => ThemeService.ShowProgressLine;
+        set
+        {
+            if (value == ThemeService.ShowProgressLine) return;
+            ThemeService.SetShowProgressLine(value);
+            OnPropertyChanged();
+        }
+    }
+
     // ---- motion ----
     public bool ReduceMotion
     {

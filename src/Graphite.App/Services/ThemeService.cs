@@ -47,6 +47,9 @@ public static class ThemeService
 
         /// <summary>User turned on "Reduce motion" (palette: Toggle reduced motion).</summary>
         public bool ReduceMotion { get; set; }
+
+        /// <summary>The thin accent line along the bottom of a document that shows how far you have read.</summary>
+        public bool ShowProgressLine { get; set; } = true;
         public List<string> RecentFiles { get; set; } = new();
 
         /// <summary>Saved signature: strokes of x,y pairs in a normalized 0..1 box
@@ -181,6 +184,23 @@ public static class ThemeService
         Motion.UserReduced = reduce;
         Save();
     }
+
+    public static bool ShowProgressLine => _settings.ShowProgressLine;
+
+    /// <summary>Show / hide the reading-progress line, and remember the choice. The line binds to the
+    /// "App.ProgressLineVisibility" resource, so every open document follows at once.</summary>
+    public static void SetShowProgressLine(bool show)
+    {
+        _settings.ShowProgressLine = show;
+        ApplyProgressLine();
+        Save();
+    }
+
+    private static void ApplyProgressLine()
+    {
+        if (Application.Current is { } app)
+            app.Resources["App.ProgressLineVisibility"] = _settings.ShowProgressLine ? Visibility.Visible : Visibility.Collapsed;
+    }
     public static IReadOnlyList<string> RecentFiles => _settings.RecentFiles;
 
     private static string SettingsPath =>
@@ -210,6 +230,7 @@ public static class ThemeService
         if (_settings.SidebarCollapse is not ("Rail" or "Hidden")) _settings.SidebarCollapse = "Rail";
         _settings.ToolDefaults ??= new();
         Motion.UserReduced = _settings.ReduceMotion;
+        ApplyProgressLine();
         EnergySaver.Start();
         EnergySaver.Changed += () => ApplyTheme(_settings.DarkTheme);   // swap to / from Mica, refresh the page
         ApplyTheme(_settings.DarkTheme);

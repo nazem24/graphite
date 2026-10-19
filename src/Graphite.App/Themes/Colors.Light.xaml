@@ -18,6 +18,8 @@
         <GradientStop Color="#33B9B9B2" Offset="1"/>
     </LinearGradientBrush>
     <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#E8FCFCFA"/>
+    <!-- Fill of small floating surfaces: the page bar (MainWindow, Tag="PageBar") and tooltips. -->
+    <SolidColorBrush x:Key="App.FloatingBrush" Color="#FFFCFCFA"/>
     <Color x:Key="App.ShadowColor">#000000</Color>
 
     <SolidColorBrush x:Key="App.StrokeBrush" Color="#D9D9D4"/>

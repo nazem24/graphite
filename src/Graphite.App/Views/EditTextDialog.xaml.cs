@@ -14,7 +14,9 @@ public partial class EditTextDialog : Window
         Loaded += (_, _) =>
         {
             Backdrop.Apply(this, ThemeService.IsDark);
-            ValueBox.SelectAll();
+            // Prefilled with the existing text: put the caret at the end to edit it in place.
+            // Empty: nothing to select.
+            ValueBox.CaretIndex = ValueBox.Text.Length;
             ValueBox.Focus();
         };
     }

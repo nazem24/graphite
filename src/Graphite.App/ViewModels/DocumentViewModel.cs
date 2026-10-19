@@ -171,6 +171,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     public bool ShowsOpacity => ActiveTool is ToolKind.Highlight or ToolKind.Underline or ToolKind.StrikeOut
         or ToolKind.Ink or ToolKind.Rect or ToolKind.Ellipse or ToolKind.Arrow;
     public bool ShowsSnap => ActiveTool == ToolKind.Highlight;
+    public bool ShowsStraight => ActiveTool == ToolKind.Highlight && HighlightFreehand;
     public bool HasToolOptions => ShowsColor || ShowsThickness || ShowsOpacity;
 
     private void NotifyToolOptions()
@@ -181,6 +182,7 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowsThickness));
         OnPropertyChanged(nameof(ShowsOpacity));
         OnPropertyChanged(nameof(ShowsSnap));
+        OnPropertyChanged(nameof(ShowsStraight));
         OnPropertyChanged(nameof(HasToolOptions));
     }
 
@@ -224,6 +226,10 @@ public partial class DocumentViewModel : ObservableObject, IDisposable
     /// <summary>Highlight tool sub-mode: false = drag over text to snap-highlight words,
     /// true = draw a freehand translucent marker stroke anywhere on the page.</summary>
     [ObservableProperty] private bool highlightFreehand;
+
+    /// <summary>Freehand marker only: every stroke is a straight line from where the drag starts to where
+    /// it ends (hold Shift to lock it horizontal or vertical).</summary>
+    [ObservableProperty] private bool highlightStraight;
 
     /// <summary>Toolbar checked state for the text-snapping Highlight button. Setting it
     /// to true activates the Highlight tool in text mode (false is ignored — the tool

@@ -364,6 +364,21 @@
                 </StackPanel>
             </Border>
 
+            <!-- ================================ Reading ================================ -->
+            <TextBlock Text="READING" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
+            <Border Style="{StaticResource GlassCard}" Padding="22,18" Margin="0,0,0,26">
+                <DockPanel>
+                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                  IsChecked="{Binding ShowProgressLine, Mode=TwoWay}"
+                                  AutomationProperties.Name="Reading progress line"/>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                        <TextBlock Text="Reading progress line" Style="{StaticResource RowTitle}"/>
+                        <TextBlock Style="{StaticResource RowHint}"
+                                   Text="A thin line along the bottom of the page that shows how far through the document you are."/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <!-- ================================ Motion ================================ -->
             <TextBlock Text="MOTION" Style="{StaticResource SectionLabel}" Margin="4,0,0,8"/>
             <Border Style="{StaticResource GlassCard}" Padding="22,18">

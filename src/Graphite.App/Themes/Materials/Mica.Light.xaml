@@ -17,6 +17,8 @@
         <GradientStop Color="#33B9B9B2" Offset="1"/>
     </LinearGradientBrush>
     <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#E8FCFCFA"/>
+    <!-- Fill of small floating surfaces: the page bar (MainWindow, Tag="PageBar") and tooltips. -->
+    <SolidColorBrush x:Key="App.FloatingBrush" Color="#FFFCFCFA"/>
 
     <!-- how strongly the start page's accent glows show (AmbientBackdrop) -->
     <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">1.0</sys:Double>

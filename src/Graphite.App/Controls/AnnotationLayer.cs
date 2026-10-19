@@ -24,6 +24,9 @@ public sealed class AnnotationLayer : FrameworkElement
     private readonly List<PointD> _inkPoints = new();
     private IReadOnlyList<RectD> _liveWordRects = Array.Empty<RectD>();
 
+    /// <summary>Edit-text tool: the text run under the pointer that a click would pick (drawn as a hover hint).</summary>
+    private RectD? _editHover;
+
     // eraser
     private bool _erasing;
     private Point? _eraserHoverPage;       // page points; null when the cursor isn't over the page
@@ -194,6 +197,7 @@ public sealed class AnnotationLayer : FrameworkElement
             Cursor = _doc?.ActiveTool == ToolKind.Select ? Cursors.Arrow : Cursors.Cross;
             // Switching away from (or to) the eraser invalidates any stale size-preview circle.
             _eraserHoverPage = null;
+            _editHover = null;
             if (_lassoDrawing)
             {
                 _lassoDrawing = false;
@@ -221,6 +225,11 @@ public sealed class AnnotationLayer : FrameworkElement
     protected override void OnMouseLeave(MouseEventArgs e)
     {
         base.OnMouseLeave(e);
+        if (_editHover != null)
+        {
+            _editHover = null;
+            InvalidateVisual();
+        }
         if (_eraserHoverPage == null) return;
         _eraserHoverPage = null;
         InvalidateVisual();
@@ -385,6 +394,24 @@ public sealed class AnnotationLayer : FrameworkElement
     /// <summary>True while the Highlight tool is active and set to freehand-marker mode.</summary>
     private bool IsFreehandHighlight => _doc?.ActiveTool == ToolKind.Highlight && _doc.HighlightFreehand;
 
+    /// <summary>The freehand marker with its "Straight lines" option on.</summary>
+    private bool IsStraightHighlight => IsFreehandHighlight && _doc!.HighlightStraight;
+
+    /// <summary>Straight marker stroke: just the start of the drag and where it is now. Shift locks the line to
+    /// whichever axis the drag is mostly along.</summary>
+    private void SetStraightStroke()
+    {
+        double ex = _current.X, ey = _current.Y;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            if (Math.Abs(ex - _start.X) >= Math.Abs(ey - _start.Y)) ey = _start.Y;
+            else ex = _start.X;
+        }
+        _inkPoints.Clear();
+        _inkPoints.Add(new PointD(_start.X, _start.Y));
+        _inkPoints.Add(new PointD(ex, ey));
+    }
+
     /// <summary>Annotation kinds that render from Bounds directly (rather than quads/strokes/
     /// line endpoints), so a plain drag can reposition them.</summary>
     private static bool IsBoundsMovable(AnnotationKind kind) =>
@@ -412,6 +439,21 @@ public sealed class AnnotationLayer : FrameworkElement
         if (_doc.ActiveTool == ToolKind.Lasso)
         {
             OnLassoMove(e);
+            return;
+        }
+
+        if (_doc.ActiveTool == ToolKind.EditText && !_dragging)
+        {
+            // Show what a click would pick: the line of text under the pointer (Ctrl: just the word).
+            var hp = ToPage(e.GetPosition(this));
+            var hover = _doc.Index.LineAt(_page.Index, new PointD(hp.X, hp.Y),
+                wordOnly: Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+            if (hover != _editHover)
+            {
+                _editHover = hover;
+                Cursor = hover != null ? Cursors.IBeam : Cursors.Cross;
+                InvalidateVisual();
+            }
             return;
         }
 
@@ -494,6 +536,12 @@ public sealed class AnnotationLayer : FrameworkElement
         {
             case ToolKind.Ink:
             case ToolKind.Highlight when IsFreehandHighlight:
+                if (IsStraightHighlight)
+                {
+                    SetStraightStroke();
+                    UpdateLiveInk();
+                    return;
+                }
                 foreach (var sample in InkSamples(e))
                     AppendSmoothed(_inkPoints, sample);
                 UpdateLiveInk();
@@ -502,6 +550,12 @@ public sealed class AnnotationLayer : FrameworkElement
                 _liveWordRects = _doc.Index
                     .WordsInRect(_page.Index, DragRect())
                     .Select(w => w.Box).ToList();
+                break;
+            case ToolKind.EditText:
+                // The drag snaps to the words it covers; show that region as it will be edited.
+                _liveWordRects = _doc.Index.SnapToWords(_page.Index, DragRect()) is { } snapped
+                    ? new[] { snapped }
+                    : Array.Empty<RectD>();
                 break;
         }
         InvalidateVisual();
@@ -557,6 +611,7 @@ public sealed class AnnotationLayer : FrameworkElement
                 break;
 
             case ToolKind.Highlight when IsFreehandHighlight && _inkPoints.Count >= 1:
+                if (IsStraightHighlight && moved) SetStraightStroke();
                 CreateFreehandHighlight();
                 break;
 
@@ -580,8 +635,16 @@ public sealed class AnnotationLayer : FrameworkElement
                 });
                 break;
 
-            case ToolKind.EditText when moved:
-                _doc.RequestEditText(_page.Index, rect);
+            case ToolKind.EditText:
+                // A click edits the line of text under it (Ctrl+click: just that word); a drag edits the
+                // words it covers, falling back to the dragged rectangle when it covers none.
+                RectD? editTarget = moved
+                    ? _doc.Index.SnapToWords(_page.Index, rect) ?? rect
+                    : _doc.Index.LineAt(_page.Index, new PointD(_current.X, _current.Y),
+                        wordOnly: Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+                _liveWordRects = Array.Empty<RectD>();
+                _editHover = null;
+                if (editTarget is { } et) _doc.RequestEditText(_page.Index, et);
                 break;
 
             case ToolKind.PlaceImage when moved:
@@ -1170,9 +1233,17 @@ public sealed class AnnotationLayer : FrameworkElement
         }
 
         DrawInProgress(dc, s);
+        DrawEditHover(dc, s);
         DrawImages(dc, s);
         DrawLassoSelection(dc, s);
         DrawEraserCursor(dc, s);
+    }
+
+    /// <summary>Edit-text tool: outlines the run of text a click would edit.</summary>
+    private void DrawEditHover(DrawingContext dc, double s)
+    {
+        if (_doc?.ActiveTool != ToolKind.EditText || _dragging || _editHover is not { } r) return;
+        dc.DrawRoundedRectangle(LiveWordBrush, LiveWordPen, ToRect(r.Inflate(1.5), s), 2, 2);
     }
 
     /// <summary>Shows the eraser's reach as a circle centered on the cursor, so its size
@@ -1312,7 +1383,12 @@ public sealed class AnnotationLayer : FrameworkElement
                 dc.DrawRectangle(null, LiveWordPen, rect);
                 break;
 
-            case ToolKind.Rect or ToolKind.EditText or ToolKind.PlaceImage
+            case ToolKind.EditText:
+                foreach (var r in _liveWordRects) dc.DrawRectangle(LiveWordBrush, null, ToRect(r, s));
+                dc.DrawRectangle(null, DashPen(), rect);
+                break;
+
+            case ToolKind.Rect or ToolKind.PlaceImage
                 or ToolKind.Text or ToolKind.Signature:
                 dc.DrawRectangle(null, DashPen(), rect);
                 break;

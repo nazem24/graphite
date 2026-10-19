@@ -75,14 +75,21 @@ public partial class MainWindow
         _idleTimer.Tick += (_, _) =>
         {
             _idleTimer.Stop();
-            // The page bar fades away when the pointer is idle (fullscreen and windowed alike) so
-            // the page gets the full height — except while the pointer is resting on the bar.
-            if (ViewModel.IsFullscreen) ShowPageBar(false);
-            else if (ViewModel.SelectedDocument != null)
+            // Windowed, the page bar never goes away: when idle it rests as the compact pill (see
+            // SetPageBarExpanded). Only fullscreen hides it, so the page gets the full height —
+            // except while the pointer is resting on the bar.
+            if (ViewModel.IsFullscreen)
             {
                 if (PageBarHovered()) _idleTimer.Start();
                 else ShowPageBar(false);
             }
+        };
+
+        _pageBarCollapseTimer = new DispatcherTimer();
+        _pageBarCollapseTimer.Tick += (_, _) =>
+        {
+            _pageBarCollapseTimer.Stop();
+            if (_pageBarCollapseTarget is { IsMouseOver: false } bar) SetPageBarExpanded(bar, false, animate: true);
         };
 
         _dragWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
@@ -577,13 +584,158 @@ public partial class MainWindow
 
     private bool PageBarHovered() => ActivePageBar() is { IsMouseOver: true };
 
-    /// <summary>Mouse movement or scrolling brings the page bar back; it fades again after a moment.</summary>
+    /// <summary>Mouse movement or scrolling brings the page bar back; in fullscreen it fades again after a moment
+    /// (windowed, it just rests as the compact pill).</summary>
     private void NotePageBarActivity()
     {
         if (ViewModel.SelectedDocument == null) return;
         ShowPageBar(true);
         _idleTimer.Stop();
         _idleTimer.Start();
+    }
+
+    // ------------------------------------------------------------- page bar "island"
+
+    // The floating page bar rests as a small pill with only the page number. Hovering it expands it
+    // to every control; leaving it (after a short grace period) collapses it again. A document's bar
+    // also opens by itself the first time it is shown, so it is clear what the bar offers, and then
+    // folds away on its own. Each open document has its own bar, so the state is kept per bar.
+
+    private sealed class PageBarIslandState
+    {
+        public bool Expanded;
+        public bool Introduced;
+        public int Generation;
+    }
+
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<FrameworkElement, PageBarIslandState> _islandStates = new();
+    private DispatcherTimer _pageBarCollapseTimer = null!;
+    private FrameworkElement? _pageBarCollapseTarget;
+
+    private const double PageBarCollapseDelayMs = 350;   // grace period after the pointer leaves
+    private const double PageBarIntroHoldMs = 3200;      // how long the bar stays open when first shown
+
+    private PageBarIslandState IslandOf(FrameworkElement bar) => _islandStates.GetOrCreateValue(bar);
+
+    private void PageBar_Loaded(object sender, RoutedEventArgs e) => TryPageBarIntro(sender as FrameworkElement);
+
+    private void PageBar_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e) =>
+        TryPageBarIntro(sender as FrameworkElement);
+
+    /// <summary>A true pill: the corner radius is always half the current height, collapsed or expanded.</summary>
+    private void PageBar_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is Border { ActualHeight: > 0 } bar)
+            bar.CornerRadius = new CornerRadius(bar.ActualHeight / 2);
+    }
+
+    private void PageBar_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is not FrameworkElement bar) return;
+        _pageBarCollapseTimer.Stop();
+        SetPageBarExpanded(bar, true, animate: true);
+    }
+
+    private void PageBar_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement bar) SchedulePageBarCollapse(bar, PageBarCollapseDelayMs);
+    }
+
+    /// <summary>The first time a document's bar is shown it is made visible and opened, then left to
+    /// fold into the pill (unless the pointer is on it).</summary>
+    private void TryPageBarIntro(FrameworkElement? bar)
+    {
+        if (bar == null || !bar.IsLoaded || !bar.IsVisible) return;
+        var state = IslandOf(bar);
+        if (state.Introduced) return;
+        state.Introduced = true;
+
+        // After layout, so the expanded width can be measured.
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            // Whatever hid the bar before (fullscreen idle), a freshly opened document starts with it showing.
+            if (ReferenceEquals(bar, ActivePageBar())) ShowPageBar(true, animate: false, force: true);
+            SetPageBarExpanded(bar, true, animate: true);
+            SchedulePageBarCollapse(bar, PageBarIntroHoldMs);
+            _idleTimer.Stop();
+            _idleTimer.Start();
+        });
+    }
+
+    private void SchedulePageBarCollapse(FrameworkElement bar, double ms)
+    {
+        // A different bar was waiting to fold (tab switch): settle it now, without animation.
+        if (_pageBarCollapseTarget is { } previous && !ReferenceEquals(previous, bar) && IslandOf(previous).Expanded)
+            SetPageBarExpanded(previous, false, animate: false);
+        _pageBarCollapseTarget = bar;
+        _pageBarCollapseTimer.Stop();
+        _pageBarCollapseTimer.Interval = TimeSpan.FromMilliseconds(ms);
+        _pageBarCollapseTimer.Start();
+    }
+
+    /// <summary>Open or fold a page bar: the width of its "PageBarExtra" parts animates between 0 and
+    /// their natural width (the pill, centred, grows outward from the page number) while they fade.</summary>
+    private void SetPageBarExpanded(FrameworkElement bar, bool expanded, bool animate)
+    {
+        var state = IslandOf(bar);
+        if (state.Expanded == expanded) return;
+        state.Expanded = expanded;
+        int generation = ++state.Generation;
+
+        var extras = new List<FrameworkElement>();
+        FindAllByTag(bar, "PageBarExtra", extras);
+        bool animated = animate && Motion.Enabled;
+
+        foreach (var part in extras)
+        {
+            double fromWidth = part.ActualWidth;
+            double fromOpacity = part.Opacity;
+            part.BeginAnimation(WidthProperty, null);
+            part.BeginAnimation(OpacityProperty, null);
+            part.IsHitTestVisible = expanded;
+
+            if (!animated)
+            {
+                part.Width = expanded ? double.NaN : 0;
+                part.Opacity = expanded ? 1 : 0;
+                continue;
+            }
+
+            double toWidth = 0;
+            if (expanded && part is Border { Child: UIElement content })
+            {
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                toWidth = content.DesiredSize.Width;
+            }
+            part.Width = fromWidth;   // hold the starting width while the animations take over
+
+            var widthAnim = new DoubleAnimation(fromWidth, toWidth, Motion.Ms(expanded ? 320 : 230))
+            {
+                EasingFunction = expanded ? Motion.Soft : Motion.EaseInOut,
+                FillBehavior = FillBehavior.HoldEnd,
+            };
+            widthAnim.Completed += (_, _) =>
+            {
+                if (generation != state.Generation) return;   // superseded by a newer open / fold
+                part.BeginAnimation(WidthProperty, null);
+                part.Width = expanded ? double.NaN : 0;       // open: back to natural width, so it tracks its content
+            };
+            part.BeginAnimation(WidthProperty, widthAnim);
+
+            var fadeAnim = new DoubleAnimation(fromOpacity, expanded ? 1 : 0, Motion.Ms(expanded ? 200 : 130))
+            {
+                BeginTime = TimeSpan.FromMilliseconds(expanded ? 50 : 0),
+                EasingFunction = Motion.EaseOut,
+                FillBehavior = FillBehavior.HoldEnd,
+            };
+            fadeAnim.Completed += (_, _) =>
+            {
+                if (generation != state.Generation) return;
+                part.BeginAnimation(OpacityProperty, null);
+                part.Opacity = expanded ? 1 : 0;
+            };
+            part.BeginAnimation(OpacityProperty, fadeAnim);
+        }
     }
 
     // ------------------------------------------------------------- narrow windows

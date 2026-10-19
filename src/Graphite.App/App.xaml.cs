@@ -68,11 +68,11 @@ public partial class App : Application
         ThemeService.Initialize();
         IconMotion.Register();
 
-        // Tooltips appear after 400 ms of hovering (name, key and a one-line hint).
+        // Tooltips appear after the pointer has rested for 0.9 s (name, key and a one-line hint).
         try
         {
             System.Windows.Controls.ToolTipService.InitialShowDelayProperty.OverrideMetadata(
-                typeof(DependencyObject), new FrameworkPropertyMetadata(400));
+                typeof(DependencyObject), new FrameworkPropertyMetadata(900));
         }
         catch (Exception ex) { LogError("Could not set the tooltip delay", ex); }
 
