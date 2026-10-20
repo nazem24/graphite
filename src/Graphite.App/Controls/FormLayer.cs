@@ -274,7 +274,7 @@ public sealed class FormLayer : Panel
 
         void OpenMenu()
         {
-            var menu = new ContextMenu { PlacementTarget = border, Placement = PlacementMode.Bottom };
+            var menu = new ContextMenu();
             foreach (var option in field.Model.Options)
             {
                 var item = new MenuItem
@@ -305,7 +305,7 @@ public sealed class FormLayer : Panel
                 clear.Click += async (_, _) => await SafeSetAsync(field, "");
                 menu.Items.Add(clear);
             }
-            menu.IsOpen = true;
+            Graphite.App.Services.MenuPlacement.Show(menu, border);
         }
 
         border.MouseEnter += (_, _) => border.Background = FieldTintHover;

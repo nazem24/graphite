@@ -1,6 +1,7 @@
 ﻿using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using Graphite.App.Interop;
 using Graphite.App.Services;
 
 namespace Graphite.App.Controls;
@@ -40,6 +41,8 @@ public sealed class AmbientBackdrop : FrameworkElement
         {
             Motion.InteractingChanged -= UpdateDrift;
             Motion.InteractingChanged += UpdateDrift;
+            EnergySaver.Changed -= UpdateDrift;
+            EnergySaver.Changed += UpdateDrift;
             Motion.ScrollingChanged -= UpdateDrift;
             Motion.ScrollingChanged += UpdateDrift;
             ThemeService.AppearanceChanged -= InvalidateVisual;
@@ -50,6 +53,7 @@ public sealed class AmbientBackdrop : FrameworkElement
         {
             Motion.InteractingChanged -= UpdateDrift;
             Motion.ScrollingChanged -= UpdateDrift;
+            EnergySaver.Changed -= UpdateDrift;
             ThemeService.AppearanceChanged -= InvalidateVisual;
             StopDrift();
         };
@@ -57,7 +61,7 @@ public sealed class AmbientBackdrop : FrameworkElement
 
     private void UpdateDrift()
     {
-        bool animate = IsVisible && IsLoaded && !Motion.UserReduced && SystemParameters.ClientAreaAnimation;
+        bool animate = IsVisible && IsLoaded && !Motion.UserReduced && !EnergySaver.IsOn && SystemParameters.ClientAreaAnimation;
         if (!animate)
         {
             StopDrift();

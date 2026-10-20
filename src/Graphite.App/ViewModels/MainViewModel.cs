@@ -68,6 +68,16 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel()
     {
         IsDarkTheme = ThemeService.IsDark;
+        if (!ThemeService.AutoOpenPanels) { ShowSidebar = false; ShowInspector = false; }
+        // With "Open side panels automatically" off, a PDF that opens starts without them.
+        Documents.CollectionChanged += (_, args) =>
+        {
+            if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && !ThemeService.AutoOpenPanels)
+            {
+                ShowSidebar = false;
+                ShowInspector = false;
+            }
+        };
         Settings = new SettingsViewModel(() => IsSettingsOpen = false, AppVersion,
             () => CheckForUpdatesCommand.Execute(null));
         ThemeService.AppearanceChanged += () => IsDarkTheme = ThemeService.IsDark;

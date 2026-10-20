@@ -18,9 +18,10 @@ public static class Motion
     /// <summary>The user's own choice (persisted by <see cref="ThemeService"/>).</summary>
     public static bool UserReduced { get; set; }
 
-    /// <summary>True when movement / scale / shimmer effects may play. Also false while the
+    /// <summary>True when movement / scale / shimmer effects may play. Also false while Windows' Energy Saver is on
+    /// (decorative loops keep the CPU and GPU awake for nothing) and while the
     /// window is being dragged or resized, so decoration never competes with the move.</summary>
-    public static bool Enabled => !UserReduced && !Interacting && SystemParameters.ClientAreaAnimation;
+    public static bool Enabled => !UserReduced && !Interacting && !Interop.EnergySaver.IsOn && SystemParameters.ClientAreaAnimation;
 
     /// <summary>True while the window is being moved or resized by the user. Windows runs that
     /// as a modal loop on the UI thread, so anything that animates or redraws every frame in the

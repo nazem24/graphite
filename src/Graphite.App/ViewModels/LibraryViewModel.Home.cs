@@ -217,6 +217,7 @@ public partial class LibraryViewModel
     [NotifyPropertyChangedFor(nameof(RailTargetWidth))]
     private bool isRailVisible = true;
 
+
     /// <summary>Collapsed, and shown as a narrow strip of icons.</summary>
     public bool IsRailCompact => !IsRailVisible && ThemeService.CollapseToRail;
 

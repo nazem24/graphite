@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using Graphite.App.Interop;
 using Graphite.App.Services;
 
 namespace Graphite.App.Controls;
@@ -38,11 +39,14 @@ public sealed class ShimmerBorder : Border
             // (Re-)subscribe: the sweep stops while the window is dragged and resumes after.
             Motion.InteractingChanged -= UpdateSweep;
             Motion.InteractingChanged += UpdateSweep;
+            EnergySaver.Changed -= UpdateSweep;
+            EnergySaver.Changed += UpdateSweep;
             UpdateSweep();
         };
         Unloaded += (_, _) =>
         {
             Motion.InteractingChanged -= UpdateSweep;
+            EnergySaver.Changed -= UpdateSweep;
             _sweep.BeginAnimation(TranslateTransform.XProperty, null);
         };
     }
@@ -51,12 +55,14 @@ public sealed class ShimmerBorder : Border
     {
         if (IsVisible && IsLoaded && Motion.Enabled)
         {
-            _sweep.BeginAnimation(TranslateTransform.XProperty,
-                new DoubleAnimation(-1, 1, TimeSpan.FromMilliseconds(1400))
-                {
-                    RepeatBehavior = RepeatBehavior.Forever,
-                    EasingFunction = Motion.Sine,
-                });
+            var sweep = new DoubleAnimation(-1, 1, TimeSpan.FromMilliseconds(1400))
+            {
+                RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = Motion.Sine,
+            };
+            // A slow, soft sweep reads the same at 30 fps as at 60 and costs half the UI-thread / GPU work.
+            Timeline.SetDesiredFrameRate(sweep, 30);
+            _sweep.BeginAnimation(TranslateTransform.XProperty, sweep);
         }
         else
         {

@@ -183,7 +183,7 @@
 
                 <!-- ============ page viewer ============ -->
                 <Border Grid.Column="1" Margin="12,4,12,12" CornerRadius="16"
-                        Background="{DynamicResource App.ViewerBrush}">
+                        Background="{DynamicResource App.ViewerBrush}" SizeChanged="ViewerCard_SizeChanged">
                     <Grid>
                         <ListBox x:Name="PagesHost"
                                  ItemsSource="{Binding VisiblePages}"
@@ -606,7 +606,7 @@
                                             </ItemsControl.GroupStyle>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Background="{DynamicResource App.CardBrush}"
+                                                    <Border Background="{DynamicResource App.PanelBrush}"
                                                             Tag="{Binding PulseCount, Mode=OneWay, NotifyOnTargetUpdated=True}"
                                                             BorderThickness="1" CornerRadius="12" Padding="12,10" Margin="0,0,0,8"
                                                             RenderTransformOrigin="0.5,0.5">

@@ -12,7 +12,7 @@ namespace Graphite.App.Interop;
 /// the older "battery saver" flag (GUID_POWER_SAVING_STATUS / GetSystemPowerStatus) and the newer
 /// Energy Saver status (GUID_ENERGY_SAVER_STATUS, off / standard / high savings). The change
 /// notifications need no window; Windows calls back with the current value right after
-/// registering. A slow poll of the old flag is kept as a safety net.
+/// registering. A slow poll of the old flag is kept only as a fallback if that registration fails.
 /// </summary>
 public static class EnergySaver
 {
@@ -61,15 +61,18 @@ public static class EnergySaver
     /// <summary>Read the current state and start watching it. Call once, on the UI thread.</summary>
     public static void Start()
     {
-        if (_timer != null) return;
+        if (_dispatcher != null) return;
         _dispatcher = Dispatcher.CurrentDispatcher;
         _polled = Query();
         IsOn = _polled;
 
-        Register(PowerSavingStatus);
+        bool batterySaverWatched = Register(PowerSavingStatus);
         Register(EnergySaverStatus);
 
-        _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(3) };
+        // Windows calls back on every change, so a poll is only a fallback for when that registration failed
+        // (and then a slow one: a timer that wakes the CPU every few seconds costs more power than it is worth).
+        if (batterySaverWatched) return;
+        _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(30) };
         _timer.Tick += (_, _) =>
         {
             _polled = Query();
@@ -78,7 +81,7 @@ public static class EnergySaver
         _timer.Start();
     }
 
-    private static void Register(Guid setting)
+    private static bool Register(Guid setting)
     {
         try
         {
@@ -86,9 +89,9 @@ public static class EnergySaver
             var sub = new NotifySubscribe { Callback = Marshal.GetFunctionPointerForDelegate(_callback), Context = IntPtr.Zero };
             IntPtr recipient = Marshal.AllocHGlobal(Marshal.SizeOf<NotifySubscribe>());   // lives as long as the app
             Marshal.StructureToPtr(sub, recipient, false);
-            PowerSettingRegisterNotification(ref setting, DEVICE_NOTIFY_CALLBACK, recipient, out _);
+            return PowerSettingRegisterNotification(ref setting, DEVICE_NOTIFY_CALLBACK, recipient, out _) == 0;   // ERROR_SUCCESS
         }
-        catch { /* the poll below still covers the old flag */ }
+        catch { return false; /* the poll in Start still covers the old flag */ }
     }
 
     /// <summary>Called by Windows on one of its own threads: POWERBROADCAST_SETTING is a 16-byte GUID,

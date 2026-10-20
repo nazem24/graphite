@@ -426,9 +426,11 @@ public partial class MainWindow
         shrink.Completed += (_, _) => vm.DeleteCommand.Execute(null);
         collapse.BeginAnimation(ScaleTransform.ScaleYProperty, shrink);
         card.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, Motion.Ms(150)));
-        if (card.RenderTransform is TranslateTransform slide)
-            slide.BeginAnimation(TranslateTransform.XProperty,
-                new DoubleAnimation(0, 28, Motion.Ms(170)) { EasingFunction = Motion.EaseIn });
+        // The card's transform comes from the data template, where WPF freezes it: animating it throws. Use our own.
+        if (card.RenderTransform is not TranslateTransform { IsFrozen: false } slide)
+            card.RenderTransform = slide = new TranslateTransform();
+        slide.BeginAnimation(TranslateTransform.XProperty,
+            new DoubleAnimation(0, 28, Motion.Ms(170)) { EasingFunction = Motion.EaseIn });
         e.Handled = true;
     }
 

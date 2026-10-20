@@ -406,6 +406,7 @@ public sealed partial class CanvasViewModel : ObservableObject
         }
         NewTotal = total;
         PinTotal = CanvasSettings.PinCount;
+        if (Page == CanvasPage.Overview) BuildNewPreview();
     }
 
     private void RefreshCourseStates()
@@ -472,6 +473,63 @@ public sealed partial class CanvasViewModel : ObservableObject
         _ = Task.Run(() => _cache.SaveSeen(id, copy));
         if (Courses.FirstOrDefault(c => c.Id == id) is { } item) item.NewCount = 0;
         NewTotal = Courses.Sum(c => c.NewCount);
+        if (Page == CanvasPage.Overview) BuildNewPreview();
+    }
+
+    // ------------------------------------------------------------- "New since you last looked" on the overview
+
+    /// <summary>At most three courses, each with at most three of its new items (files first).</summary>
+    public ObservableCollection<CanvasSectionVm> NewPreview { get; } = new();
+
+    [ObservableProperty] private bool hasNewPreview;
+    [ObservableProperty] private string newPreviewSummary = "";
+
+    /// <summary>"+ 2 more courses with new items": shown when the strip could not fit them all.</summary>
+    [ObservableProperty] private string newPreviewMore = "";
+
+    private List<CanvasRowVm> NewRowsOf(CanvasCourseItem c)
+    {
+        var data = GetData(c.Id);
+        var newKeys = CanvasNew.NewKeys(data, GetSeen(c.Id));
+        if (newKeys.Count == 0) return new List<CanvasRowVm>();
+        string? folder = CanvasSettings.FolderOf(c.Id);
+        var manifest = folder != null ? CanvasFolderLink.Load(folder) : null;
+        var used = new HashSet<string>();
+        return CanvasNew.Flatten(data)
+            .Where(x => newKeys.Contains(x.Item.Key) && used.Add(x.Item.Key) && Listed(x.Item))
+            .OrderBy(x => x.Item.Kind == CanvasItemKind.File ? 0 : 1)
+            .Select(x => Row(c.Id, x.Item, manifest, folder, x.Path))
+            .ToList();
+    }
+
+    private void BuildNewPreview()
+    {
+        NewPreview.Clear();
+        var found = new List<(CanvasCourseItem Course, List<CanvasRowVm> Rows)>();
+        foreach (var c in Courses)
+        {
+            if (c.NewCount == 0) continue;
+            var rows = NewRowsOf(c);
+            if (rows.Count > 0) found.Add((c, rows));
+        }
+        foreach (var (course, rows) in found.OrderByDescending(f => f.Rows.Count).Take(3))
+        {
+            int hidden = rows.Count - 3;
+            NewPreview.Add(new CanvasSectionVm(course.Name, course.Id, rows.Take(3),
+                hidden > 0 ? $"+ {hidden} more new in this course" : "") { TintBrush = course.TintBrush });
+        }
+        int total = found.Sum(f => f.Rows.Count);
+        int moreCourses = found.Count - NewPreview.Count;
+        NewPreviewMore = moreCourses > 0 ? $"+ {moreCourses} more course{(moreCourses == 1 ? "" : "s")} with new items" : "";
+        NewPreviewSummary = total == 0 ? "" : $"{LibraryScanner.Plural(total, "item")} in {LibraryScanner.Plural(found.Count, "course")}";
+        HasNewPreview = NewPreview.Count > 0;
+    }
+
+    /// <summary>"Mark seen" on one of the cards of that strip.</summary>
+    [RelayCommand]
+    private void MarkCourseSeen(string? courseId)
+    {
+        if (!string.IsNullOrEmpty(courseId)) MarkSeen(courseId);
     }
 
     private async Task RefreshCourseAsync(string id, CancellationToken ct)
@@ -681,6 +739,7 @@ public sealed partial class CanvasViewModel : ObservableObject
                 Title = TermName.Length > 0 ? "Your courses" : "Canvas";
                 Subtitle = OverviewSubtitle();
                 EmptyText = _listError ?? (StatusText.StartsWith("Updating") ? "Loading your courses…" : "No courses in this term.");
+                BuildNewPreview();
                 break;
             case CanvasPage.Course when CurrentCourse != null:
                 BuildCourse(CurrentCourse);

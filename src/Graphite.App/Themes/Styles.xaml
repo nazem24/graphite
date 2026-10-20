@@ -1738,7 +1738,8 @@
         </Setter>
     </Style>
 
-    <!-- Small round button floating on a card (open in new tab, more). -->
+    <!-- Small round button floating on a card (open in new tab, more, download). Filled like the other small floating
+         surfaces (App.FloatingBrush), so it follows the window material instead of staying a solid dark square. -->
     <Style x:Key="CardCornerButton" TargetType="Button">
         <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -1749,7 +1750,7 @@
                         <Grid.RenderTransform>
                             <ScaleTransform/>
                         </Grid.RenderTransform>
-                        <Border x:Name="bd" CornerRadius="9" Background="{DynamicResource App.GlassSolidBrush}"
+                        <Border x:Name="bd" CornerRadius="9" Background="{DynamicResource App.FloatingBrush}"
                                 BorderThickness="1" BorderBrush="{DynamicResource App.StrokeBrush}"/>
                         <Border x:Name="hl" CornerRadius="9" Background="{DynamicResource App.HoverBrush}" Opacity="0"/>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -1951,6 +1952,9 @@
          option is a raised chip; the group sits on a PanelBrush tray (see SegmentTray). -->
     <Style x:Key="SegmentOption" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <!-- The outline of the chosen chip. A segmented control can set BorderBrush="Transparent" to go without. -->
+        <Setter Property="BorderBrush" Value="{DynamicResource App.StrokeBrush}"/>
         <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -1968,7 +1972,7 @@
                         <Border x:Name="hl" CornerRadius="8" Background="{DynamicResource App.HoverBrush}"
                                 Opacity="0" IsHitTestVisible="False"/>
                         <Border x:Name="sel" CornerRadius="8" Background="{DynamicResource App.ToolCheckedBrush}"
-                                BorderThickness="1" BorderBrush="{DynamicResource App.StrokeBrush}"
+                                BorderThickness="1" BorderBrush="{TemplateBinding BorderBrush}"
                                 Opacity="0" IsHitTestVisible="False"/>
                         <Border x:Name="bg" CornerRadius="8" Padding="{TemplateBinding Padding}" Background="Transparent"
                                 BorderThickness="1" BorderBrush="Transparent">
@@ -2028,9 +2032,6 @@
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.ExitActions>
-                        </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource App.FocusRingBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

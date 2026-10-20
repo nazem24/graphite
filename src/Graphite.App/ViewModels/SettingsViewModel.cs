@@ -166,6 +166,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    public bool AutoOpenPanels
+    {
+        get => ThemeService.AutoOpenPanels;
+        set
+        {
+            if (value == ThemeService.AutoOpenPanels) return;
+            ThemeService.SetAutoOpenPanels(value);
+            OnPropertyChanged();
+        }
+    }
+
     // ---- motion ----
     public bool ReduceMotion
     {

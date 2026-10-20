@@ -26,6 +26,13 @@ public sealed partial class CanvasCourseItem : ObservableObject
     public string Name => Course.Name;
     public string Code => Course.Code;
 
+    /// <summary>The big mark behind the title on the course card ("ACA"): the course code when it is a short word, else
+    /// worked out from the name, see <see cref="CourseText"/>.</summary>
+    public string Abbreviation => CourseText.Abbreviation(Course.Name, Course.Code);
+
+    /// <summary>Font size of <see cref="Abbreviation"/>: the shorter the mark, the larger.</summary>
+    public double AbbreviationSize => CourseText.AbbreviationSize(Abbreviation);
+
     /// <summary>The colour of the course's icon in the rails: one of the folder palette's colours, always the same one
     /// for the same course, so courses can be told apart at a glance (the Local rail tints its folders the same way).</summary>
     public Brush TintBrush { get; }
@@ -213,6 +220,8 @@ public sealed class CanvasSectionVm
 
     public string Title { get; }
     public string CourseId { get; }
+    /// <summary>The course's own colour (the "New" cards on the overview carry it).</summary>
+    public Brush? TintBrush { get; set; }
     public ObservableCollection<CanvasRowVm> Rows { get; } = new();
     public string MoreText { get; }
     public bool HasMore => MoreText.Length > 0;

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using Graphite.App.Services;
 using Graphite.App.ViewModels;
 
 namespace Graphite.App.Views;
@@ -85,8 +86,6 @@ internal static class CanvasMenus
 
     private static void Open(FrameworkElement owner, ContextMenu menu)
     {
-        menu.PlacementTarget = owner;
-        menu.Placement = PlacementMode.Bottom;
-        menu.IsOpen = true;
+        MenuPlacement.Show(menu, owner);
     }
 }

@@ -213,13 +213,11 @@ public partial class LibraryHome : UserControl
     // ------------------------------------------------------------- menus
 
     /// <summary>Open a button's own context menu below it, bound to the same data as the button.</summary>
-    private static void OpenMenuBelow(FrameworkElement owner, object? dataContext)
+    private static void OpenMenuBelow(FrameworkElement owner, object? dataContext, FrameworkElement? anchor = null)
     {
         if (owner.ContextMenu is not { } menu) return;
         menu.DataContext = dataContext;
-        menu.PlacementTarget = owner;
-        menu.Placement = PlacementMode.Bottom;
-        menu.IsOpen = true;
+        MenuPlacement.Show(menu, owner, anchor);
     }
 
     /// <summary>The library switcher: every library folder (the current one ticked), then add / remove /
@@ -333,7 +331,7 @@ public partial class LibraryHome : UserControl
         {
             if (up is Button { ContextMenu: not null } card && !ReferenceEquals(card, more))
             {
-                OpenMenuBelow(card, card.DataContext);
+                OpenMenuBelow(card, card.DataContext, more);   // opens at the dots, not under the whole card
                 return;
             }
         }
@@ -695,28 +693,68 @@ public partial class LibraryHome : UserControl
         FrameworkElement layer = _watched is { IsCanvasSpace: true } ? CanvasLayer : PageContent;
         FrameworkElement other = layer == CanvasLayer ? PageContent : CanvasLayer;
         RestLayer(other);
+        foreach (var p in new FrameworkElement?[] { RailCanvasOpen, RailCanvasCompact, RailLocalOpen, RailLocalNavCompact, RailLocalListCompact })
+            if (p != null) RestLayer(p);
         if (!Motion.Enabled || !IsLoaded || !IsVisible || layer.RenderTransform is not TranslateTransform move)
         {
             RestLayer(layer);
             return;
         }
 
+        // Canvas arrives from the right, Local from the left; the sidebar's own content follows the same way
+        double dir = layer == CanvasLayer ? 1 : -1;
         layer.BeginAnimation(OpacityProperty, null);
         move.BeginAnimation(TranslateTransform.YProperty, null);
+        move.BeginAnimation(TranslateTransform.XProperty, null);
         layer.Opacity = 0;
-        move.Y = 12;
+        move.Y = 0;
+        move.X = dir * 90;
         layer.CacheMode = new BitmapCache();
+        var rail = SpaceRailParts();
+        foreach (var part in rail) PrepareRailPart(part, dir);
 
         Dispatcher.InvokeAsync(() =>
         {
             if (gen != _spaceGen) return;   // switched again: the newer call owns the layers
-            Animate(layer, OpacityProperty, 0, 1, Motion.PageInFadeMs, Motion.PageFadeEase);
-            Animate(move, TranslateTransform.YProperty, 12, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
+            Animate(layer, OpacityProperty, 0, 1, 140, Motion.PageFadeEase);
+            Animate(move, TranslateTransform.XProperty, dir * 90, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
+            foreach (var part in rail) PlayRailPart(part, dir);
             Motion.After(Motion.PageInSlideMs + 40, () =>
             {
-                if (gen == _spaceGen) RestLayer(layer);
+                if (gen != _spaceGen) return;
+                RestLayer(layer);
+                foreach (var part in rail) RestLayer(part);
             });
         }, DispatcherPriority.Input);
+    }
+
+    /// <summary>The sidebar pieces that belong to the space just entered (open layout and compact rail).</summary>
+    // not filtered by visibility: the Local parts only become visible a moment after IsCanvasSpace changes
+    private FrameworkElement[] SpaceRailParts()
+    {
+        bool canvas = _watched is { IsCanvasSpace: true };
+        FrameworkElement?[] all = canvas
+            ? new FrameworkElement?[] { RailCanvasOpen, RailCanvasCompact }
+            : new FrameworkElement?[] { RailLocalOpen, RailLocalNavCompact, RailLocalListCompact };
+        return all.Where(p => p != null).Select(p => p!).ToArray();
+    }
+
+    private static void PrepareRailPart(FrameworkElement part, double dir)
+    {
+        // the sidebar edge cuts the slide off cleanly (otherwise it runs out of the window on the left)
+        if (VisualTreeHelper.GetParent(part) is FrameworkElement host) host.ClipToBounds = true;
+        if (part.RenderTransform is not TranslateTransform) part.RenderTransform = new TranslateTransform();
+        part.BeginAnimation(OpacityProperty, null);
+        ((TranslateTransform)part.RenderTransform).BeginAnimation(TranslateTransform.XProperty, null);
+        part.Opacity = 0;
+        ((TranslateTransform)part.RenderTransform).X = dir * 60;
+    }
+
+    private static void PlayRailPart(FrameworkElement part, double dir)
+    {
+        var move = (TranslateTransform)part.RenderTransform;
+        Animate(part, OpacityProperty, 0, 1, 140, Motion.PageFadeEase);
+        Animate(move, TranslateTransform.XProperty, dir * 60, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
     }
 
     /// <summary>A space layer at rest: fully shown, no animation, no cached picture.</summary>
@@ -728,7 +766,9 @@ public partial class LibraryHome : UserControl
         if (layer.RenderTransform is TranslateTransform move)
         {
             move.BeginAnimation(TranslateTransform.YProperty, null);
+            move.BeginAnimation(TranslateTransform.XProperty, null);
             move.Y = 0;
+            move.X = 0;
         }
     }
 

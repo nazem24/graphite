@@ -396,6 +396,19 @@
                                 </DockPanel>
                             </Border>
 
+                            <Border Style="{StaticResource SettingsCard}" Margin="0,0,0,12">
+                                <DockPanel>
+                                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                  IsChecked="{Binding AutoOpenPanels, Mode=TwoWay}"
+                                                  AutomationProperties.Name="Open side panels automatically"/>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                        <TextBlock Text="Open side panels automatically" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Style="{StaticResource RowHint}"
+                                                   Text="Show the Pages panel and the Markup panel when a PDF opens. Turn this off to start with just the page. Ctrl F then shows the search panel only while you search."/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+
                             <TextBlock Text="TOOL DEFAULTS" Style="{StaticResource CardHeading}" Margin="4,8,0,8"/>
                             <Border Style="{StaticResource SettingsCard}">
                                 <StackPanel>

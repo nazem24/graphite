@@ -41,6 +41,67 @@ public partial class CanvasHome : UserControl
 
     private CanvasViewModel? Canvas => DataContext as CanvasViewModel;
 
+    // ------------------------------------------------------------- "Mark seen" on the New strip
+    // The tile (or the whole strip) fades and shrinks away first; only then are the items marked, so the page
+    // below does not jump while it is still visible. With motion reduced it is marked at once.
+
+    private bool _seenBusy;
+
+    private void NewCardSeen_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: CanvasSectionVm section } button || Canvas is not { } vm) return;
+        DependencyObject? up = button;
+        while (up != null && up is not ContentPresenter) up = VisualTreeHelper.GetParent(up);
+        PlaySeen(up as FrameworkElement, 0.9, () => vm.MarkCourseSeenCommand.Execute(section.CourseId), collapse: false);
+    }
+
+    private void NewStripSeen_Click(object sender, RoutedEventArgs e)
+    {
+        if (Canvas is not { } vm) return;
+        PlaySeen(NewStrip, 1, () => vm.MarkAllSeenCommand.Execute(null), collapse: true);
+    }
+
+    private void PlaySeen(FrameworkElement? target, double toScale, Action done, bool collapse)
+    {
+        if (_seenBusy) return;
+        if (target == null || !Motion.Enabled || !IsLoaded)
+        {
+            done();
+            return;
+        }
+        _seenBusy = true;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        var dur = Motion.Ms(220);
+        void Finish()
+        {
+            _seenBusy = false;
+            // the element may be reused by the ItemsControl: put it back before it is shown again
+            target.BeginAnimation(OpacityProperty, null);
+            target.Opacity = 1;
+            target.RenderTransform = Transform.Identity;
+            target.LayoutTransform = Transform.Identity;
+            done();
+        }
+        var fade = new DoubleAnimation(1, 0, dur) { EasingFunction = ease };
+        fade.Completed += (_, _) => Finish();
+        target.RenderTransformOrigin = new Point(0.5, 0.5);
+        var scale = new ScaleTransform(1, 1);
+        if (collapse)
+        {
+            // the strip shrinks in height, so everything below glides up with it
+            target.LayoutTransform = scale;
+            target.RenderTransformOrigin = new Point(0.5, 0);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 0, dur) { EasingFunction = ease });
+        }
+        else
+        {
+            target.RenderTransform = scale;
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, toScale, dur) { EasingFunction = ease });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, toScale, dur) { EasingFunction = ease });
+        }
+        target.BeginAnimation(OpacityProperty, fade);
+    }
+
     // ------------------------------------------------------------- long courses
     // A course can have hundreds of rows, each a button with a dozen parts. Keeping all of them laid out and drawn
     // made scrolling heavy, so only the modules near the window keep their rows live. A module that is well out of

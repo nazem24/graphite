@@ -69,7 +69,12 @@ public partial class MainWindow : Window
         };
 
         InitMotion();
-        StateChanged += (_, _) => UpdateMaximizeRestoreIcon();
+        StateChanged += (_, _) =>
+        {
+            UpdateMaximizeRestoreIcon();
+            // Nobody is looking while minimized: let Windows run Graphite on the efficiency cores (EcoQoS).
+            Graphite.App.Interop.PowerThrottling.Set(WindowState == WindowState.Minimized);
+        };
         Loaded += (_, _) => UpdateMaximizeRestoreIcon();
 
         // Quiet background update check shortly after launch — it only speaks up
@@ -144,6 +149,22 @@ public partial class MainWindow : Window
     private WindowState _preFullscreenState = WindowState.Normal;
     private bool _preFullscreenSidebar, _preFullscreenInspector;
 
+    /// <summary>Ctrl+F opened the Markup panel only to search (the panels don't open automatically), so it
+    /// folds away again when the search is over: Escape in the search box, or a click outside the panel.</summary>
+    private bool _searchOpenedInspector;
+
+    private static bool IsInsideInspector(DependencyObject? d)
+    {
+        while (d != null)
+        {
+            if (d is FrameworkElement { Tag: "InspectorPanel" }) return true;
+            d = d is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(d)
+                : LogicalTreeHelper.GetParent(d);
+        }
+        return false;
+    }
+
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         // Moving a tab makes the strip drop and re-take its selection for a moment: not a tab switch.
@@ -165,7 +186,10 @@ public partial class MainWindow : Window
         else if (e.PropertyName == nameof(MainViewModel.ShowSidebar))
             AnimatePanels(true);
         else if (e.PropertyName == nameof(MainViewModel.ShowInspector))
+        {
+            if (!ViewModel.ShowInspector) _searchOpenedInspector = false;   // closed some other way: nothing left to fold
             AnimatePanels(false);
+        }
         else if (e.PropertyName == nameof(MainViewModel.IsPaletteOpen) && ViewModel.IsPaletteOpen)
         {
             StaggerPalette();
@@ -1422,9 +1446,7 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { ContextMenu: { } menu } fe)
         {
             menu.DataContext = ViewModel;
-            menu.PlacementTarget = fe;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
+            MenuPlacement.Show(menu, fe);
             FlipChevron(fe, menu);
         }
     }
@@ -1440,9 +1462,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             menu.DataContext = ViewModel;
-            menu.PlacementTarget = fe;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
+            MenuPlacement.Show(menu, fe);
         }, DispatcherPriority.Input);
     }
 
@@ -1470,6 +1490,7 @@ public partial class MainWindow : Window
         {
             doc.SearchQuery = "";
             await doc.RunSearchAsync();
+            if (_searchOpenedInspector) ViewModel.ShowInspector = false;
         }
     }
 
@@ -1768,8 +1789,22 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>The page viewer is a rounded card, but a Border does not clip what it holds: the pages' square corners
+    /// poked out of it. Clip the card's content to its own shape so every corner is rounded the same.</summary>
+    private void ViewerCard_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is not Border { CornerRadius: var r } card || e.NewSize.Width <= 0 || e.NewSize.Height <= 0) return;
+        var clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), r.TopLeft, r.TopLeft);
+        clip.Freeze();
+        card.Clip = clip;
+    }
+
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        // A search panel that Ctrl+F opened by itself folds away again once you click outside it.
+        if (_searchOpenedInspector && !IsInsideInspector(e.OriginalSource as DependencyObject))
+            ViewModel.ShowInspector = false;
+
         // Clicking anywhere outside the inline text editor commits what was typed.
         if (_inlineEdit is { } edit && !edit.Tb.IsMouseOver)
             CommitInlineEdit();
@@ -1917,7 +1952,9 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && ViewModel.SelectedDocument != null)
         {
+            bool inspectorWasClosed = !ViewModel.ShowInspector;
             ViewModel.ShowInspector = true;
+            _searchOpenedInspector = inspectorWasClosed && !ThemeService.AutoOpenPanels;
             if (doc != null)
             {
                 if (_searchRadios.TryGetValue(doc, out var radio)) radio.IsChecked = true;

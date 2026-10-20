@@ -28,6 +28,24 @@ public partial class App : Application
         if (string.Equals(Environment.GetEnvironmentVariable("GRAPHITE_RENDER"), "software", StringComparison.OrdinalIgnoreCase))
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
+        // No keyboard focus rectangles anywhere, and the Tab key never moves focus (it used to walk through buttons
+        // and pages, outlining each). Ctrl+Tab still switches tabs, and a text box that wants Tab characters keeps them.
+        try
+        {
+            FrameworkElement.FocusVisualStyleProperty.OverrideMetadata(typeof(System.Windows.Controls.Control),
+                new FrameworkPropertyMetadata((Style?)null));
+        }
+        catch (InvalidOperationException) { /* already overridden: the focus rectangle just stays as it was */ }
+        EventManager.RegisterClassHandler(typeof(UIElement), System.Windows.Input.Keyboard.PreviewKeyDownEvent,
+            new System.Windows.Input.KeyEventHandler((sender, args) =>
+            {
+                if (args.Key != System.Windows.Input.Key.Tab) return;
+                var mods = System.Windows.Input.Keyboard.Modifiers;
+                if ((mods & (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Alt)) != 0) return;
+                if (args.OriginalSource is System.Windows.Controls.Primitives.TextBoxBase { AcceptsTab: true }) return;
+                args.Handled = true;
+            }));
+
         base.OnStartup(e);
 
         // Files passed on the command line (file association / "Open with"), as full paths —

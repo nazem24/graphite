@@ -50,6 +50,9 @@ public static class ThemeService
 
         /// <summary>The thin accent line along the bottom of a document that shows how far you have read.</summary>
         public bool ShowProgressLine { get; set; } = true;
+
+        /// <summary>The Pages panel (left) and Markup panel (right) open by themselves when a PDF opens.</summary>
+        public bool AutoOpenPanels { get; set; } = true;
         public List<string> RecentFiles { get; set; } = new();
 
         /// <summary>Saved signature: strokes of x,y pairs in a normalized 0..1 box
@@ -186,6 +189,16 @@ public static class ThemeService
     }
 
     public static bool ShowProgressLine => _settings.ShowProgressLine;
+
+    /// <summary>False: the side panels stay closed when a PDF opens (they are still one click or shortcut away).</summary>
+    public static bool AutoOpenPanels => _settings.AutoOpenPanels;
+
+    public static void SetAutoOpenPanels(bool on)
+    {
+        if (_settings.AutoOpenPanels == on) return;
+        _settings.AutoOpenPanels = on;
+        Save();
+    }
 
     /// <summary>Show / hide the reading-progress line, and remember the choice. The line binds to the
     /// "App.ProgressLineVisibility" resource, so every open document follows at once.</summary>

@@ -73,6 +73,137 @@
             <Setter Property="Foreground" Value="{DynamicResource App.AccentSystemBrush}"/>
         </Style>
 
+        <!-- A course on the overview, drawn like a folder of the Local space: a back sheet in the course's own colour
+             and a front flap that carries the material. Everything that depends on the theme comes from the Folder.*
+             resources of the current material (the same ones LibraryHome's FolderTile reads), so changing the material
+             or light / dark restyles the courses live:
+               - Folder.BackOpacity / ShadowOpacity   how solid the back is, how much it shadows
+               - Folder.FlapTint / FlapSheen / FlapRim / FlapOpacity   the flap: dark or light tint, sheen, edge, how much of the back shows through
+               - Folder.FlapHover                      the wash on hover
+             The big letters behind the title (Abbreviation) are drawn on the back, so they show through a see-through flap.
+             DataContext is the CanvasCourseItem. -->
+        <Style x:Key="CourseTile" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform/>
+                            </Grid.RenderTransform>
+
+                            <!-- the artwork, one cached picture (see FolderTile): back sheet, big letters, flap -->
+                            <Grid x:Name="art" IsHitTestVisible="False">
+                                <Grid.CacheMode>
+                                    <BitmapCache/>
+                                </Grid.CacheMode>
+                                <Border CornerRadius="14" Background="{Binding TintBrush}" Opacity="{DynamicResource Folder.BackOpacity}">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Opacity="{DynamicResource Folder.ShadowOpacity}"/>
+                                    </Border.Effect>
+                                </Border>
+                                <TextBlock Text="{Binding Abbreviation}" FontSize="{Binding AbbreviationSize}" FontWeight="ExtraBold"
+                                           Foreground="{DynamicResource App.TextBrush}" Opacity="0.16"
+                                           HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,0,12,0"
+                                           IsHitTestVisible="False"/>
+                                <Grid x:Name="flap" Height="84" VerticalAlignment="Bottom">
+                                    <Grid Opacity="{DynamicResource Folder.FlapOpacity}">
+                                        <Border CornerRadius="14" Background="{Binding TintBrush}"/>
+                                        <Border CornerRadius="14" Background="{DynamicResource Folder.FlapTint}"/>
+                                    </Grid>
+                                    <Border CornerRadius="14" Background="{DynamicResource Folder.FlapSheen}"/>
+                                    <Border CornerRadius="14" BorderBrush="{DynamicResource Folder.FlapRim}"
+                                            BorderThickness="{DynamicResource Folder.FlapRimThickness}"/>
+                                </Grid>
+                                <Border x:Name="hl" Height="84" VerticalAlignment="Bottom" CornerRadius="14"
+                                        Background="{DynamicResource Folder.FlapHover}" Opacity="0"/>
+                                <Border x:Name="ring" CornerRadius="14" BorderThickness="2"
+                                        BorderBrush="{DynamicResource App.AccentSystemBrush}" Opacity="0"/>
+                            </Grid>
+
+                            <!-- the text stays outside the picture so it keeps crisp edges -->
+                            <Grid IsHitTestVisible="False">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="40"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Border Width="28" Height="28" CornerRadius="9" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                        Margin="12,2,0,0" Background="#40000000">
+                                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="14" Height="14"
+                                          Stretch="Uniform" Stroke="White"/>
+                                </Border>
+                                <Border Style="{StaticResource NewPill}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        Margin="0,2,12,0" BorderThickness="1" BorderBrush="{DynamicResource App.AccentSystemBrush}"
+                                        Background="{DynamicResource App.FloatingBrush}"
+                                        Visibility="{Binding HasNew, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding NewText}" Style="{StaticResource NewPillText}"/>
+                                </Border>
+                                <DockPanel Grid.Row="1" Margin="14,7,14,10" LastChildFill="True">
+                                    <DockPanel DockPanel.Dock="Bottom" Margin="0,4,0,0">
+                                        <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Margin="8,0,0,0" MaxWidth="96"
+                                                Visibility="{Binding IsLinked, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="10" Height="10"
+                                                      Stretch="Uniform" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding FolderName}" Style="{StaticResource Caption}" FontSize="10.5"
+                                                           Foreground="{DynamicResource App.TextBrush}" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <TextBlock Text="{Binding StateText}" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="13"
+                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="17"
+                                               LineStackingStrategy="BlockLineHeight" MaxHeight="34" VerticalAlignment="Top"/>
+                                </DockPanel>
+                            </Grid>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.18"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.24"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ring" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.985" Duration="0:0:0.08" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.985" Duration="0:0:0.08" EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.18" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.18" EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- a ghost button with an icon in front of its text -->
         <Style x:Key="IconGhost" TargetType="Button" BasedOn="{StaticResource GhostButton}">
             <Setter Property="Margin" Value="8,0,0,0"/>
@@ -278,39 +409,50 @@
             </StackPanel>
         </DataTemplate>
 
+        <!-- ============================ "New since you last looked": one course, up to three items ============================ -->
+        <DataTemplate x:Key="NewCardTemplate" DataType="{x:Type vm:CanvasSectionVm}">
+            <Grid Width="478" Height="176" Margin="0,0,14,14">
+            <Border Style="{StaticResource RowCard}" Margin="0" Padding="10,8,10,6">
+                <StackPanel>
+                    <DockPanel Margin="4,0,0,4">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Mark seen" FontSize="11.5"
+                                Padding="8,2" Margin="6,0,0,0" ToolTip="Mark this course's new items as seen"
+                                Click="NewCardSeen_Click"/>
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="13"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:CanvasRowVm}">
+                                <Button Style="{StaticResource RailRow}" MinHeight="32" Padding="6,0" ToolTip="{Binding ToolTipText}"
+                                        Command="{Binding DataContext.OpenRowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}">
+                                    <DockPanel LastChildFill="True">
+                                        <Border DockPanel.Dock="Left" Style="{StaticResource TypeBadge}">
+                                            <TextBlock Text="{Binding Badge}" Style="{StaticResource TypeBadgeText}"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding Title}" Style="{StaticResource Body}" Margin="8,0,0,0"
+                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding MoreText}" Style="{StaticResource Caption}" Margin="6,2,0,2"
+                               Visibility="{Binding HasMore, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+            </Border>
+            <!-- the course's colour, as a wash over the card -->
+            <Border CornerRadius="14" Background="{Binding TintBrush}" Opacity="0.24" IsHitTestVisible="False"/>
+            </Grid>
+        </DataTemplate>
+
         <!-- ============================ a course card on the overview ============================ -->
         <DataTemplate x:Key="CourseCardTemplate" DataType="{x:Type vm:CanvasCourseItem}">
-            <Button Style="{StaticResource LibCard}" Width="222" Height="118" Margin="0,0,12,12" ToolTip="{Binding Tip}"
+            <Button Style="{StaticResource CourseTile}" Width="232" Height="124" Margin="0,0,14,14" ToolTip="{Binding Tip}"
+                    AutomationProperties.Name="{Binding Name}"
                     Command="{Binding DataContext.OpenCourseCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding}">
-                <Grid Margin="14,12,14,12">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <DockPanel>
-                        <Border DockPanel.Dock="Right" Style="{StaticResource NewPill}" VerticalAlignment="Top"
-                                Visibility="{Binding HasNew, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding NewText}" Style="{StaticResource NewPillText}"/>
-                        </Border>
-                        <Border Width="30" Height="30" CornerRadius="9" HorizontalAlignment="Left"
-                                Background="{DynamicResource App.HoverBrush}">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Course}" Width="15" Height="15"
-                                  Stretch="Uniform" Stroke="{Binding TintBrush}"/>
-                        </Border>
-                    </DockPanel>
-                    <TextBlock Grid.Row="1" Text="{Binding Name}" Style="{StaticResource Body}" FontWeight="SemiBold"
-                               FontSize="13" TextWrapping="Wrap" MaxHeight="36" Margin="0,9,0,0" VerticalAlignment="Top"/>
-                    <StackPanel Grid.Row="2" Orientation="Horizontal">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Open}" Width="11" Height="11"
-                              Stretch="Uniform" Margin="0,0,5,0" VerticalAlignment="Center"
-                              ToolTip="{Binding Folder}"
-                              Visibility="{Binding IsLinked, Converter={StaticResource BoolToVis}}"/>
-                        <TextBlock Text="{Binding StateText}" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Grid>
-            </Button>
+                    CommandParameter="{Binding}"/>
         </DataTemplate>
     </UserControl.Resources>
 
@@ -451,6 +593,27 @@
 
                     <!-- ============================ overview ============================ -->
                     <StackPanel Visibility="{Binding IsOverview, Converter={StaticResource BoolToVis}}">
+                        <StackPanel x:Name="NewStrip" Margin="0,0,0,16" Visibility="{Binding HasNewPreview, Converter={StaticResource BoolToVis}}">
+                            <DockPanel Margin="4,0,0,8">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Mark all seen"
+                                        FontSize="11.5" Padding="8,2" Margin="6,0,0,0" Click="NewStripSeen_Click"/>
+                                <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Show all →"
+                                        FontSize="11.5" Padding="8,2" Command="{Binding ShowNewCommand}"/>
+                                <TextBlock VerticalAlignment="Center">
+                                    <Run Text="New since you last looked" FontWeight="SemiBold" FontSize="14"/>
+                                    <Run Text="{Binding NewPreviewSummary, Mode=OneWay}" Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                                </TextBlock>
+                            </DockPanel>
+                            <ItemsControl ItemsSource="{Binding NewPreview}" ItemTemplate="{StaticResource NewCardTemplate}" Focusable="False">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <TextBlock Text="{Binding NewPreviewMore}" Style="{StaticResource Caption}" Margin="6,2,0,0"/>
+                            <TextBlock Text="All courses" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="14" Margin="4,18,0,0"/>
+                        </StackPanel>
                         <ItemsControl ItemsSource="{Binding Courses}" ItemTemplate="{StaticResource CourseCardTemplate}" Focusable="False">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>

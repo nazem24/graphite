@@ -84,9 +84,8 @@ public partial class FreeTextDialog : Window
 
     private static void OpenMenu(ContextMenu menu, UIElement target)
     {
-        menu.PlacementTarget = target;
-        menu.Placement = PlacementMode.Bottom;
-        menu.IsOpen = true;
+        if (target is FrameworkElement owner) MenuPlacement.Show(menu, owner);
+        else { menu.PlacementTarget = target; menu.Placement = PlacementMode.Bottom; menu.IsOpen = true; }
     }
 
     private void TextColor_Click(object sender, RoutedEventArgs e)
