@@ -27,6 +27,27 @@ public static class CanvasFetcher
         return CanvasParser.ParseCourses(items);
     }
 
+    /// <summary>The assignments and quizzes with a due date in [from, to] of these courses, from Canvas' calendar
+    /// (ten courses per request).</summary>
+    public static async Task<List<CalendarEntry>> LoadDeadlinesAsync(CanvasClient client, IReadOnlyList<CanvasCourse> courses,
+        DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        var byCode = new Dictionary<string, CanvasCourse>(StringComparer.Ordinal);
+        foreach (var c in courses) byCode["course_" + c.Id] = c;
+
+        var all = new List<CalendarEntry>();
+        foreach (var chunk in courses.Chunk(10))
+        {
+            var q = new System.Text.StringBuilder("/calendar_events?type=assignment&per_page=100");
+            q.Append("&start_date=").Append(fromUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+            q.Append("&end_date=").Append(toUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+            foreach (var c in chunk) q.Append("&context_codes[]=course_").Append(Uri.EscapeDataString(c.Id));
+            var items = await client.GetAllAsync(q.ToString(), ct).ConfigureAwait(false);
+            all.AddRange(CanvasCalendarParser.ParseDeadlines(items, byCode));
+        }
+        return all.GroupBy(e => e.Id).Select(g => g.First()).OrderBy(e => e.Start).ToList();
+    }
+
     /// <summary>One course's start page and modules, with the files linked inside its pages.</summary>
     public static async Task<CanvasCourseData> LoadCourseAsync(CanvasClient client, string courseId, CancellationToken ct = default)
     {

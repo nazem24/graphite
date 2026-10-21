@@ -3,6 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:Graphite.App.Views"
              xmlns:conv="clr-namespace:Graphite.App.Converters"
+             xmlns:svc="clr-namespace:Graphite.App.Services"
+             xmlns:vm="clr-namespace:Graphite.App.ViewModels"
              Focusable="False">
 
     <!-- DataContext: SettingsViewModel (set by MainWindow). The page is a full page, like the start
@@ -198,7 +200,7 @@
                                      IsChecked="{Binding IsAppearanceSection, Mode=OneWay}"
                                      Command="{Binding ShowSectionCommand}" CommandParameter="Appearance">
                             <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}" Width="16" Height="16" Stretch="Uniform"/>
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Theme}" Width="16" Height="16"/>
                                 <TextBlock Text="Appearance" Margin="12,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
@@ -238,7 +240,8 @@
                     </StackPanel>
                 </Border>
 
-                <ScrollViewer x:Name="SectionScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Focusable="False">
+                <ScrollViewer x:Name="SectionScroll" Grid.Column="1" svc:SmoothScroll.Enabled="True" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Focusable="False">
                     <StackPanel Margin="0,0,8,40">
 
                         <!-- ================================ Appearance ================================ -->
@@ -284,55 +287,38 @@
                                         <TextBlock Style="{StaticResource RowHint}" Margin="0,3,12,16"
                                                    Text="How the window and its panels look. Works with both Light and Dark."/>
 
-                                        <WrapPanel>
-                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                                         IsChecked="{Binding IsMica, Mode=OneWay}" IsEnabled="{Binding MaterialsSupported}"
-                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Mica"
-                                                         AutomationProperties.Name="Mica material">
-                                                <StackPanel Width="196">
-                                                    <views:MaterialPreview Material="Mica"/>
-                                                    <TextBlock Text="Mica" Style="{StaticResource CardName}"/>
-                                                    <TextBlock Style="{StaticResource CardText}"
-                                                               Text="The original look: a soft backdrop tinted by your wallpaper."/>
-                                                </StackPanel>
-                                            </RadioButton>
-
-                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                                         IsChecked="{Binding IsBlur, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
-                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Blur"
-                                                         AutomationProperties.Name="Blur material">
-                                                <StackPanel Width="196">
-                                                    <views:MaterialPreview Material="Blur"/>
-                                                    <TextBlock Text="Blur" Style="{StaticResource CardName}"/>
-                                                    <TextBlock Style="{StaticResource CardText}"
-                                                               Text="Windows blurs what is behind the window. Light tint, the desktop shows through."/>
-                                                </StackPanel>
-                                            </RadioButton>
-
-                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                                         IsChecked="{Binding IsFrosted, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
-                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Frosted"
-                                                         AutomationProperties.Name="Frosted glass material">
-                                                <StackPanel Width="196">
-                                                    <views:MaterialPreview Material="Frosted"/>
-                                                    <TextBlock Text="Frosted glass" Style="{StaticResource CardName}"/>
-                                                    <TextBlock Style="{StaticResource CardText}"
-                                                               Text="The same blur with a milky tint. Calmer, more opaque panels."/>
-                                                </StackPanel>
-                                            </RadioButton>
-
-                                            <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
-                                                         IsChecked="{Binding IsGlass, Mode=OneWay}" IsEnabled="{Binding GlassMaterialsAvailable}"
-                                                         Command="{Binding SetMaterialCommand}" CommandParameter="Glass"
-                                                         AutomationProperties.Name="Glass material">
-                                                <StackPanel Width="196">
-                                                    <views:MaterialPreview Material="Glass"/>
-                                                    <TextBlock Text="Glass" Style="{StaticResource CardName}"/>
-                                                    <TextBlock Style="{StaticResource CardText}"
-                                                               Text="Almost clear panels, bright edges and a livelier glow."/>
-                                                </StackPanel>
-                                            </RadioButton>
-                                        </WrapPanel>
+                                        <ItemsControl ItemsSource="{Binding MaterialGroups}" Focusable="False">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:MaterialGroup}">
+                                                    <StackPanel Margin="0,0,0,8">
+                                                        <TextBlock Text="{Binding Title}" Style="{StaticResource SectionLabel}" Margin="2,4,0,3"/>
+                                                        <TextBlock Text="{Binding Hint}" Style="{StaticResource RowHint}" Margin="2,0,12,10"/>
+                                                        <ItemsControl ItemsSource="{Binding Options}" Focusable="False">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <WrapPanel/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate DataType="{x:Type vm:MaterialOption}">
+                                                                    <RadioButton Style="{StaticResource MaterialCard}" GroupName="material"
+                                                                                 IsChecked="{Binding IsSelected, Mode=OneWay}" IsEnabled="{Binding IsEnabled}"
+                                                                                 Command="{Binding DataContext.SetMaterialCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                                 CommandParameter="{Binding Id}"
+                                                                                 AutomationProperties.Name="{Binding Title}">
+                                                                        <StackPanel Width="196">
+                                                                            <Border Height="46" CornerRadius="10" Background="{Binding Swatch}"/>
+                                                                            <TextBlock Text="{Binding Title}" Style="{StaticResource CardName}"/>
+                                                                            <TextBlock Text="{Binding Blurb}" Style="{StaticResource CardText}"/>
+                                                                        </StackPanel>
+                                                                    </RadioButton>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
 
                                         <TextBlock Text="{Binding NoteText}" Style="{StaticResource RowHint}" Margin="2,0,12,14"
                                                    Visibility="{Binding HasNote, Converter={StaticResource BoolToVis}}"/>
@@ -616,6 +602,110 @@
                                                        Text="List every file in a course. Off: only PDFs and Word, Excel and PowerPoint files."/>
                                         </StackPanel>
                                     </DockPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="CALENDAR" Style="{StaticResource CardHeading}" Margin="4,8,0,8"/>
+                            <Border Style="{StaticResource SettingsCard}">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding CalendarShowDue, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Show Canvas due dates"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Show Canvas due dates" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="Assignments and quizzes of this term's courses, on the Calendar page of the Canvas space and in the count next to Calendar."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding CalendarShowLectures, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Show lectures and exams"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Show lectures and exams" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="Events from the calendar links below. Events with words like exam, midterm or Prüfung in their title are marked as exams."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding CalendarShowAllDay, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Show all-day events"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Show all-day events" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="All-day entries of the calendar links, such as semester dates and registration phases. Switch off to see only timed lectures and exams."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                      IsChecked="{Binding CalendarOverviewStrip, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Show the day on the Canvas overview"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Show the day on the Canvas overview" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="When nothing is new, the top of the overview shows today's timetable, the next due dates and the current all-day events."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+                                    <DockPanel>
+                                        <ComboBox DockPanel.Dock="Right" Width="160" VerticalAlignment="Center"
+                                                  ItemsSource="{Binding CalendarStartViews}" SelectedItem="{Binding CalendarStartView, Mode=TwoWay}"
+                                                  AutomationProperties.Name="Calendar view"/>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,24,0">
+                                            <TextBlock Text="Calendar view" Style="{StaticResource RowTitle}"/>
+                                            <TextBlock Style="{StaticResource RowHint}"
+                                                       Text="Which view the calendar opens in. &quot;Last used&quot; reopens whichever one you were on."/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <Rectangle Style="{StaticResource RowDivider}"/>
+
+                                    <TextBlock Text="Calendar links" Style="{StaticResource RowTitle}"/>
+                                    <TextBlock Style="{StaticResource RowHint}" Margin="0,2,0,0"
+                                               Text="Your lectures and exams come from a calendar's .ics address: in Google Calendar, Outlook and most timetable sites look for “secret address in iCal format”, “subscribe” or “export”. Graphite only reads it. The address is stored encrypted for your Windows account."/>
+                                    <TextBlock Text="No calendar linked yet." Style="{StaticResource RowTitle}" Margin="0,12,0,0"
+                                               Visibility="{Binding HasCalendarLinks, Converter={StaticResource InvBoolToVis}}"/>
+                                    <ItemsControl ItemsSource="{Binding CalendarLinks}" Focusable="False" Margin="0,8,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel Margin="0,8,0,0">
+                                                    <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Remove" VerticalAlignment="Center"
+                                                            Command="{Binding DataContext.RemoveCalendarLinkCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                        <TextBlock Text="{Binding Name}" Style="{StaticResource RowTitle}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Host}" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <DockPanel Margin="0,14,0,0">
+                                        <Button DockPanel.Dock="Right" Style="{StaticResource AccentButton}" Content="Add calendar" Margin="10,0,0,0"
+                                                Command="{Binding AddCalendarLinkCommand}"
+                                                IsEnabled="{Binding IsAddingCalendar, Converter={StaticResource InvertBool}}"/>
+                                        <TextBox Height="32" VerticalContentAlignment="Center"
+                                                 Text="{Binding CalendarLinkText, UpdateSourceTrigger=PropertyChanged}"
+                                                 AutomationProperties.Name="Calendar address (.ics)"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding CalendarLinkMessage}" Margin="0,10,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding HasCalendarLinkMessage, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource RowHint}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CalendarLinkMessageIsError}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
                             </Border>
 

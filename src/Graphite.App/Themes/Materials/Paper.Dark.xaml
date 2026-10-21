@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Material "Paper" (dark): only the surfaces. ThemeService merges this after
+         Colors.Dark.xaml, so text and accents stay the theme's own.
+         Matte paper: deep charcoal-brown, a faint grain (ThemeService draws it), warm cream ink lines and manila-style folders. -->
+
+    <SolidColorBrush x:Key="App.BackgroundBrush" Color="#FF1F1A16"/>
+
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#D82A241E"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#40120D09"/>
+
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#E4322B24" Offset="0"/>
+        <GradientStop Color="#E02A241E" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassBorderBrush" Color="#55E9D8BC"/>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#FF2C261F"/>
+    <!-- Fill of small floating surfaces: the page bar and tooltips. -->
+    <SolidColorBrush x:Key="App.FloatingBrush" Color="#FF332B24"/>
+
+    <SolidColorBrush x:Key="App.StrokeBrush" Color="#40E9D8BC"/>
+    <SolidColorBrush x:Key="App.StrokeSoftBrush" Color="#26E9D8BC"/>
+
+    <!-- how strongly the start page's glows show, and their colours (AmbientBackdrop; the accent when not set) -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">0</sys:Double>
+
+    <!-- Folder cards on the start page (LibraryHome, style FolderTile): see the other materials for how these numbers work. -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.BackOpacity">1</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.FlapOpacity">0.88</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.ShadowOpacity">0.26</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.GhostBlur">0</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.GhostOpacity">0.22</sys:Double>
+    <Visibility x:Key="Folder.GhostVisibility">Visible</Visibility>
+    <RectangleGeometry x:Key="Folder.PapersClip" Rect="-60,-80,342,166"/>
+    <Thickness x:Key="Folder.FlapRimThickness">1</Thickness>
+    <LinearGradientBrush x:Key="Folder.FlapTint" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#D0675332" Offset="0"/>
+        <GradientStop Color="#E65A4828" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Folder.FlapSheen" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#1AFFEFC8" Offset="0"/>
+        <GradientStop Color="#00FFEFC8" Offset="0.5"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Folder.FlapRim" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#66E9D8BC" Offset="0"/>
+        <GradientStop Color="#33E9D8BC" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="Folder.FlapHover" Color="#1AFFEFC8"/>
+
+
+    <!-- Pop-ups (tooltips, drop-downs, menus, colour cards) are windows of their own, so nothing blurs behind them:
+         they get one solid surface per material instead of the see-through glass. -->
+    <SolidColorBrush x:Key="App.PopupBrush" Color="#FF332B24"/>
+    <SolidColorBrush x:Key="App.PopupBorderBrush" Color="#FF5E5242"/>
+
+</ResourceDictionary>

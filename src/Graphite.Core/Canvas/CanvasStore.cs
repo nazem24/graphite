@@ -37,6 +37,54 @@ public sealed class CanvasCache
 
     public void SaveSeen(string id, IEnumerable<string> keys) => Write(SeenPath(id), keys.ToList());
 
+    /// <summary>The Canvas deadlines of a term's courses, and which courses and range they were asked for (the key).</summary>
+    public sealed class DeadlineList
+    {
+        public DateTime FetchedUtc { get; set; }
+        public string Key { get; set; } = "";
+        public List<CalendarEntry> Entries { get; set; } = new();
+    }
+
+    private string DeadlinesPath => Path.Combine(Root, "deadlines.json");
+    public DeadlineList? LoadDeadlines() => Read<DeadlineList>(DeadlinesPath);
+    public void SaveDeadlines(DeadlineList list) => Write(DeadlinesPath, list);
+
+    /// <summary>A small text file of the cache (a downloaded calendar). Null when there is none.</summary>
+    public string? LoadText(string name)
+    {
+        try
+        {
+            string path = Path.Combine(Root, CanvasNames.SafeFileName(name));
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    public DateTime? TextTimeUtc(string name)
+    {
+        try
+        {
+            string path = Path.Combine(Root, CanvasNames.SafeFileName(name));
+            return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    public void SaveText(string name, string text)
+    {
+        try
+        {
+            Directory.CreateDirectory(Root);
+            string path = Path.Combine(Root, CanvasNames.SafeFileName(name));
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, text);
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    public void DeleteText(string name) => TryDelete(Path.Combine(Root, CanvasNames.SafeFileName(name)));
+
     /// <summary>Forget the cached course structures (the next visit loads them again). What was seen is kept,
     /// so nothing turns "new" because of it.</summary>
     public void ClearStructure()

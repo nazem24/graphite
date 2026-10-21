@@ -52,4 +52,17 @@
     <Color x:Key="App.SearchHighlightColor">#6E8FB0</Color>
     <Color x:Key="App.SelectionColor">#7FA0C0</Color>
 
+    <!-- calendar month grid: its own readable surface, so it does not depend on what the material shows behind it -->
+    <SolidColorBrush x:Key="Cal.CellBrush" Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="Cal.CellOutBrush" Color="#0AFFFFFF"/>
+    <SolidColorBrush x:Key="Cal.CellBorderBrush" Color="#00FFFFFF"/>
+    <SolidColorBrush x:Key="Cal.ChipBrush" Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="Cal.MutedTextBrush" Color="#9C9C97"/>
+
+
+    <!-- Pop-ups (tooltips, drop-downs, menus, colour cards) are windows of their own, so nothing blurs behind them:
+         they get one solid surface per material instead of the see-through glass. -->
+    <SolidColorBrush x:Key="App.PopupBrush" Color="#FF2A2A2E"/>
+    <SolidColorBrush x:Key="App.PopupBorderBrush" Color="#FF47474D"/>
+
 </ResourceDictionary>

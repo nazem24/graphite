@@ -29,7 +29,7 @@ public sealed class AmbientBackdrop : FrameworkElement
     private bool _paused;
 
     // The two glow brushes only change with the accent colour — not once per frame.
-    private Color _brushAccent;
+    private Color _brushAccent, _brushAccentB;
     private double _brushStrength = 1;
     private Brush? _glowA, _glowB;
 
@@ -47,6 +47,8 @@ public sealed class AmbientBackdrop : FrameworkElement
             Motion.ScrollingChanged += UpdateDrift;
             ThemeService.AppearanceChanged -= InvalidateVisual;
             ThemeService.AppearanceChanged += InvalidateVisual;
+            ContextTint.Changed -= InvalidateVisual;
+            ContextTint.Changed += InvalidateVisual;
             UpdateDrift();
         };
         Unloaded += (_, _) =>
@@ -55,6 +57,7 @@ public sealed class AmbientBackdrop : FrameworkElement
             Motion.ScrollingChanged -= UpdateDrift;
             EnergySaver.Changed -= UpdateDrift;
             ThemeService.AppearanceChanged -= InvalidateVisual;
+            ContextTint.Changed -= InvalidateVisual;
             StopDrift();
         };
     }
@@ -116,12 +119,16 @@ public sealed class AmbientBackdrop : FrameworkElement
         // The material (Themes/Materials) says how strongly the glows show: faint behind Frosted,
         // livelier behind Glass.
         double strength = TryFindResource("App.AmbientStrength") as double? ?? 1.0;
-        if (_glowA == null || _glowB == null || accent != _brushAccent || strength != _brushStrength)
+        // A material may colour the two glows itself (Dusk, Aurora, and Tint while a course or folder is open)
+        var colorA = TryFindResource("App.AmbientColorA") as Color? ?? accent;
+        var colorB = TryFindResource("App.AmbientColorB") as Color? ?? accent;
+        if (_glowA == null || _glowB == null || colorA != _brushAccent || colorB != _brushAccentB || strength != _brushStrength)
         {
-            _brushAccent = accent;
+            _brushAccent = colorA;
+            _brushAccentB = colorB;
             _brushStrength = strength;
-            _glowA = Glow(accent, Scale(0x2A, strength));
-            _glowB = Glow(accent, Scale(0x1E, strength));
+            _glowA = Glow(colorA, Scale(0x2A, strength));
+            _glowB = Glow(colorB, Scale(0x1E, strength));
         }
         double size = Math.Max(w, h);
 

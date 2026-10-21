@@ -454,6 +454,355 @@
                     Command="{Binding DataContext.OpenCourseCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding}"/>
         </DataTemplate>
+
+        <!-- ============================ the calendar ============================
+             Month, Week and Agenda (see CanvasViewModel.Calendar.cs). Built from the same glass cards and brushes as
+             everything else; only the three kind colours are fixed (lecture, due, exam), the bar of an entry is the
+             colour of its course. -->
+        <SolidColorBrush x:Key="Cal.LectureBrush" Color="#6FA3F7"/>
+        <SolidColorBrush x:Key="Cal.DueBrush" Color="#F2A35E"/>
+        <SolidColorBrush x:Key="Cal.ExamBrush" Color="#EE7B97"/>
+        <SolidColorBrush x:Key="Cal.DueWash" Color="#30F2A35E"/>
+        <SolidColorBrush x:Key="Cal.ExamWash" Color="#30EE7B97"/>
+
+        <!-- a button that is only its content (a day of the month grid) -->
+        <Style x:Key="CalCellButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="KindBadge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource App.StrokeBrush}"/>
+        </Style>
+
+        <!-- a chip in a month cell: the course's bar, then "Finance 10:15" / "Due: Essay outline" -->
+        <DataTemplate x:Key="CalChipTemplate" DataType="{x:Type vm:CalendarEntryVm}">
+            <Border x:Name="chip" CornerRadius="5" Margin="0,2,0,0" Background="{DynamicResource Cal.ChipBrush}"
+                    ToolTip="{Binding Title}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Left" Width="3" CornerRadius="5,0,0,5" Background="{Binding Tint}"/>
+                    <TextBlock Text="{Binding ChipText}" FontSize="10.5" Margin="6,2,4,2" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource App.TextBrush}"/>
+                </DockPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsDeadline}" Value="True">
+                    <Setter TargetName="chip" Property="Background" Value="{StaticResource Cal.DueWash}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsExam}" Value="True">
+                    <Setter TargetName="chip" Property="Background" Value="{StaticResource Cal.ExamWash}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- a day of the month grid -->
+        <DataTemplate x:Key="MonthCellTemplate" DataType="{x:Type vm:CalendarDayVm}">
+            <Button Style="{StaticResource CalCellButton}" Margin="3"
+                    Command="{Binding DataContext.SelectDayCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    CommandParameter="{Binding}">
+                <Border x:Name="cell" CornerRadius="12" MinHeight="98" Padding="8,6,8,8" BorderThickness="1.5"
+                        BorderBrush="{DynamicResource Cal.CellBorderBrush}" Background="{DynamicResource Cal.CellOutBrush}">
+                    <StackPanel>
+                        <Border x:Name="num" HorizontalAlignment="Left" MinWidth="22" Height="22" CornerRadius="11" Padding="6,0"
+                                Margin="-4,0,0,2">
+                            <TextBlock x:Name="numText" Text="{Binding DayNumber}" FontSize="11.5" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" Foreground="{DynamicResource Cal.MutedTextBrush}"/>
+                        </Border>
+                        <ItemsControl x:Name="chips" Opacity="0.7" ItemsSource="{Binding Chips}" ItemTemplate="{StaticResource CalChipTemplate}"
+                                      Focusable="False" IsHitTestVisible="False"/>
+                        <TextBlock Text="{Binding MoreText}" Style="{StaticResource Caption}" Margin="2,3,0,0"
+                                   Foreground="{DynamicResource Cal.MutedTextBrush}"
+                                   Visibility="{Binding HasMore, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Border>
+            </Button>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding InMonth}" Value="True">
+                    <Setter TargetName="cell" Property="Background" Value="{DynamicResource Cal.CellBrush}"/>
+                    <Setter TargetName="chips" Property="Opacity" Value="1"/>
+                    <Setter TargetName="numText" Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsToday}" Value="True">
+                    <Setter TargetName="cell" Property="Background" Value="{DynamicResource Cal.CellBrush}"/>
+                    <Setter TargetName="chips" Property="Opacity" Value="1"/>
+                    <Setter TargetName="num" Property="Background" Value="{DynamicResource App.AccentSoftBrush}"/>
+                    <Setter TargetName="numText" Property="Foreground" Value="{DynamicResource App.AccentSystemBrush}"/>
+                    <Setter TargetName="numText" Property="FontWeight" Value="Bold"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter TargetName="cell" Property="Background" Value="{DynamicResource Cal.CellBrush}"/>
+                    <Setter TargetName="chips" Property="Opacity" Value="1"/>
+                    <Setter TargetName="cell" Property="BorderBrush" Value="{DynamicResource App.AccentSystemBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- one line of "what is on this day" (month side panel) -->
+        <DataTemplate x:Key="DayEntryTemplate" DataType="{x:Type vm:CalendarEntryVm}">
+            <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="48"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding TimeText}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,2,0,0"
+                           VerticalAlignment="Top"/>
+                <Border Grid.Column="1" Width="3" CornerRadius="2" Margin="0,0,10,0" Background="{Binding Tint}"/>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"
+                               Foreground="{DynamicResource App.TextBrush}"/>
+                    <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" TextWrapping="Wrap" TextTrimming="None"
+                               Margin="0,2,0,0" Visibility="{Binding HasDetail, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+                <Border Grid.Column="3" Style="{StaticResource KindBadge}" VerticalAlignment="Top" Margin="8,0,0,0">
+                    <TextBlock Text="{Binding KindLabel}" Style="{StaticResource TypeBadgeText}"/>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <!-- a deadline (or all-day entry) above the week grid -->
+        <DataTemplate x:Key="CalWeekChipTemplate" DataType="{x:Type vm:CalendarEntryVm}">
+            <Button Style="{StaticResource CalCellButton}" Command="{Binding DataContext.OpenEntryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    CommandParameter="{Binding}" ToolTip="{Binding Title}">
+                <Border x:Name="chip" CornerRadius="6" Margin="0,3,0,0" Background="{DynamicResource App.HoverBrush}">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Left" Width="3" CornerRadius="6,0,0,6" Background="{Binding Tint}"/>
+                        <TextBlock Text="{Binding WeekChipText}" FontSize="11" Margin="6,3,4,3" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource App.TextBrush}"/>
+                    </DockPanel>
+                </Border>
+            </Button>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsDeadline}" Value="True">
+                    <Setter TargetName="chip" Property="Background" Value="{StaticResource Cal.DueWash}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- a day's heading in the week view: MON 19, and its deadlines under it -->
+        <DataTemplate x:Key="WeekHeaderTemplate" DataType="{x:Type vm:CalendarDayVm}">
+            <StackPanel Margin="5,0,5,8">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding WeekdayLabel}" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
+                    <Border x:Name="num" Margin="6,0,0,0" MinWidth="22" Height="22" CornerRadius="11" Padding="6,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="numText" Text="{Binding DayNumber}" FontSize="12" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource App.TextBrush}"/>
+                    </Border>
+                </StackPanel>
+                <ItemsControl ItemsSource="{Binding Chips}" ItemTemplate="{StaticResource CalWeekChipTemplate}" Focusable="False"/>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsToday}" Value="True">
+                    <Setter TargetName="num" Property="Background" Value="{DynamicResource App.AccentSoftBrush}"/>
+                    <Setter TargetName="numText" Property="Foreground" Value="{DynamicResource App.AccentSystemBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- a lecture or exam in the week grid -->
+        <DataTemplate x:Key="WeekBlockTemplate" DataType="{x:Type vm:CalendarEntryVm}">
+            <Border x:Name="block" CornerRadius="8" BorderThickness="1" ToolTip="{Binding Title}"
+                    Background="{DynamicResource App.HoverBrush}" BorderBrush="{DynamicResource App.StrokeSoftBrush}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Left" Width="3" CornerRadius="8,0,0,8" Background="{Binding Tint}"/>
+                    <StackPanel Margin="7,5,5,3" ClipToBounds="True">
+                        <TextBlock Text="{Binding ShortTitle}" FontWeight="SemiBold" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource App.TextBrush}"/>
+                        <TextBlock Text="{Binding BlockDetail}" Style="{StaticResource Caption}" FontSize="10.5" Margin="0,1,0,0"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsExam}" Value="True">
+                    <Setter TargetName="block" Property="Background" Value="{StaticResource Cal.ExamWash}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- one day's column of the week grid -->
+        <DataTemplate x:Key="WeekColumnTemplate" DataType="{x:Type vm:CalendarDayVm}">
+            <Border x:Name="col" BorderThickness="1,0,0,0" BorderBrush="{DynamicResource App.StrokeSoftBrush}">
+                <ItemsControl ItemsSource="{Binding Timed}" ItemTemplate="{StaticResource WeekBlockTemplate}" Focusable="False"
+                              Height="{Binding DataContext.WeekHeight, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ctrl:WeekColumnPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="ctrl:WeekColumnPanel.Top" Value="{Binding BlockTop}"/>
+                            <Setter Property="ctrl:WeekColumnPanel.BlockHeight" Value="{Binding BlockHeight}"/>
+                            <Setter Property="ctrl:WeekColumnPanel.Col" Value="{Binding Col}"/>
+                            <Setter Property="ctrl:WeekColumnPanel.Cols" Value="{Binding Cols}"/>
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                </ItemsControl>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsToday}" Value="True">
+                    <Setter TargetName="col" Property="Background" Value="{DynamicResource App.AccentSoftBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- one entry of the agenda -->
+        <DataTemplate x:Key="AgendaEntryTemplate" DataType="{x:Type vm:CalendarEntryVm}">
+            <Grid Margin="10,8,10,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="56"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding TimeText}" Style="{StaticResource Body}" FontSize="12.5" VerticalAlignment="Center"/>
+                <Border Grid.Column="1" Width="3" CornerRadius="2" Margin="0,0,12,0" Background="{Binding Tint}"/>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13.5" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource App.TextBrush}"/>
+                    <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" FontSize="11.5" Margin="0,2,0,0"
+                               Visibility="{Binding HasDetail, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+                <Border Grid.Column="3" Style="{StaticResource KindBadge}" Margin="10,0,0,0">
+                    <TextBlock Text="{Binding KindLabel}" Style="{StaticResource TypeBadgeText}"/>
+                </Border>
+                <Button Grid.Column="4" Style="{StaticResource GhostButton}" Content="Open in Canvas" FontSize="11.5" Padding="10,3"
+                        Margin="10,0,0,0" VerticalAlignment="Center"
+                        Visibility="{Binding HasUrl, Converter={StaticResource BoolToVis}}"
+                        Command="{Binding DataContext.OpenEntryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        CommandParameter="{Binding}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- a day of the agenda -->
+        <DataTemplate x:Key="AgendaGroupTemplate" DataType="{x:Type vm:CalendarAgendaGroup}">
+            <Border Style="{StaticResource RowCard}" Padding="8,10,8,6">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="10,0,0,4">
+                        <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource App.TextBrush}"/>
+                        <TextBlock Text="{Binding Date}" Style="{StaticResource Caption}" FontSize="12" Margin="10,0,0,0"
+                                   VerticalAlignment="Bottom"/>
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource AgendaEntryTemplate}" Focusable="False"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- a number of the little calendar beside the agenda, with a dot for each kind that day has -->
+        <DataTemplate x:Key="MiniDayTemplate" DataType="{x:Type vm:CalendarDayVm}">
+            <Grid Height="32">
+                <Border x:Name="today" CornerRadius="8" Margin="2" Visibility="Collapsed" Background="{DynamicResource App.AccentSoftBrush}"/>
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock x:Name="n" Text="{Binding DayNumber}" FontSize="11.5" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource App.TextSecondaryBrush}"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Height="5" Margin="0,1,0,0">
+                        <Ellipse Width="4" Height="4" Margin="1,0" Fill="{StaticResource Cal.LectureBrush}"
+                                 Visibility="{Binding HasLectureDot, Converter={StaticResource BoolToVis}}"/>
+                        <Ellipse Width="4" Height="4" Margin="1,0" Fill="{StaticResource Cal.DueBrush}"
+                                 Visibility="{Binding HasDueDot, Converter={StaticResource BoolToVis}}"/>
+                        <Ellipse Width="4" Height="4" Margin="1,0" Fill="{StaticResource Cal.ExamBrush}"
+                                 Visibility="{Binding HasExamDot, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding InMonth}" Value="True">
+                    <Setter TargetName="n" Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter TargetName="today" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="n" Property="FontWeight" Value="Bold"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- ============================ the calendar strip on the overview: same size as a "New" card ============================ -->
+        <DataTemplate x:Key="StripCardTemplate" DataType="{x:Type vm:CalendarStripCard}">
+            <Border Style="{StaticResource RowCard}" Margin="0,0,14,14" Padding="14,10,14,6">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding Subtitle}" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="13"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:CalendarEntryVm}">
+                                <Button ToolTip="{Binding Title}"
+                                        Command="{Binding DataContext.OpenEntryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource CalCellButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasUrl}" Value="False">
+                                                    <Setter Property="Cursor" Value="Arrow"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Grid MinHeight="30" Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="92"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding StripText}" Style="{StaticResource Caption}" FontSize="11.5"
+                                                   VerticalAlignment="Top" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                        <Border Grid.Column="1" Width="3" CornerRadius="2" Margin="0,2,10,2" Background="{Binding Tint}"/>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" Style="{StaticResource Body}" FontSize="12.5" TextWrapping="Wrap" TextTrimming="None"/>
+                                            <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" FontSize="11" Margin="0,1,0,0"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Visibility="{Binding HasDetail, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding EmptyText}" Style="{StaticResource Caption}" FontSize="12.5" Margin="0,10,0,0"
+                               Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Text="{Binding MoreText}" Style="{StaticResource Caption}" Margin="0,2,0,0"
+                               Visibility="{Binding HasMore, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- Month / Week / Agenda: the view that appears fades in and settles a few pixels, so switching does not jump -->
+        <Storyboard x:Key="CalViewInStory">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.24" EasingFunction="{StaticResource EaseOut}"/>
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                             From="10" To="0" Duration="0:0:0.28" EasingFunction="{StaticResource EaseOut}"/>
+        </Storyboard>
+        <Style x:Key="CalViewIn" TargetType="Grid">
+            <Setter Property="RenderTransform"><Setter.Value><TranslateTransform/></Setter.Value></Setter>
+            <Style.Triggers>
+                <Trigger Property="IsVisible" Value="True">
+                    <Trigger.EnterActions><BeginStoryboard Storyboard="{StaticResource CalViewInStory}"/></Trigger.EnterActions>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CalGlassIn" TargetType="Border" BasedOn="{StaticResource GlassCard}">
+            <Setter Property="RenderTransform"><Setter.Value><TranslateTransform/></Setter.Value></Setter>
+            <Style.Triggers>
+                <Trigger Property="IsVisible" Value="True">
+                    <Trigger.EnterActions><BeginStoryboard Storyboard="{StaticResource CalViewInStory}"/></Trigger.EnterActions>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -520,6 +869,32 @@
                                 <TextBlock Text="Canvas" Margin="7,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+                    </StackPanel>
+
+                    <!-- the calendar: view, and moving through time -->
+                    <StackPanel Orientation="Horizontal" Visibility="{Binding IsCalendarPage, Converter={StaticResource BoolToVis}}">
+                        <Border Style="{StaticResource SegmentTray}" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource SegmentOption}" GroupName="calMode" Padding="14,5" Content="Month"
+                                             IsChecked="{Binding IsMonthMode, Mode=OneWay}" Command="{Binding ShowMonthCommand}"/>
+                                <RadioButton Style="{StaticResource SegmentOption}" GroupName="calMode" Padding="14,5" Content="Week"
+                                             IsChecked="{Binding IsWeekMode, Mode=OneWay}" Command="{Binding ShowWeekCommand}"/>
+                                <RadioButton Style="{StaticResource SegmentOption}" GroupName="calMode" Padding="14,5" Content="Agenda"
+                                             IsChecked="{Binding IsAgendaMode, Mode=OneWay}" Command="{Binding ShowAgendaCommand}"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="{Binding ShowCalendarNav, Converter={StaticResource BoolToVis}}">
+                            <Button Style="{StaticResource IconButton}" Command="{Binding CalendarPrevCommand}" Margin="12,0,0,0" Padding="8"
+                                    ToolTip="Previous">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronLeft}" Width="12" Height="12" Stretch="Uniform"/>
+                            </Button>
+                            <Button Style="{StaticResource GhostButton}" Content="Today" Margin="6,0,0,0" Command="{Binding CalendarTodayCommand}"/>
+                            <Button Style="{StaticResource IconButton}" Command="{Binding CalendarNextCommand}" Margin="6,0,0,0" Padding="8"
+                                    ToolTip="Next">
+                                <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.ChevronRight}" Width="12" Height="12" Stretch="Uniform"/>
+                            </Button>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- New -->
@@ -593,6 +968,26 @@
 
                     <!-- ============================ overview ============================ -->
                     <StackPanel Visibility="{Binding IsOverview, Converter={StaticResource BoolToVis}}">
+                        <!-- nothing new: the day at a glance -->
+                        <StackPanel Margin="0,0,0,16" Visibility="{Binding HasCalendarStrip, Converter={StaticResource BoolToVis}}">
+                            <DockPanel Margin="4,0,0,8">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Open calendar →"
+                                        FontSize="11.5" Padding="8,2" Command="{Binding ShowCalendarCommand}"/>
+                                <TextBlock VerticalAlignment="Center">
+                                    <Run Text="Coming up" FontWeight="SemiBold" FontSize="14"/>
+                                </TextBlock>
+                            </DockPanel>
+                            <!-- one row of cards, all as high as the tallest (the day's timetable shows in full) -->
+                            <ItemsControl ItemsSource="{Binding CalendarStrip}" ItemTemplate="{StaticResource StripCardTemplate}"
+                                          Focusable="False" Margin="0,0,-14,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Rows="1"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <TextBlock Text="All courses" Style="{StaticResource Body}" FontWeight="SemiBold" FontSize="14" Margin="4,4,0,0"/>
+                        </StackPanel>
                         <StackPanel x:Name="NewStrip" Margin="0,0,0,16" Visibility="{Binding HasNewPreview, Converter={StaticResource BoolToVis}}">
                             <DockPanel Margin="4,0,0,8">
                                 <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Mark all seen"
@@ -624,6 +1019,251 @@
                         <TextBlock Text="{Binding EmptyText}" Style="{StaticResource Caption}" FontSize="13" TextAlignment="Center"
                                    TextWrapping="Wrap" TextTrimming="None" Margin="0,48,0,0"
                                    Visibility="{Binding Courses.Count, Converter={StaticResource ZeroToVis}}"/>
+                    </StackPanel>
+
+                    <!-- ============================ calendar ============================ -->
+                    <StackPanel Visibility="{Binding IsCalendarPage, Converter={StaticResource BoolToVis}}">
+
+                        <!-- something went wrong with a calendar link or the deadlines -->
+                        <Border CornerRadius="12" BorderThickness="1" Padding="14,10" Margin="0,0,0,12"
+                                Background="{DynamicResource App.AccentSoftBrush}" BorderBrush="{DynamicResource App.StrokeBrush}"
+                                Visibility="{Binding HasCalendarMessage, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding CalendarMessage}" Style="{StaticResource Body}" TextWrapping="Wrap" TextTrimming="None"/>
+                        </Border>
+
+                        <!-- ===== month ===== -->
+                        <Grid Style="{StaticResource CalViewIn}" Visibility="{Binding IsMonthMode, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <UniformGrid Columns="7" Margin="3,0,3,4">
+                                    <TextBlock Text="MON" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource Cal.MutedTextBrush}" Margin="8,0,0,0"/>
+                                    <TextBlock Text="TUE" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource Cal.MutedTextBrush}" Margin="8,0,0,0"/>
+                                    <TextBlock Text="WED" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource Cal.MutedTextBrush}" Margin="8,0,0,0"/>
+                                    <TextBlock Text="THU" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource Cal.MutedTextBrush}" Margin="8,0,0,0"/>
+                                    <TextBlock Text="FRI" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource Cal.MutedTextBrush}" Margin="8,0,0,0"/>
+                                    <TextBlock Text="SAT" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource Cal.MutedTextBrush}" Margin="8,0,0,0"/>
+                                    <TextBlock Text="SUN" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource Cal.MutedTextBrush}" Margin="8,0,0,0"/>
+                                </UniformGrid>
+                                <ItemsControl ItemsSource="{Binding MonthDays}" ItemTemplate="{StaticResource MonthCellTemplate}" Focusable="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="7"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Width="300" Margin="16,0,0,0">
+                                <!-- the selected day -->
+                                <Border Style="{StaticResource GlassCard}" Padding="20,18,20,8" Margin="0,0,0,14">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DayPanelLabel}" Style="{StaticResource SectionLabel}"/>
+                                        <TextBlock Text="{Binding DayPanelTitle}" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource App.TextBrush}" Margin="0,4,0,16"/>
+                                        <ItemsControl ItemsSource="{Binding DayEntries}" ItemTemplate="{StaticResource DayEntryTemplate}" Focusable="False"/>
+                                        <TextBlock Text="Nothing on this day." Style="{StaticResource Caption}" FontSize="12.5" Margin="0,0,0,12"
+                                                   Visibility="{Binding DayPanelEmpty, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- what to show, and where it comes from -->
+                                <Border Style="{StaticResource GlassCard}" Padding="20,16" Margin="0,0,0,14">
+                                    <StackPanel>
+                                        <TextBlock Text="SHOW ON THE CALENDAR" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                                        <DockPanel Margin="0,0,0,12">
+                                            <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                          IsChecked="{Binding ShowDueDates, Mode=TwoWay}" AutomationProperties.Name="Canvas due dates"/>
+                                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                                <TextBlock Text="Canvas due dates" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource App.TextBrush}"/>
+                                                <TextBlock Text="Assignments and quizzes of your courses" Style="{StaticResource Caption}"
+                                                           TextWrapping="Wrap" TextTrimming="None"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel>
+                                            <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                          IsChecked="{Binding ShowLectures, Mode=TwoWay}" AutomationProperties.Name="Lectures and exams"/>
+                                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                                <TextBlock Text="Lectures and exams" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource App.TextBrush}"/>
+                                                <TextBlock Text="From the calendar links you added" Style="{StaticResource Caption}"
+                                                           TextWrapping="Wrap" TextTrimming="None"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <DockPanel Margin="0,12,0,0">
+                                            <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggle}" VerticalAlignment="Center"
+                                                          IsChecked="{Binding ShowAllDay, Mode=TwoWay}" AutomationProperties.Name="All-day events"/>
+                                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                                <TextBlock Text="All-day events" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource App.TextBrush}"/>
+                                                <TextBlock Text="Semester dates, registration phases …" Style="{StaticResource Caption}"
+                                                           TextWrapping="Wrap" TextTrimming="None"/>
+                                            </StackPanel>
+                                        </DockPanel>
+
+                                        <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="0,16,0,14"/>
+
+                                        <ItemsControl ItemsSource="{Binding CalendarSourceRows}" Focusable="False">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:CalendarSourceRow}">
+                                                    <StackPanel Margin="0,0,0,8">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource App.TextBrush}"/>
+                                                        <TextBlock Text="{Binding Status}" Style="{StaticResource Caption}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Text="No calendar linked yet. Add one to see your lectures here." Style="{StaticResource Caption}"
+                                                   TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,8"
+                                                   Visibility="{Binding HasCalendarSources, Converter={StaticResource InvBoolToVis}}"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <Button Style="{StaticResource GhostButton}" Content="Add calendar…" Command="{Binding AddCalendarCommand}"/>
+                                            <Button Style="{StaticResource GhostButton}" Content="Sync now" Margin="8,0,0,0" Command="{Binding SyncCalendarCommand}"/>
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" TextTrimming="None" Margin="0,14,0,0"
+                                                   Text="Graphite only reads: Canvas for deadlines, and the calendar links you pick for lectures and exams. Links are managed in Settings."/>
+                                    </StackPanel>
+                                </Border>
+
+                                <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource Cal.LectureBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Lecture" Style="{StaticResource Caption}" Margin="6,0,14,0"/>
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource Cal.DueBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Due" Style="{StaticResource Caption}" Margin="6,0,14,0"/>
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource Cal.ExamBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Exam" Style="{StaticResource Caption}" Margin="6,0,14,0"/>
+                                    <TextBlock Text="Bar colour = course" Style="{StaticResource Caption}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- ===== week ===== (the hour height of 58 px is HourHeight in CanvasViewModel.Calendar.cs) -->
+                        <Border Style="{StaticResource CalGlassIn}" Padding="0,14,12,12"
+                                Visibility="{Binding IsWeekMode, Converter={StaticResource BoolToVis}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="58"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <ItemsControl Grid.Row="0" Grid.Column="1" ItemsSource="{Binding WeekDays}"
+                                              ItemTemplate="{StaticResource WeekHeaderTemplate}" Focusable="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="7"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
+
+                                <!-- hour labels -->
+                                <ItemsControl Grid.Row="1" Grid.Column="0" ItemsSource="{Binding WeekHours}" Focusable="False" IsHitTestVisible="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:CalendarHourVm}">
+                                            <Border Height="58">
+                                                <TextBlock Text="{Binding Label}" Style="{StaticResource Caption}" HorizontalAlignment="Right"
+                                                           VerticalAlignment="Top" Margin="0,-8,10,0"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid Grid.Row="1" Grid.Column="1">
+                                    <!-- hour lines -->
+                                    <ItemsControl ItemsSource="{Binding WeekHours}" Focusable="False" IsHitTestVisible="False">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:CalendarHourVm}">
+                                                <Border Height="58" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource App.StrokeSoftBrush}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <!-- the seven days -->
+                                    <ItemsControl ItemsSource="{Binding WeekDays}" ItemTemplate="{StaticResource WeekColumnTemplate}" Focusable="False">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="7"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <!-- now -->
+                                    <Border Height="2" CornerRadius="1" VerticalAlignment="Top" IsHitTestVisible="False"
+                                            Background="{StaticResource Cal.ExamBrush}" Margin="{Binding NowLineMargin}"
+                                            Visibility="{Binding ShowNowLine, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <!-- ===== agenda ===== -->
+                        <Grid Style="{StaticResource CalViewIn}" Visibility="{Binding IsAgendaMode, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <DockPanel Margin="0,0,0,14">
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding CalendarStatus}" Style="{StaticResource Caption}"
+                                               VerticalAlignment="Center" Margin="16,0,0,0"/>
+                                    <Border Style="{StaticResource SegmentTray}" HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton Style="{StaticResource SegmentOption}" GroupName="calFilter" Padding="14,5" Content="All"
+                                                         IsChecked="{Binding AgendaAll, Mode=OneWay}"
+                                                         Command="{Binding SetAgendaFilterCommand}" CommandParameter="All"/>
+                                            <RadioButton Style="{StaticResource SegmentOption}" GroupName="calFilter" Padding="14,5" Content="Deadlines"
+                                                         IsChecked="{Binding AgendaDeadlines, Mode=OneWay}"
+                                                         Command="{Binding SetAgendaFilterCommand}" CommandParameter="Deadline"/>
+                                            <RadioButton Style="{StaticResource SegmentOption}" GroupName="calFilter" Padding="14,5" Content="Lectures"
+                                                         IsChecked="{Binding AgendaLectures, Mode=OneWay}"
+                                                         Command="{Binding SetAgendaFilterCommand}" CommandParameter="Lecture"/>
+                                            <RadioButton Style="{StaticResource SegmentOption}" GroupName="calFilter" Padding="14,5" Content="Exams"
+                                                         IsChecked="{Binding AgendaExams, Mode=OneWay}"
+                                                         Command="{Binding SetAgendaFilterCommand}" CommandParameter="Exam"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DockPanel>
+                                <ItemsControl ItemsSource="{Binding AgendaGroups}" ItemTemplate="{StaticResource AgendaGroupTemplate}" Focusable="False"/>
+                                <TextBlock Text="Nothing in the next 14 days." Style="{StaticResource Caption}" FontSize="13" TextAlignment="Center"
+                                           Margin="0,48,0,0" Visibility="{Binding AgendaGroups.Count, Converter={StaticResource ZeroToVis}}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Width="300" Margin="16,0,0,0">
+                                <Border Style="{StaticResource GlassCard}" Padding="16,14,16,10">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding MiniTitle}" FontWeight="SemiBold" FontSize="14" Foreground="{DynamicResource App.TextBrush}"
+                                                   Margin="0,0,0,8"/>
+                                        <UniformGrid Columns="7" Margin="0,0,0,2">
+                                            <TextBlock Text="M" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="T" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="W" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="T" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="F" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="S" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="S" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+                                        </UniformGrid>
+                                        <ItemsControl ItemsSource="{Binding MiniDays}" ItemTemplate="{StaticResource MiniDayTemplate}" Focusable="False">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="7"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Margin="8,10,0,0">
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource Cal.LectureBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Lecture" Style="{StaticResource Caption}" Margin="6,0,12,0"/>
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource Cal.DueBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Due" Style="{StaticResource Caption}" Margin="6,0,12,0"/>
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource Cal.ExamBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Exam" Style="{StaticResource Caption}" Margin="6,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
                     </StackPanel>
 
                     <!-- ============================ New / Pinned / search ============================ -->

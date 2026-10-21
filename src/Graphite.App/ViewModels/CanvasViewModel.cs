@@ -67,9 +67,10 @@ public sealed partial class CanvasViewModel : ObservableObject
         _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(7) };
         _noticeTimer.Tick += (_, _) => { _noticeTimer.Stop(); if (!NoticeBusy) Notice = null; };
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _statusTimer.Tick += (_, _) => { UpdateStatus(); RefreshCourseStates(); };
+        _statusTimer.Tick += (_, _) => { UpdateStatus(); RefreshCourseStates(); TickCalendar(); };
         CanvasSettings.Changed += OnSettingsChanged;
         CanvasSettings.FolderLinksChanged += OnFolderLinksChanged;
+        CanvasSettings.CalendarChanged += OnCalendarSettingsChanged;
         isConnected = CanvasSettings.HasToken;
         _settingsKey = SettingsKey();
     }
@@ -100,10 +101,25 @@ public sealed partial class CanvasViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsPinnedPage))]
     [NotifyPropertyChangedFor(nameof(IsCoursePage))]
     [NotifyPropertyChangedFor(nameof(IsSearchPage))]
+    [NotifyPropertyChangedFor(nameof(IsCalendarPage))]
     [NotifyPropertyChangedFor(nameof(ShowSections))]
     [NotifyPropertyChangedFor(nameof(LocationLabel))]
     [NotifyPropertyChangedFor(nameof(ShowMarkAllNew))]
     private CanvasPage page = CanvasPage.Overview;
+
+    /// <summary>Raised when the page or the course that is open changed (the "Course tint" material follows it).</summary>
+    public event Action? ContextChanged;
+    partial void OnPageChanged(CanvasPage value)
+    {
+        // opening the calendar: the view chosen in Settings, or the one used last
+        if (value == CanvasPage.Calendar)
+        {
+            var open = ParseMode(CanvasSettings.CalendarOpenMode);
+            if (open != CalMode) CalMode = open;
+        }
+        ContextChanged?.Invoke();
+    }
+    partial void OnCurrentCourseChanged(CanvasCourseItem? value) => ContextChanged?.Invoke();
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LocationLabel))]
@@ -210,6 +226,7 @@ public sealed partial class CanvasViewModel : ObservableObject
         CanvasPage.Course when CurrentCourse != null => "Canvas › " + (CurrentCourse.Code.Length is > 0 and < 16 ? CurrentCourse.Code : CurrentCourse.Name),
         CanvasPage.New => "Canvas › New",
         CanvasPage.Pinned => "Canvas › Pinned",
+        CanvasPage.Calendar => "Canvas › Calendar",
         CanvasPage.Search => "Canvas › Search",
         _ => "Canvas",
     };
@@ -233,6 +250,7 @@ public sealed partial class CanvasViewModel : ObservableObject
             BuildRail();
         }
 
+        LoadCalendarFromDisk();
         IsConnected = CanvasSettings.HasToken;
         if (!IsConnected) { GoTo(CanvasPage.Connect, null); return; }
         if (Page == CanvasPage.Connect) GoTo(CanvasPage.Overview, null);
@@ -275,6 +293,7 @@ public sealed partial class CanvasViewModel : ObservableObject
         if (Page == CanvasPage.Course && CurrentCourse is { } c && IsStale(c.Id, CourseFresh))
             _ = RefreshCourseAsync(c.Id, CancellationToken.None);
         if (CanvasSettings.CheckAllCourses) _ = CheckCoursesAsync(force: false);
+        if (IsConnected) _ = RefreshCalendarAsync(force: false);
     }
 
     /// <summary>The space was left (switched to Local, or the app is going away): stop background work and
@@ -394,6 +413,7 @@ public sealed partial class CanvasViewModel : ObservableObject
         RefreshCourseStates();
         if (activeId != null && Courses.FirstOrDefault(c => c.Id == activeId) is { } again) CurrentCourse = again;
         UpdateRailSelection();
+        CalendarCoursesChanged();
     }
 
     private void RefreshCounts()
@@ -523,6 +543,7 @@ public sealed partial class CanvasViewModel : ObservableObject
         NewPreviewMore = moreCourses > 0 ? $"+ {moreCourses} more course{(moreCourses == 1 ? "" : "s")} with new items" : "";
         NewPreviewSummary = total == 0 ? "" : $"{LibraryScanner.Plural(total, "item")} in {LibraryScanner.Plural(found.Count, "course")}";
         HasNewPreview = NewPreview.Count > 0;
+        BuildCalendarStrip();   // nothing new: the calendar takes the place of the strip
     }
 
     /// <summary>"Mark seen" on one of the cards of that strip.</summary>
@@ -695,11 +716,26 @@ public sealed partial class CanvasViewModel : ObservableObject
         }
 
         PageChanging?.Invoke();
-        CurrentCourse = course;
-        Page = !IsConnected ? CanvasPage.Connect : page;
-        UpdateRailSelection();
-        RebuildPage();
+
+        void Apply()
+        {
+            CurrentCourse = course;
+            Page = !IsConnected ? CanvasPage.Connect : page;
+            UpdateRailSelection();
+            RebuildPage();
+        }
+
+        // The view may fade the old page out first and then call Apply (like the Local pages do); +1 goes into a
+        // course, -1 comes back out of one.
+        bool same = Page == page && CurrentCourse?.Id == course?.Id;
+        if (Navigate != null && IsConnected && !same)
+            Navigate(page == CanvasPage.Course ? 1 : Page == CanvasPage.Course ? -1 : 0, Apply);
+        else
+            Apply();
     }
+
+    /// <summary>Set by the view: changes the page in two steps (the old one fades out, then the action runs).</summary>
+    public Action<int, Action>? Navigate { get; set; }
 
     private void ApplySearch()
     {
@@ -749,6 +785,9 @@ public sealed partial class CanvasViewModel : ObservableObject
                 break;
             case CanvasPage.Pinned:
                 BuildPinned();
+                break;
+            case CanvasPage.Calendar:
+                BuildCalendarPage();
                 break;
             case CanvasPage.Search:
                 BuildSearch();
@@ -1068,6 +1107,11 @@ public sealed partial class CanvasViewModel : ObservableObject
         if (Page == CanvasPage.Course && CurrentCourse != null)
         {
             await RefreshCourseAsync(CurrentCourse.Id, CancellationToken.None);
+            return;
+        }
+        if (Page == CanvasPage.Calendar)
+        {
+            await RefreshCalendarAsync(force: true);
             return;
         }
         await RefreshCoursesAsync();

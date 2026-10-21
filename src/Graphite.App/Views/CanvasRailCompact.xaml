@@ -45,6 +45,12 @@
                          IsChecked="{Binding IsPinnedPage, Mode=OneWay}" Command="{Binding ShowPinnedCommand}" ToolTip="Pinned">
                 <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Pin}" Width="16" Height="16"/>
             </RadioButton>
+            <Grid>
+                <RadioButton Style="{StaticResource RailNavCompact}" GroupName="canvasNavCompact"
+                             IsChecked="{Binding IsCalendarPage, Mode=OneWay}" Command="{Binding ShowCalendarCommand}" ToolTip="Calendar">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Calendar}" Width="16" Height="16"/>
+                </RadioButton>
+            </Grid>
             <Rectangle Height="1" Fill="{DynamicResource App.StrokeSoftBrush}" Margin="8,10,8,8"
                        Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}"/>
         </StackPanel>

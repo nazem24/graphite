@@ -1,0 +1,69 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Material "Dusk" (light): only the surfaces. ThemeService merges this after
+         Colors.Light.xaml, so text and accents stay the theme's own.
+         Warm glass: the Glass material with the sheen and rim going amber, rose, plum instead of blue-white. -->
+
+    <SolidColorBrush x:Key="App.PanelBrush" Color="#66FFF5EC"/>
+    <SolidColorBrush x:Key="App.ViewerBrush" Color="#14D9C0B0"/>
+
+    <LinearGradientBrush x:Key="App.GlassBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#99FFF0E2" Offset="0"/>
+        <GradientStop Color="#55FFE2D0" Offset="0.5"/>
+        <GradientStop Color="#66FFD8E4" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="App.GlassBorderBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#FFFFFFFF" Offset="0"/>
+        <GradientStop Color="#99FFEEDD" Offset="0.38"/>
+        <GradientStop Color="#40E2A98E" Offset="0.72"/>
+        <GradientStop Color="#66A8606E" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.GlassSolidBrush" Color="#EBFFF8F2"/>
+    <!-- Fill of small floating surfaces: the page bar and tooltips. -->
+    <LinearGradientBrush x:Key="App.FloatingBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#D2FFF4EA" Offset="0"/>
+        <GradientStop Color="#B4FFE9DB" Offset="0.5"/>
+        <GradientStop Color="#C4FFDCE6" Offset="1"/>
+    </LinearGradientBrush>
+
+    <!-- how strongly the start page's glows show, and their colours (AmbientBackdrop; the accent when not set) -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="App.AmbientStrength">1.7</sys:Double>
+    <Color x:Key="App.AmbientColorA">#F59E5B</Color>
+    <Color x:Key="App.AmbientColorB">#E0709A</Color>
+
+    <!-- Folder cards on the start page (LibraryHome, style FolderTile): see the other materials for how these numbers work. -->
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.BackOpacity">0.74</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.FlapOpacity">0.58</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.ShadowOpacity">0.08</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.GhostBlur">6</sys:Double>
+    <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="Folder.GhostOpacity">0.3</sys:Double>
+    <Visibility x:Key="Folder.GhostVisibility">Visible</Visibility>
+    <RectangleGeometry x:Key="Folder.PapersClip" Rect="-60,-80,342,166"/>
+    <Thickness x:Key="Folder.FlapRimThickness">1.5</Thickness>
+    <LinearGradientBrush x:Key="Folder.FlapTint" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFFFF" Offset="0"/>
+        <GradientStop Color="#FFFFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Folder.FlapSheen" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#99FFEEDC" Offset="0"/>
+        <GradientStop Color="#33FFFFFF" Offset="0.5"/>
+        <GradientStop Color="#40FFD9E4" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Folder.FlapRim" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#FFFFFFFF" Offset="0"/>
+        <GradientStop Color="#E6FFF2E4" Offset="0.5"/>
+        <GradientStop Color="#B3FFDCE6" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="Folder.FlapHover" Color="#0F000000"/>
+
+
+    <!-- Pop-ups (tooltips, drop-downs, menus, colour cards) are windows of their own, so nothing blurs behind them:
+         they get one solid surface per material instead of the see-through glass. -->
+    <LinearGradientBrush x:Key="App.PopupBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#FFFFF7F0" Offset="0"/>
+        <GradientStop Color="#FFFFE9E1" Offset="1"/>
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="App.PopupBorderBrush" Color="#FFE8CDBE"/>
+
+</ResourceDictionary>

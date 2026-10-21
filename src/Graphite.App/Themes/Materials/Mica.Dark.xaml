@@ -48,4 +48,10 @@
     </LinearGradientBrush>
     <SolidColorBrush x:Key="Folder.FlapHover" Color="#1AFFFFFF"/>
 
+
+    <!-- Pop-ups (tooltips, drop-downs, menus, colour cards) are windows of their own, so nothing blurs behind them:
+         they get one solid surface per material instead of the see-through glass. -->
+    <SolidColorBrush x:Key="App.PopupBrush" Color="#FF2A2A2E"/>
+    <SolidColorBrush x:Key="App.PopupBorderBrush" Color="#FF47474D"/>
+
 </ResourceDictionary>

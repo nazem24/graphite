@@ -31,6 +31,27 @@ public static class CanvasSettings
         public bool CheckAllCourses { get; set; } = true;
         /// <summary>List every file type in a course, not only PDFs and Office files.</summary>
         public bool AllFileTypes { get; set; } = true;
+        /// <summary>Calendar links (.ics) for lectures and exams. The address is a secret, so it is protected like the token.</summary>
+        public List<CalendarSourceData> CalendarSources { get; set; } = new();
+        /// <summary>Calendar page: show Canvas due dates.</summary>
+        public bool CalendarShowDue { get; set; } = true;
+        /// <summary>Calendar page: show lectures and exams from the calendar links.</summary>
+        public bool CalendarShowLectures { get; set; } = true;
+        /// <summary>Calendar page: show all-day entries of the calendar links (semester dates, registration phases …).</summary>
+        public bool CalendarShowAllDay { get; set; } = true;
+        /// <summary>Overview: when nothing is new, show today, the next due dates and the all-day entries at the top (off by default).</summary>
+        public bool CalendarOverviewStrip { get; set; }
+        /// <summary>Calendar page: "Month", "Week" or "Agenda" (the one used last).</summary>
+        public string CalendarMode { get; set; } = "Month";
+        /// <summary>Which view the calendar opens in: "Last used", "Month", "Week" or "Agenda".</summary>
+        public string CalendarStartView { get; set; } = "Last used";
+    }
+
+    public sealed class CalendarSourceData
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string? ProtectedUrl { get; set; }
     }
 
     private static Data _data = Load();
@@ -40,6 +61,9 @@ public static class CanvasSettings
 
     /// <summary>Raised after a course folder link changed (course id).</summary>
     public static event Action<string>? FolderLinksChanged;
+
+    /// <summary>Raised after a calendar setting changed (links, what to show, the view).</summary>
+    public static event Action? CalendarChanged;
 
     private static string SettingsPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Graphite", "canvas.json");
@@ -121,6 +145,94 @@ public static class CanvasSettings
         Save();
         Changed?.Invoke();
     }
+
+    // ------------------------------------------------------------- calendar
+
+    /// <summary>A calendar link with its address in plain text (only held in memory).</summary>
+    public sealed record CalendarSource(string Id, string Name, string Url);
+
+    public static bool CalendarShowDue => _data.CalendarShowDue;
+    public static bool CalendarShowLectures => _data.CalendarShowLectures;
+    public static bool CalendarShowAllDay => _data.CalendarShowAllDay;
+    public static bool CalendarOverviewStrip => _data.CalendarOverviewStrip;
+    public static string CalendarMode => _data.CalendarMode;
+    public static string CalendarStartView => _data.CalendarStartView;
+
+    /// <summary>The view the calendar should open in now: the chosen one, or the one used last.</summary>
+    public static string CalendarOpenMode =>
+        _data.CalendarStartView is "Month" or "Week" or "Agenda" ? _data.CalendarStartView : _data.CalendarMode;
+
+    public static void SetCalendarShowDue(bool on)
+    {
+        if (_data.CalendarShowDue == on) return;
+        _data.CalendarShowDue = on;
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    public static void SetCalendarShowLectures(bool on)
+    {
+        if (_data.CalendarShowLectures == on) return;
+        _data.CalendarShowLectures = on;
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    public static void SetCalendarShowAllDay(bool on)
+    {
+        if (_data.CalendarShowAllDay == on) return;
+        _data.CalendarShowAllDay = on;
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    public static void SetCalendarOverviewStrip(bool on)
+    {
+        if (_data.CalendarOverviewStrip == on) return;
+        _data.CalendarOverviewStrip = on;
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    public static void SetCalendarStartView(string view)
+    {
+        if (_data.CalendarStartView == view) return;
+        _data.CalendarStartView = view;
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    public static void SetCalendarMode(string mode)
+    {
+        if (_data.CalendarMode == mode) return;
+        _data.CalendarMode = mode;
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    /// <summary>The calendar links whose address can be read on this PC.</summary>
+    public static IReadOnlyList<CalendarSource> CalendarSources() =>
+        _data.CalendarSources
+            .Select(s => new CalendarSource(s.Id, s.Name, Dpapi.Unprotect(s.ProtectedUrl) ?? ""))
+            .Where(s => s.Url.Length > 0)
+            .ToList();
+
+    public static void AddCalendarSource(string id, string name, string url)
+    {
+        _data.CalendarSources.Add(new CalendarSourceData { Id = id, Name = name, ProtectedUrl = Dpapi.Protect(url.Trim()) });
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    public static void RemoveCalendarSource(string id)
+    {
+        if (_data.CalendarSources.RemoveAll(s => s.Id == id) == 0) return;
+        Save();
+        CalendarChanged?.Invoke();
+    }
+
+    /// <summary>The file name a calendar link's downloaded copy has in the cache.</summary>
+    public static string CalendarCacheName(string sourceId) => "calendar-" + CanvasNames.SafeId(sourceId) + ".ics";
 
     // ------------------------------------------------------------- folders
 
@@ -242,6 +354,9 @@ public static class CanvasSettings
             {
                 d.CourseFolders = new Dictionary<string, string>(d.CourseFolders ?? new());
                 d.Pins ??= new();
+                d.CalendarSources ??= new();
+                if (d.CalendarMode is not ("Month" or "Week" or "Agenda")) d.CalendarMode = "Month";
+                if (d.CalendarStartView is not ("Last used" or "Month" or "Week" or "Agenda")) d.CalendarStartView = "Last used";
                 if (string.IsNullOrWhiteSpace(d.BaseUrl)) d.BaseUrl = CanvasClient.DefaultBaseUrl;
                 return d;
             }

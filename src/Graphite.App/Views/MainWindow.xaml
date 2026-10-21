@@ -1374,8 +1374,8 @@
                                        Opened="ColorPopup_Opened">
                                     <Border x:Name="ColorCard" Margin="12,4,12,18" Padding="14,12" Width="300"
                                             CornerRadius="16" BorderThickness="1"
-                                            Background="{DynamicResource App.GlassSolidBrush}"
-                                            BorderBrush="{DynamicResource App.GlassBorderBrush}"
+                                            Background="{DynamicResource App.PopupBrush}"
+                                            BorderBrush="{DynamicResource App.PopupBorderBrush}"
                                             RenderTransformOrigin="0.5,0">
                                         <Border.RenderTransform>
                                             <ScaleTransform/>

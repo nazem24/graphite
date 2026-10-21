@@ -87,6 +87,15 @@
                     </StackPanel>
                 </DockPanel>
             </RadioButton>
+            <RadioButton Style="{StaticResource RailNav}" GroupName="canvasNav" IsChecked="{Binding IsCalendarPage, Mode=OneWay}"
+                         Command="{Binding ShowCalendarCommand}">
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Calendar}" Width="16" Height="16"/>
+                        <TextBlock Text="Calendar" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DockPanel>
+            </RadioButton>
 
             <DockPanel Margin="12,16,0,4" Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}">
                 <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Padding="6"

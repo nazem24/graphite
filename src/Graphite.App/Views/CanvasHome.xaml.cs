@@ -33,9 +33,17 @@ public partial class CanvasHome : UserControl
         };
         DataContextChanged += (_, e) =>
         {
-            if (_watched != null) _watched.PageBuilt -= OnPageBuilt;
+            if (_watched != null)
+            {
+                _watched.PageBuilt -= OnPageBuilt;
+                _watched.Navigate = null;
+            }
             _watched = e.NewValue as CanvasViewModel;
-            if (_watched != null) _watched.PageBuilt += OnPageBuilt;
+            if (_watched != null)
+            {
+                _watched.PageBuilt += OnPageBuilt;
+                _watched.Navigate = OnNavigate;
+            }
         };
     }
 
@@ -173,8 +181,88 @@ public partial class CanvasHome : UserControl
         if (sender is FrameworkElement owner && Canvas is { } canvas) CanvasMenus.OpenFolderMenu(owner, canvas);
     }
 
+    // ------------------------------------------------------------- page change
+    // The same three steps as the pages of the Local space: the old page fades out and drifts a little (nothing is
+    // built yet, so those frames are free); with it invisible the new page is built and laid out; then it comes in
+    // from the side you are heading to and settles. Into a course it arrives from the right, back out of it from
+    // the left, between the other pages it just lifts.
+
+    private int _gen;
+    private int _direction;
+    private Action? _pending;
+    private bool _awaiting, _playQueued;
+    private DispatcherTimer? _failsafe;
+
+    private static void Animate(IAnimatable target, DependencyProperty property, double from, double to,
+        double ms, IEasingFunction ease, EventHandler? completed = null)
+    {
+        var anim = new DoubleAnimation(from, to, Motion.Ms(ms))
+        {
+            EasingFunction = ease,
+            FillBehavior = FillBehavior.HoldEnd,
+        };
+        if (completed != null) anim.Completed += completed;
+        target.BeginAnimation(property, anim);
+    }
+
+    /// <summary>Step 1: fade the page you are leaving out.</summary>
+    private void OnNavigate(int direction, Action apply)
+    {
+        EndTransition();   // a change still waiting for its fade-out is applied right now
+        if (!Motion.Enabled || !IsLoaded || !IsVisible || PageRoot.ActualWidth < 16 || PageRoot.ActualHeight < 16)
+        {
+            apply();
+            return;
+        }
+
+        int gen = ++_gen;
+        _direction = direction;
+        _pending = apply;
+
+        PageRoot.CacheMode = new BitmapCache();
+        var move = Motion.RigOf(PageRoot)?.Move;
+        Animate(PageRoot, OpacityProperty, 1, 0, Motion.PageOutMs, Motion.PageOutEase,
+            completed: (_, _) => Dispatcher.InvokeAsync(() =>
+            {
+                if (gen == _gen) SwapPage();
+            }, DispatcherPriority.Render));
+        if (move != null)
+            Animate(move, TranslateTransform.XProperty, 0, -direction * Motion.PageOutDriftPx, Motion.PageOutMs, Motion.PageOutEase);
+
+        // if the event above never arrives the page is still swapped (SwapPage runs only once)
+        Motion.After(Motion.PageOutMs + 80, () =>
+        {
+            if (gen == _gen) SwapPage();
+        });
+    }
+
+    /// <summary>Step 2: with the page invisible, build the new one.</summary>
+    private void SwapPage()
+    {
+        var apply = _pending;
+        _pending = null;
+        if (apply == null) return;
+
+        _awaiting = true;
+        _playQueued = false;
+
+        // if no page is announced (nothing changed after all), the new page still comes in
+        _failsafe ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        _failsafe.Tick -= Failsafe_Tick;
+        _failsafe.Tick += Failsafe_Tick;
+        _failsafe.Start();
+
+        apply();   // the page announces itself through OnPageBuilt
+    }
+
+    private void Failsafe_Tick(object? sender, EventArgs e)
+    {
+        _failsafe?.Stop();
+        if (_awaiting) PlayEnter();
+    }
+
     /// <summary>A page was (re)built. A refresh of the same page keeps its place; a different page or course
-    /// starts at the top and comes in with a short fade.</summary>
+    /// starts at the top and, once it has been laid out, comes in.</summary>
     private void OnPageBuilt()
     {
         if (Canvas is not { } canvas) return;
@@ -182,30 +270,84 @@ public partial class CanvasHome : UserControl
         if (now == _shown) return;
         _shown = now;
         Scroller.ScrollToVerticalOffset(0);
-        Enter();
+
+        if (_awaiting) QueueEnter();
+        else Enter();
     }
 
-    /// <summary>Fade and lift the page in (the start screen's sideways page change).</summary>
+    /// <summary>Wait until the new page has been laid out (Input priority runs after layout and render work), so the
+    /// movement starts on a free UI thread.</summary>
+    private void QueueEnter()
+    {
+        if (!_awaiting || _playQueued) return;
+        _playQueued = true;
+        int gen = _gen;
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (gen == _gen && _awaiting) PlayEnter();
+        }, DispatcherPriority.Input);
+    }
+
+    /// <summary>Step 3: the new page arrives and settles with a long, soft stop.</summary>
+    private void PlayEnter()
+    {
+        _failsafe?.Stop();
+        _awaiting = false;
+        int gen = _gen;
+        double dir = _direction;
+
+        PageRoot.CacheMode ??= new BitmapCache();
+        var move = Motion.RigOf(PageRoot)?.Move;
+        Animate(PageRoot, OpacityProperty, 0, 1, Motion.PageInFadeMs, Motion.PageFadeEase);
+        if (move != null)
+        {
+            Animate(move, TranslateTransform.XProperty, dir * Motion.PageInSlidePx, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
+            Animate(move, TranslateTransform.YProperty, dir == 0 ? 12 : 0, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
+        }
+        Motion.After(Motion.PageInSlideMs + 40, () =>
+        {
+            if (gen == _gen) EndTransition();
+        });
+    }
+
+    /// <summary>Everything back to rest: the page fully shown and live. A change still waiting for the fade-out is
+    /// applied here, so a navigation is never lost.</summary>
+    private void EndTransition()
+    {
+        var pending = _pending;
+        _pending = null;
+        _gen++;
+        _awaiting = false;
+        _playQueued = false;
+        _failsafe?.Stop();
+
+        PageRoot.BeginAnimation(OpacityProperty, null);
+        PageRoot.Opacity = 1;
+        if (Motion.RigOf(PageRoot) is { } rig)
+        {
+            rig.Move.BeginAnimation(TranslateTransform.XProperty, null);
+            rig.Move.BeginAnimation(TranslateTransform.YProperty, null);
+            rig.Move.X = 0;
+            rig.Move.Y = 0;
+        }
+        PageRoot.CacheMode = null;
+        pending?.Invoke();
+    }
+
+    /// <summary>Fade and lift the page in (a page that was built without a change of page).</summary>
     public void Enter()
     {
-        var move = (TranslateTransform)PageRoot.RenderTransform;
-        PageRoot.BeginAnimation(OpacityProperty, null);
-        move.BeginAnimation(TranslateTransform.YProperty, null);
-        PageRoot.Opacity = 1;
-        move.Y = 0;
+        EndTransition();
         if (!Motion.Enabled || !IsVisible) return;
 
+        int gen = _gen;
         PageRoot.CacheMode = new BitmapCache();
-        PageRoot.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Motion.Ms(Motion.PageInFadeMs))
+        var move = Motion.RigOf(PageRoot)?.Move;
+        Animate(PageRoot, OpacityProperty, 0, 1, Motion.PageInFadeMs, Motion.PageFadeEase);
+        if (move != null) Animate(move, TranslateTransform.YProperty, 12, 0, Motion.PageInSlideMs, Motion.PageSlideEase);
+        Motion.After(Motion.PageInSlideMs + 40, () =>
         {
-            EasingFunction = Motion.PageFadeEase,
-            FillBehavior = FillBehavior.Stop,
+            if (gen == _gen) EndTransition();
         });
-        move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(12, 0, Motion.Ms(Motion.PageInSlideMs))
-        {
-            EasingFunction = Motion.PageSlideEase,
-            FillBehavior = FillBehavior.Stop,
-        });
-        Motion.After(Motion.PageInSlideMs + 40, () => PageRoot.CacheMode = null);
     }
 }

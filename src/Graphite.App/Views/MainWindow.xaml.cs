@@ -1859,7 +1859,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Switch tabs: Ctrl+Tab → next, Ctrl+Shift+Tab → previous (wraps around).
+        // Ctrl+Tab / Ctrl+Shift+Tab: next / previous open PDF or document (wraps, skips Home); on Home, flips Local/Canvas.
         if (e.Key == Key.Tab && (Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
             (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
         {

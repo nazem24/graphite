@@ -387,6 +387,7 @@ public partial class LibraryViewModel : ObservableObject
         ThemeService.SetFolderColor(card.Path, hex);
         card.RefreshColor();
         foreach (var item in RailItems) item.RefreshColor();
+        ContextChanged?.Invoke();
     }
 
     /// <summary>Use one colour for every folder card.</summary>
@@ -395,6 +396,7 @@ public partial class LibraryViewModel : ObservableObject
         ThemeService.SetAllFolderColors(hex);
         foreach (var folder in Folders) folder.RefreshColor();
         foreach (var item in RailItems) item.RefreshColor();
+        ContextChanged?.Invoke();
     }
 
     /// <summary>A breadcrumb was clicked: the library root is the home page, anything else a folder.</summary>

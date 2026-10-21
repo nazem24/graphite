@@ -33,6 +33,9 @@ public sealed class LinkedCourseRow
     public string FolderLine => FolderExists ? Folder : Folder + "  (folder not found)";
 }
 
+/// <summary>A calendar link in Settings › Canvas (only the host is shown: the full address is a secret).</summary>
+public sealed record CalendarLinkRow(string Id, string Name, string Host);
+
 /// <summary>Settings › Canvas: connection (address and token), term, linked folders, the two switches and the cache.</summary>
 public sealed partial class SettingsViewModel
 {
@@ -90,6 +93,125 @@ public sealed partial class SettingsViewModel
         }
     }
 
+    // ------------------------------------------------------------- calendar
+
+    public bool CalendarShowDue
+    {
+        get => CanvasSettings.CalendarShowDue;
+        set
+        {
+            CanvasSettings.SetCalendarShowDue(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public bool CalendarShowLectures
+    {
+        get => CanvasSettings.CalendarShowLectures;
+        set
+        {
+            CanvasSettings.SetCalendarShowLectures(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public bool CalendarShowAllDay
+    {
+        get => CanvasSettings.CalendarShowAllDay;
+        set
+        {
+            CanvasSettings.SetCalendarShowAllDay(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public bool CalendarOverviewStrip
+    {
+        get => CanvasSettings.CalendarOverviewStrip;
+        set
+        {
+            CanvasSettings.SetCalendarOverviewStrip(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public string[] CalendarStartViews { get; } = { "Last used", "Month", "Week", "Agenda" };
+
+    public string CalendarStartView
+    {
+        get => CanvasSettings.CalendarStartView;
+        set
+        {
+            if (!string.IsNullOrEmpty(value)) CanvasSettings.SetCalendarStartView(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public ObservableCollection<CalendarLinkRow> CalendarLinks { get; } = new();
+    public bool HasCalendarLinks => CalendarLinks.Count > 0;
+
+    /// <summary>The address typed in the "add a calendar" box.</summary>
+    [ObservableProperty] private string calendarLinkText = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCalendarLinkMessage))]
+    private string calendarLinkMessage = "";
+
+    [ObservableProperty] private bool calendarLinkMessageIsError;
+    [ObservableProperty] private bool isAddingCalendar;
+
+    public bool HasCalendarLinkMessage => CalendarLinkMessage.Length > 0;
+
+    private void RefreshCalendarLinks()
+    {
+        CalendarLinks.Clear();
+        foreach (var source in CanvasSettings.CalendarSources())
+        {
+            string host = Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) ? uri.Host : "";
+            CalendarLinks.Add(new CalendarLinkRow(source.Id, source.Name, host));
+        }
+        OnPropertyChanged(nameof(HasCalendarLinks));
+        OnPropertyChanged(nameof(CalendarShowDue));
+        OnPropertyChanged(nameof(CalendarShowLectures));
+        OnPropertyChanged(nameof(CalendarShowAllDay));
+        OnPropertyChanged(nameof(CalendarOverviewStrip));
+        OnPropertyChanged(nameof(CalendarStartView));
+    }
+
+    [RelayCommand]
+    private async Task AddCalendarLink()
+    {
+        if (IsAddingCalendar) return;
+        IsAddingCalendar = true;
+        CalendarLinkMessageIsError = false;
+        CalendarLinkMessage = "Checking the calendar…";
+        try
+        {
+            var (ok, message) = await CalendarService.AddSourceAsync(CalendarLinkText);
+            CalendarLinkMessageIsError = !ok;
+            CalendarLinkMessage = message;
+            if (ok)
+            {
+                CalendarLinkText = "";
+                RefreshCalendarLinks();
+            }
+        }
+        finally
+        {
+            IsAddingCalendar = false;
+        }
+    }
+
+    [RelayCommand]
+    private void RemoveCalendarLink(CalendarLinkRow? row)
+    {
+        if (row == null) return;
+        CalendarService.Remove(row.Id);
+        CalendarLinkMessageIsError = false;
+        CalendarLinkMessage = $"Removed “{row.Name}”.";
+        RefreshCalendarLinks();
+    }
+
     [ObservableProperty] private string canvasCacheText = "";
 
     /// <summary>Re-read everything Canvas shows (the page was opened, or something changed).</summary>
@@ -117,6 +239,7 @@ public sealed partial class SettingsViewModel
         OnPropertyChanged(nameof(CanvasTokenHint));
         OnPropertyChanged(nameof(CanvasCheckAllCourses));
         OnPropertyChanged(nameof(CanvasAllFileTypes));
+        RefreshCalendarLinks();
         long size = CanvasSettings.CacheSize();
         CanvasCacheText = size == 0 ? "No downloaded files in the cache." : $"Downloaded files in the cache: {LibraryScanner.FormatSize(size)}.";
     }

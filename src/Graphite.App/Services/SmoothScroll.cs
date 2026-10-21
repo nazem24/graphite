@@ -71,9 +71,9 @@ public static class SmoothScroll
         DependencyProperty.RegisterAttached("Arrive", typeof(long), typeof(SmoothScroll), new PropertyMetadata(0L));
 
     private const double PixelsPerNotch = 110;   // one wheel notch (Delta 120)
-    private const double GlideMs = 300;
+    private const double GlideMs = 480;   // the longest glide (was 300): a heavier, longer coast
 
-    private static readonly IEasingFunction Ease = Make(new QuinticEase { EasingMode = EasingMode.EaseOut });
+    private static readonly IEasingFunction Ease = Make(new QuarticEase { EasingMode = EasingMode.EaseOut });
 
     // While a glide runs, the page's decorative loops hold still (see Motion.Scrolling); this ends that shortly after the last glide.
     private static DispatcherTimer? _idle;
@@ -262,7 +262,7 @@ public static class SmoothScroll
         if (Math.Abs(target - from) < 0.5 && gliding) return;
 
         // a short nudge (a touchpad) glides for less time than a full notch
-        double ms = Math.Clamp(Math.Abs(target - current) * 3 + 120, 120, GlideMs);
+        double ms = Math.Clamp(Math.Abs(target - current) * 3.2 + 150, 150, GlideMs);
         sv.SetValue(TargetProperty, target);
         sv.SetValue(ArriveProperty, now + (long)ms);
         MarkScrolling(ms);

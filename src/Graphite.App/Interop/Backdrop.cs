@@ -77,12 +77,21 @@ public static class Backdrop
 
         // Mica / Acrylic only for windows with a WindowChrome (glass frame extended into the
         // client area): the main window and the dialogs (DialogWindow style).
-        bool useMica = IsMicaSupported && WindowChrome.GetWindowChrome(window) != null;
+        // Ink and Paper paint the whole window themselves: no backdrop, a flat colour of their own.
+        string material = ThemeService.Material;
+        bool solid = ThemeService.IsSolidMaterial(material);
+        bool useMica = IsMicaSupported && WindowChrome.GetWindowChrome(window) != null && !solid;
 
         if (useMica)
         {
-            int backdrop = ThemeService.Material == "Mica" ? BACKDROP_MICA : BACKDROP_ACRYLIC;
+            int backdrop = material == "Mica" ? BACKDROP_MICA : BACKDROP_ACRYLIC;
             DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
+
+            // back to Windows' own caption colours, in case a solid material set its own a moment ago
+            uint standard = 0xFFFFFFFF;   // DWMWA_COLOR_DEFAULT
+            DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref standard, sizeof(uint));
+            DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, ref standard, sizeof(uint));
+            DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref standard, sizeof(uint));
 
             // Mica is painted by DWM behind the window — WPF must not cover it with an
             // opaque background, or the effect is invisible.
@@ -97,7 +106,8 @@ public static class Backdrop
         if (IsMicaSupported)
             DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref none, sizeof(int));
 
-        var bg = darkMode ? Color.FromRgb(0x1F, 0x1F, 0x21) : Color.FromRgb(0xFF, 0xFF, 0xFF);
+        var bg = ThemeService.SolidWindowColor(material, darkMode)
+                 ?? (darkMode ? Color.FromRgb(0x1F, 0x1F, 0x21) : Color.FromRgb(0xFF, 0xFF, 0xFF));
         var text = darkMode ? Color.FromRgb(0xEC, 0xEC, 0xE8) : Color.FromRgb(0x1B, 0x1B, 0x1A);
         uint captionColor = ToColorRef(bg);
         uint textColor = ToColorRef(text);

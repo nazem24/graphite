@@ -87,6 +87,8 @@ public partial class MainViewModel : ObservableObject
         Writers.CollectionChanged += (_, e) => MirrorTabs(e);
         Library = new LibraryViewModel(this);
         Library.Initialize();
+        Library.ContextChanged += UpdateContextTint;
+        UpdateContextTint();
 
         // Crash recovery: keep a copy of every document with unsaved changes (see RecoveryService).
         _journalTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
@@ -134,6 +136,7 @@ public partial class MainViewModel : ObservableObject
         if (value) Settings.Refresh();
         OnPropertyChanged(nameof(IsHomeVisible));
         OnPropertyChanged(nameof(ShowLibraryToggle));
+        UpdateContextTint();
     }
 
     /// <summary>Open the settings page, or close it again (the command bar's gear button, Ctrl+,).</summary>
@@ -168,6 +171,31 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowLibraryToggle));
         OnPropertyChanged(nameof(IsPdfSelected));
         OnPropertyChanged(nameof(IsWriterSelected));
+        UpdateContextTint();
+    }
+
+    /// <summary>Tell the "Course tint" material where the person is: the colour of the Canvas course that is open, or of
+    /// the Local folder that is open. Nothing is tinted on a document, on the settings page, or with no course or folder
+    /// open.</summary>
+    private void UpdateContextTint()
+    {
+        if (Library == null) return;
+        System.Windows.Media.Color? color = null;
+        if (IsHomeVisible)
+        {
+            if (Library.IsCanvasSpace)
+            {
+                if (Library.CanvasIfCreated is { Page: CanvasPage.Course, CurrentCourse: { } course } && course.TintBrush is SolidColorBrush brush)
+                    color = brush.Color;
+            }
+            else if (Library.CurrentView == LibraryView.Folder && Library.CurrentPath is { } path)
+            {
+                // the folder's card colour (its own, the "all folders" one, or the built-in teal)
+                color = FolderPalette.TryParse(ThemeService.GetFolderColor(path) ?? FolderPalette.DefaultHex, out var parsed)
+                    ? parsed : FolderPalette.Default;
+            }
+        }
+        ContextTint.Set(color);
     }
 
     private bool _reorderingTabs;
@@ -535,15 +563,22 @@ public partial class MainViewModel : ObservableObject
         Library.RefreshCommand.Execute(null);
     }
 
-    /// <summary>Ctrl+Tab / Ctrl+Shift+Tab: move to the next / previous tab, wrapping around.
-    /// The start screen is the first stop, ahead of the first document.</summary>
+    /// <summary>Ctrl+Tab / Ctrl+Shift+Tab. While a PDF or document is showing, move to the next / previous
+    /// open one, wrapping around, and never stop on the start screen (the Home tab is for clicking).
+    /// On the start screen, flip between its two spaces, Local and Canvas.</summary>
     public void CycleDocument(int delta)
     {
-        if (Tabs.Count == 0) return;
-        int slots = Tabs.Count + 1; // slot 0 = Home, slot n = Tabs[n - 1]
-        int current = SelectedTab == null ? 0 : Tabs.IndexOf(SelectedTab) + 1;
-        int next = ((current + delta) % slots + slots) % slots;
-        SelectedTab = next == 0 ? null : Tabs[next - 1];
+        if (IsHomeSelected)
+        {
+            Library.ToggleSpaceCommand.Execute(null);
+            return;
+        }
+
+        if (Tabs.Count < 2) return;
+        int current = SelectedTab == null ? -1 : Tabs.IndexOf(SelectedTab);
+        if (current < 0) return;
+        int next = ((current + delta) % Tabs.Count + Tabs.Count) % Tabs.Count;
+        SelectedTab = Tabs[next];
     }
 
     // ------------------------------------------------------------- documents (the built-in editor)
@@ -1690,6 +1725,11 @@ public partial class MainViewModel : ObservableObject
             new("Material: Blur", null, () => ThemeService.SetMaterial("Blur")),
             new("Material: Frosted glass", null, () => ThemeService.SetMaterial("Frosted")),
             new("Material: Glass", null, () => ThemeService.SetMaterial("Glass")),
+            new("Material: Dusk", null, () => ThemeService.SetMaterial("Dusk")),
+            new("Material: Aurora", null, () => ThemeService.SetMaterial("Aurora")),
+            new("Material: Ink", null, () => ThemeService.SetMaterial("Ink")),
+            new("Material: Paper", null, () => ThemeService.SetMaterial("Paper")),
+            new("Material: Course tint", null, () => ThemeService.SetMaterial("Tint")),
             new("Toggle fullscreen", "F11", ToggleFullscreen),
             new("Edit signature…", null, EditSignature),
             new("Toggle reduced motion", null, () => ThemeService.SetReduceMotion(!ThemeService.ReduceMotion)),

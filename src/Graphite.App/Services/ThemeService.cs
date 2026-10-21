@@ -82,7 +82,21 @@ public static class ThemeService
     public static bool IsDark => _settings.DarkTheme;
 
     /// <summary>The window materials the settings page offers, in display order.</summary>
-    public static readonly string[] Materials = { "Mica", "Blur", "Frosted", "Glass" };
+    public static readonly string[] Materials = { "Mica", "Ink", "Paper", "Blur", "Frosted", "Glass", "Dusk", "Aurora", "Tint" };
+
+    /// <summary>Materials that need Windows' Acrylic blur behind the window (they are off under Energy Saver).</summary>
+    public static bool UsesAcrylic(string material) => material is "Blur" or "Frosted" or "Glass" or "Dusk" or "Aurora" or "Tint";
+
+    /// <summary>Materials that paint the whole window themselves, with no Windows backdrop: Ink and Paper.</summary>
+    public static bool IsSolidMaterial(string material) => material is "Ink" or "Paper";
+
+    /// <summary>The flat colour behind a solid material's window (title bar and borders match it).</summary>
+    public static System.Windows.Media.Color? SolidWindowColor(string material, bool dark) => material switch
+    {
+        "Ink" => dark ? System.Windows.Media.Color.FromRgb(0x00, 0x00, 0x00) : System.Windows.Media.Color.FromRgb(0xFF, 0xFF, 0xFF),
+        "Paper" => dark ? System.Windows.Media.Color.FromRgb(0x1F, 0x1A, 0x16) : System.Windows.Media.Color.FromRgb(0xF4, 0xEE, 0xE0),
+        _ => null,
+    };
 
     /// <summary>The material the person chose (always one of <see cref="Materials"/>), whether or not it is
     /// showing right now.</summary>
@@ -93,8 +107,8 @@ public static class ThemeService
     public static bool EnergySaverActive => EnergySaver.IsOn;
 
     /// <summary>The material actually showing (always one of <see cref="Materials"/>): the chosen one, or
-    /// Mica while Energy Saver is on. The chosen one is kept and comes back by itself.</summary>
-    public static string Material => EnergySaver.IsOn ? "Mica" : _settings.Material;
+    /// Mica while Energy Saver is on and the chosen one needs Acrylic. The chosen one is kept and comes back by itself.</summary>
+    public static string Material => EnergySaver.IsOn && UsesAcrylic(_settings.Material) ? "Mica" : _settings.Material;
 
     /// <summary>Raised after the light/dark mode or the material changed and was applied.</summary>
     public static event Action? AppearanceChanged;
@@ -173,7 +187,7 @@ public static class ThemeService
     public static void SetMaterial(string material)
     {
         if (!Materials.Contains(material) || material == _settings.Material) return;
-        if (EnergySaver.IsOn && material != "Mica") return;   // the glass materials are off under Energy Saver
+        if (EnergySaver.IsOn && UsesAcrylic(material)) return;   // the see-through materials are off under Energy Saver
         _settings.Material = material;
         ApplyTheme(_settings.DarkTheme);
     }
@@ -282,9 +296,63 @@ public static class ThemeService
     {
         var dict = new ResourceDictionary { Source = MaterialUri(Material, dark) };
         var merged = Application.Current.Resources.MergedDictionaries;
+        int at = -1;
         for (int i = 0; i < merged.Count; i++)
-            if (merged[i].Source?.OriginalString.Contains("Materials/") == true) { merged[i] = dict; return; }
-        merged.Add(dict);
+            if (merged[i].Source?.OriginalString.Contains("Materials/") == true) { at = i; break; }
+        if (at >= 0) merged[at] = dict;
+        else merged.Add(dict);
+
+        // Paper's grain is drawn in code, as a tile; any other material takes the plain background of its dictionary
+        var resources = Application.Current.Resources;
+        if (Material == "Paper") resources["App.BackgroundBrush"] = PaperBackground(dark);
+        else resources.Remove("App.BackgroundBrush");
+
+        ContextTint.Reapply();
+    }
+
+    private static readonly Dictionary<bool, System.Windows.Media.Brush> PaperTiles = new();
+
+    /// <summary>The window background of the Paper material: its flat colour with a faint, even grain, as a tile that
+    /// repeats. Made once per mode from a fixed seed, so the grain is the same every time.</summary>
+    public static System.Windows.Media.Brush PaperBackground(bool dark)
+    {
+        if (PaperTiles.TryGetValue(dark, out var cached)) return cached;
+        const int size = 192;
+        var baseColor = SolidWindowColor("Paper", dark)!.Value;
+        int amplitude = dark ? 6 : 7;
+        var rng = new Random(7);
+        var pixels = new byte[size * size * 4];
+        for (int i = 0; i < size * size; i++)
+        {
+            // two samples averaged: grain that is mostly small with the odd darker or lighter speck
+            int d = (rng.Next(-amplitude, amplitude + 1) + rng.Next(-amplitude, amplitude + 1)) / 2;
+            pixels[i * 4 + 0] = (byte)Math.Clamp(baseColor.B + d, 0, 255);
+            pixels[i * 4 + 1] = (byte)Math.Clamp(baseColor.G + d, 0, 255);
+            pixels[i * 4 + 2] = (byte)Math.Clamp(baseColor.R + d, 0, 255);
+            pixels[i * 4 + 3] = 255;
+        }
+        var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(size, size, 96, 96,
+            System.Windows.Media.PixelFormats.Bgra32, null, pixels, size * 4);
+        bitmap.Freeze();
+        var brush = new System.Windows.Media.ImageBrush(bitmap)
+        {
+            TileMode = System.Windows.Media.TileMode.Tile,
+            Viewport = new Rect(0, 0, size, size),
+            ViewportUnits = System.Windows.Media.BrushMappingMode.Absolute,
+            Stretch = System.Windows.Media.Stretch.Fill,
+        };
+        brush.Freeze();
+        PaperTiles[dark] = brush;
+        return brush;
+    }
+
+    /// <summary>The same quick dip, on request: after a swap that is not part of a theme change (the "Course tint"
+    /// colour changing).</summary>
+    internal static void SoftSwap()
+    {
+        if (Application.Current == null) return;
+        foreach (Window w in Application.Current.Windows)
+            if (w.IsLoaded) BlipOpacity(w);
     }
 
     /// <summary>A very quick opacity dip so the instant brush swap across every

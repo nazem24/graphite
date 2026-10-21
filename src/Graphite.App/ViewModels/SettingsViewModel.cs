@@ -21,7 +21,37 @@ public sealed partial class SettingsViewModel : ObservableObject
         _checkForUpdates = checkForUpdates;
         VersionText = $"Version {version}";
         foreach (var style in ToolStyles.All) ToolRows.Add(new ToolDefaultRow(style));
+        MaterialGroups = BuildMaterialGroups();
         ThemeService.AppearanceChanged += Refresh;
+    }
+
+    // ---- material picker ----
+    /// <summary>The materials in two families, as the picker shows them: solid and glass.</summary>
+    public IReadOnlyList<MaterialGroup> MaterialGroups { get; }
+
+    private static IReadOnlyList<MaterialGroup> BuildMaterialGroups()
+    {
+        static bool Mica() => Backdrop.IsMicaSupported;
+        static bool Glass() => Backdrop.IsMicaSupported && !ThemeService.EnergySaverActive;
+        static bool Always() => true;
+        return new[]
+        {
+            new MaterialGroup("Solid", "Calm, opaque surfaces that look the same whatever is behind the window.", new[]
+            {
+                new MaterialOption("Mica", "Mica", "The original look: a soft backdrop tinted by your wallpaper.", new[] { "#8E97A9", "#4F5667" }, Mica),
+                new MaterialOption("Ink", "Ink", "Flat black (or white) with hairline outlines. No sheen, no glow.", new[] { "#000000", "#34343A" }, Always),
+                new MaterialOption("Paper", "Paper", "Matte cream with a faint grain, ink lines and manila folders.", new[] { "#F6F0E2", "#DCC9A0" }, Always),
+            }),
+            new MaterialGroup("Glass", "See-through surfaces: Windows blurs the desktop behind the window. Needs Windows 11.", new[]
+            {
+                new MaterialOption("Blur", "Blur", "A clear blur of what is behind the window.", new[] { "#6FA3F7", "#B5D2FF" }, Glass),
+                new MaterialOption("Frosted", "Frosted glass", "The same blur with a milky tint. Calmer panels.", new[] { "#AEB8CC", "#E6EAF2" }, Glass),
+                new MaterialOption("Glass", "Glass", "Almost clear panels, bright edges and a livelier glow.", new[] { "#8FC6FF", "#EAF4FF", "#9DB1F0" }, Glass),
+                new MaterialOption("Dusk", "Dusk", "Warm glass in amber, rose and plum.", new[] { "#FFB27A", "#E0709A", "#8E5CB0" }, Glass),
+                new MaterialOption("Aurora", "Aurora", "Near-black glass with a teal and violet shimmer.", new[] { "#2EE6C6", "#4A6CF0", "#8A5CF5" }, Glass),
+                new MaterialOption("Tint", "Course tint", "Takes the colour of the course or folder you are in.", new[] { "#2C6B66", "#4B4FA8", "#B8602A" }, Glass),
+            }),
+        };
     }
 
     // ---- sections ----
@@ -193,6 +223,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// Windows setting or used the command palette in the meantime).</summary>
     public void Refresh()
     {
+        foreach (var group in MaterialGroups)
+            foreach (var option in group.Options) option.Refresh();
         OnPropertyChanged(string.Empty);
         if (IsCanvasSection) RefreshCanvas();
     }

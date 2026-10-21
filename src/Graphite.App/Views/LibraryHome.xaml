@@ -1241,8 +1241,8 @@
                                         <Border x:Name="NewCard" Margin="40" Width="62" Height="8"
                                                 HorizontalAlignment="Right" VerticalAlignment="Top"
                                                 CornerRadius="18" BorderThickness="1"
-                                                Background="{DynamicResource App.CardBrush}"
-                                                BorderBrush="{DynamicResource App.StrokeBrush}">
+                                                Background="{DynamicResource App.PopupBrush}"
+                                                BorderBrush="{DynamicResource App.PopupBorderBrush}">
                                             <Border.Effect>
                                                 <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32"/>
                                             </Border.Effect>
@@ -1416,7 +1416,7 @@
                    StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
                    Opened="ColorPopup_Opened">
                 <Border Margin="16" Width="268" Padding="16,14,16,14" CornerRadius="16" BorderThickness="1"
-                        Background="{DynamicResource App.CardBrush}" BorderBrush="{DynamicResource App.StrokeBrush}">
+                        Background="{DynamicResource App.PopupBrush}" BorderBrush="{DynamicResource App.PopupBorderBrush}">
                     <Border.Effect>
                         <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32"/>
                     </Border.Effect>

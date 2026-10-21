@@ -546,8 +546,8 @@
                         <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}"
                                AllowsTransparency="True" Placement="Bottom" VerticalOffset="4"
                                StaysOpen="False">
-                            <Border x:Name="dd" RenderTransformOrigin="0.5,0" Background="{DynamicResource App.GlassSolidBrush}"
-                                    BorderBrush="{DynamicResource App.GlassBorderBrush}" BorderThickness="1"
+                            <Border x:Name="dd" RenderTransformOrigin="0.5,0" Background="{DynamicResource App.PopupBrush}"
+                                    BorderBrush="{DynamicResource App.PopupBorderBrush}" BorderThickness="1"
                                     CornerRadius="10" Padding="4" Margin="8"
                                     MinWidth="{TemplateBinding ActualWidth}" MaxHeight="280">
                                 <Border.RenderTransform>
@@ -697,14 +697,14 @@
          A name, an optional key cap and an optional one-line hint. Plain strings
          still work; "Name|Key|Hint" fills the three slots (any part may be left empty). -->
     <Style TargetType="ToolTip">
-        <Setter Property="Background" Value="{DynamicResource App.FloatingBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource App.PopupBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
         <Setter Property="MaxWidth" Value="300"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToolTip">
                     <Border Background="{TemplateBinding Background}"
-                            BorderBrush="{DynamicResource App.GlassBorderBrush}"
+                            BorderBrush="{DynamicResource App.PopupBorderBrush}"
                             BorderThickness="1" CornerRadius="10" Padding="11,8" Margin="6">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.25"/>
@@ -1024,14 +1024,14 @@
          scale+fade settle every time it opens. Margin leaves room for the shadow
          because the popup behind it is transparent. -->
     <Style TargetType="ContextMenu">
-        <Setter Property="Background" Value="{DynamicResource App.GlassSolidBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource App.PopupBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.TextBrush}"/>
         <Setter Property="MinWidth" Value="220"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
                     <Border x:Name="root" Background="{TemplateBinding Background}"
-                            BorderBrush="{DynamicResource App.GlassBorderBrush}"
+                            BorderBrush="{DynamicResource App.PopupBorderBrush}"
                             BorderThickness="1" CornerRadius="14" Padding="6"
                             Margin="12,4,12,18" RenderTransformOrigin="0.5,0"
                             MinWidth="{TemplateBinding MinWidth}">
@@ -1109,8 +1109,8 @@
                         <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="-6" VerticalOffset="-8"
                                AllowsTransparency="True" Focusable="False" PopupAnimation="None"
                                IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
-                            <Border Background="{DynamicResource App.GlassSolidBrush}"
-                                    BorderBrush="{DynamicResource App.GlassBorderBrush}"
+                            <Border Background="{DynamicResource App.PopupBrush}"
+                                    BorderBrush="{DynamicResource App.PopupBorderBrush}"
                                     BorderThickness="1" CornerRadius="14" Padding="6" Margin="12,4,12,18" MinWidth="260">
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32"/>

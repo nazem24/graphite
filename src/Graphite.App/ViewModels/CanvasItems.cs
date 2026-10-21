@@ -10,7 +10,7 @@ using Graphite.Core.Library;
 namespace Graphite.App.ViewModels;
 
 /// <summary>Which page of the Canvas space is showing.</summary>
-public enum CanvasPage { Connect, Overview, New, Pinned, Course, Search }
+public enum CanvasPage { Connect, Overview, New, Pinned, Calendar, Course, Search }
 
 /// <summary>A course: a row in the Canvas rail and a card on the overview.</summary>
 public sealed partial class CanvasCourseItem : ObservableObject
@@ -37,7 +37,7 @@ public sealed partial class CanvasCourseItem : ObservableObject
     /// for the same course, so courses can be told apart at a glance (the Local rail tints its folders the same way).</summary>
     public Brush TintBrush { get; }
 
-    private static Brush TintFor(string courseId)
+    internal static Brush TintFor(string courseId)
     {
         int hash = 17;
         foreach (char c in courseId) hash = unchecked(hash * 31 + c);

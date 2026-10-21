@@ -183,8 +183,8 @@
         <Popup x:Name="TextColorPopup" PlacementTarget="{Binding ElementName=TextColorBtn}" Placement="Bottom"
                IsOpen="{Binding IsChecked, ElementName=TextColorBtn, Mode=TwoWay}" StaysOpen="False"
                AllowsTransparency="True">
-            <Border Margin="10,4,10,16" Padding="12,10" Width="226" Background="{DynamicResource App.GlassSolidBrush}"
-                    BorderBrush="{DynamicResource App.GlassBorderBrush}" BorderThickness="1" CornerRadius="12">
+            <Border Margin="10,4,10,16" Padding="12,10" Width="226" Background="{DynamicResource App.PopupBrush}"
+                    BorderBrush="{DynamicResource App.PopupBorderBrush}" BorderThickness="1" CornerRadius="12">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.3"/>
                 </Border.Effect>
@@ -207,8 +207,8 @@
         <Popup x:Name="MarkColorPopup" PlacementTarget="{Binding ElementName=MarkColorBtn}" Placement="Bottom"
                IsOpen="{Binding IsChecked, ElementName=MarkColorBtn, Mode=TwoWay}" StaysOpen="False"
                AllowsTransparency="True">
-            <Border Margin="10,4,10,16" Padding="12,10" Width="226" Background="{DynamicResource App.GlassSolidBrush}"
-                    BorderBrush="{DynamicResource App.GlassBorderBrush}" BorderThickness="1" CornerRadius="12">
+            <Border Margin="10,4,10,16" Padding="12,10" Width="226" Background="{DynamicResource App.PopupBrush}"
+                    BorderBrush="{DynamicResource App.PopupBorderBrush}" BorderThickness="1" CornerRadius="12">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.3"/>
                 </Border.Effect>
